@@ -1,0 +1,100 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  border-radius: var(--radius);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  background: none;
+  outline: none;
+}
+
+.card:hover {
+  transform: translateY(-4px) scale(1.02);
+}
+
+.card:hover .poster {
+  box-shadow: 0 12px 32px rgba(0,0,0,0.7), 0 0 0 1px var(--border);
+}
+
+.card:focus-visible {
+  transform: translateY(-4px) scale(1.02);
+}
+
+.card:focus-visible .poster {
+  box-shadow: 0 0 0 2px var(--accent), 0 12px 32px rgba(0,0,0,0.7);
+}
+
+.poster {
+  width: 100%;
+  aspect-ratio: 2/3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+  box-shadow: var(--shadow-md);
+  transition: box-shadow 0.2s ease;
+}
+
+.poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: filter 0.2s ease;
+}
+
+.card:hover .poster img {
+  filter: brightness(1.05);
+}
+
+.placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-hover) 100%);
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 2px;
+  min-width: 0;
+  width: 100%;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.cardMeta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.empty {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 60px 0;
+  text-align: center;
+}

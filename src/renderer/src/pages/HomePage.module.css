@@ -1,0 +1,142 @@
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+}
+
+.hero {
+  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 300px;
+  height: 100%;
+  background: radial-gradient(ellipse at top right, var(--accent-glow) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.heroTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+.heroSub {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  max-width: 520px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.primaryBtn {
+  background: var(--accent);
+  color: #000;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 22px;
+  border-radius: var(--radius-sm);
+  transition: opacity 0.15s, transform 0.15s;
+  letter-spacing: 0.01em;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.secondaryBtn {
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 22px;
+  border-radius: var(--radius-sm);
+  transition: opacity 0.15s, transform 0.15s;
+  letter-spacing: 0.01em;
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.secondaryBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.scanResult {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.tips {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tipsTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tipsList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tipsList li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  padding-left: 18px;
+  position: relative;
+}
+
+.tipsList li::before {
+  content: '›';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.tipsList code {
+  background: var(--bg-elevated);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+}
