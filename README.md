@@ -17,20 +17,48 @@ A portable Electron-based media and game library for an external drive. Browse m
 
 ## Requirements
 
-- **Node.js** 18+ and **npm** (for development)
+- **Node.js** 18+ and **npm**
+- **Git**
 - **mpv** placed at `[DRIVE]/players/mpv/[platform]/mpv` (see Drive Layout below)
 - **Emulators** placed at `[DRIVE]/emulators/[name]/[platform]/` (optional, for ROMs)
 
 ---
 
-## Development
+## Getting Started
+
+### 1. Clone and install
 
 ```bash
+git clone https://github.com/wklis/vault-media-player.git
+cd vault-media-player
 npm install
+```
+
+### 2. Set up your drive
+
+Run the setup script to create the required folder structure on your external drive:
+
+**Windows:**
+```powershell
+.\scripts\setup-drive.ps1 -Drive E: -Label VAULT
+```
+
+**macOS / Linux:**
+```bash
+bash scripts/setup-drive.sh /Volumes/VAULT
+```
+
+Then copy `mpv` into `players/mpv/[platform]/` on the drive.
+
+### 3. Run in development
+
+```bash
 npm run dev
 ```
 
-Build a distributable:
+The app will open. Go to **Settings**, enter your drive's volume label (e.g. `VAULT`), then click **Scan Library** on the Home page.
+
+### 4. Build a distributable
 
 ```bash
 npm run build:win    # Windows portable .exe
@@ -38,10 +66,38 @@ npm run build:mac    # macOS .dmg
 npm run build:linux  # Linux AppImage
 ```
 
-> **Note:** `better-sqlite3` is a native module. If you switch Node/Electron versions, run:
+Output is placed in `dist/`.
+
+> **Note:** `better-sqlite3` is a native module. If you switch Node or Electron versions, run:
 > ```bash
 > npm run rebuild-native
 > ```
+
+---
+
+## Dependencies
+
+Dependencies are managed via `package.json` and installed with `npm install`.
+
+### Runtime
+
+| Package | Purpose |
+|---|---|
+| `better-sqlite3` | Fast synchronous SQLite — stores the media library index |
+| `zustand` | Lightweight React state management — tracks active page, library config |
+
+### Development / Build
+
+| Package | Purpose |
+|---|---|
+| `electron` | Desktop app shell |
+| `electron-vite` | Dev server and bundler for Electron (wraps Vite) |
+| `electron-builder` | Packages the app into a distributable executable |
+| `electron-rebuild` | Recompiles native modules (better-sqlite3) against the active Electron version |
+| `react` / `react-dom` | UI framework |
+| `typescript` | Type checking |
+| `vite` | Frontend bundler (used internally by electron-vite) |
+| `@vitejs/plugin-react` | React support for Vite |
 
 ---
 
