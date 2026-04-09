@@ -25,6 +25,60 @@ interface SyncProgress {
   filesdeleted?: number
 }
 
+interface DownloadProgress {
+  index: number
+  total: number
+  url: string
+  status: 'downloading' | 'converting' | 'done' | 'error'
+  percent: number
+}
+
+interface WatchOrderData {
+  sectionOrder: string[]
+  itemOrder: Record<string, string[]>
+}
+
+interface MusicAlbum {
+  name: string
+  path: string
+}
+
+interface MusicAlbumsResult {
+  musicDir: string
+  albums: MusicAlbum[]
+}
+
+interface KeyboardBinding {
+  action: string
+  label: string
+  context: 'mpv' | 'music'
+  key: string
+}
+
+interface ControllerBinding {
+  action: string
+  label: string
+  command: string
+  button: string
+  isLua: boolean
+}
+
+interface AudioTrack {
+  lang: string
+  codec: string
+  channels: number
+}
+
+interface MediaTechInfo {
+  duration: number
+  fileSize: number
+  videoCodec: string
+  width: number
+  height: number
+  audioTracks: AudioTrack[]
+  subtitleTracks: { lang: string }[]
+}
+
 interface MediaItem {
   id: number
   title: string
@@ -36,6 +90,21 @@ interface MediaItem {
   genre: string | null
   platform: string | null
   executable: string | null
+  lastOpenedAt: number | null
+}
+
+interface GpuInfo {
+  name: string
+  vramMB: number
+  dedicated: boolean
+}
+
+interface SystemInfo {
+  platform: string
+  ramGB: number
+  cpuModel: string
+  cpuCores: number
+  gpus: GpuInfo[]
 }
 
 interface Window {
@@ -55,12 +124,32 @@ interface Window {
       getItem: (id: number) => Promise<MediaItem | null>
       readImage: (filePath: string) => Promise<string | null>
       getExtras: (seriesTitle: string) => Promise<MediaItem[]>
-      getAlbumTracks: (firstTrackPath: string) => Promise<{ path: string; title: string; trackNumber: number }[]>
+      getAlbumTracks: (firstTrackPath: string) => Promise<{ path: string; title: string; artist?: string; trackNumber: number; duration: number; artPath: string | null }[]>
+      getTechInfo:     (filePath: string) => Promise<MediaTechInfo | null>
+      getEpubInfo:     (filePath: string) => Promise<{ title: string; author: string; chapters: { id: string; title: string; href: string }[]; coverDataUrl: string | null }>
+      readEpubChapter: (filePath: string, chapterHref: string) => Promise<string>
+      getWatchOrder: (seriesTitle: string, category: string) => Promise<WatchOrderData | null>
+      markOpened: (filePath: string) => Promise<void>
+      getMusicAlbums: () => Promise<MusicAlbumsResult>
+      downloadYouTube: (args: { urls: { url: string; title: string; artist?: string }[]; albumPath: string; artist?: string }) => Promise<{ success: boolean }>
+      onDownloadProgress: (cb: (progress: DownloadProgress) => void) => () => void
+    }
+    controller: {
+      getBindings: () => Promise<ControllerBinding[]>
+      setBindings: (bindings: ControllerBinding[]) => Promise<void>
+      resetBindings: () => Promise<ControllerBinding[]>
+    }
+    keyboard: {
+      getBindings: () => Promise<KeyboardBinding[]>
+      setBindings: (bindings: KeyboardBinding[]) => Promise<void>
+      resetBindings: () => Promise<KeyboardBinding[]>
     }
     playback: {
-      openVideo: (filePath: string) => Promise<void>
-      openAudio: (filePath: string) => Promise<void>
-      launchGame: (gamePath: string, platform: string) => Promise<void>
+      openFile:     (filePath: string) => Promise<void>
+      openVideo:    (filePath: string, category?: string) => Promise<void>
+      openAudio:    (filePath: string) => Promise<void>
+      launchGame:   (gamePath: string, platform: string) => Promise<void>
+      onMusicPause: (cb: () => void) => () => void
     }
     sync: {
       getBackupLabel: () => Promise<string | null>
@@ -68,6 +157,17 @@ interface Window {
       findDrive: (label: string) => Promise<string | null>
       start: () => Promise<void>
       onProgress: (cb: (progress: SyncProgress) => void) => () => void
+    }
+    settings: {
+      get: (key: string, fallback: string) => Promise<string>
+      set: (key: string, value: string) => Promise<void>
+    }
+    manga: {
+      openCbz: (filePath: string) => Promise<string[]>
+      closeCbz: () => Promise<void>
+    }
+    system: {
+      getInfo: () => Promise<SystemInfo>
     }
     platform: NodeJS.Platform
   }

@@ -20,15 +20,47 @@ contextBridge.exposeInMainWorld('api', {
     getItems: (category: string) => ipcRenderer.invoke('library:getItems', category),
     getItem: (id: number) => ipcRenderer.invoke('library:getItem', id),
     readImage: (filePath: string) => ipcRenderer.invoke('library:readImage', filePath),
-    getExtras: (seriesTitle: string) => ipcRenderer.invoke('library:getExtras', seriesTitle)
+    getExtras: (seriesTitle: string) => ipcRenderer.invoke('library:getExtras', seriesTitle),
+    getTechInfo:     (filePath: string) => ipcRenderer.invoke('library:getTechInfo', filePath),
+    getEpubInfo:     (filePath: string) => ipcRenderer.invoke('library:getEpubInfo', filePath),
+    readEpubChapter: (filePath: string, chapterHref: string) => ipcRenderer.invoke('library:readEpubChapter', filePath, chapterHref),
+    getWatchOrder: (seriesTitle: string, category: string) => ipcRenderer.invoke('library:getWatchOrder', seriesTitle, category),
+    markOpened: (filePath: string) => ipcRenderer.invoke('library:markOpened', filePath),
+    getMusicAlbums: () => ipcRenderer.invoke('library:getMusicAlbums'),
+    downloadYouTube: (args: { urls: { url: string; title: string }[]; albumPath: string; artist?: string }) =>
+      ipcRenderer.invoke('library:downloadYouTube', args),
+    onDownloadProgress: (cb: (progress: DownloadProgress) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: DownloadProgress): void => cb(progress)
+      ipcRenderer.on('download:progress', handler)
+      return () => ipcRenderer.removeListener('download:progress', handler)
+    }
   },
 
   // Playback
   playback: {
-    openVideo: (filePath: string) => ipcRenderer.invoke('playback:openVideo', filePath),
+    openFile:  (filePath: string) => ipcRenderer.invoke('playback:openFile', filePath),
+    openVideo: (filePath: string, category?: string) => ipcRenderer.invoke('playback:openVideo', filePath, category),
     openAudio: (filePath: string) => ipcRenderer.invoke('playback:openAudio', filePath),
     launchGame: (gamePath: string, platform: string) =>
-      ipcRenderer.invoke('playback:launchGame', gamePath, platform)
+      ipcRenderer.invoke('playback:launchGame', gamePath, platform),
+    onMusicPause: (cb: () => void) => {
+      ipcRenderer.on('music:pause', cb)
+      return () => ipcRenderer.removeListener('music:pause', cb)
+    }
+  },
+
+  // Controller bindings
+  controller: {
+    getBindings: () => ipcRenderer.invoke('controller:getBindings'),
+    setBindings: (bindings: unknown[]) => ipcRenderer.invoke('controller:setBindings', bindings),
+    resetBindings: () => ipcRenderer.invoke('controller:resetBindings')
+  },
+
+  // Keyboard bindings
+  keyboard: {
+    getBindings: () => ipcRenderer.invoke('keyboard:getBindings'),
+    setBindings: (bindings: unknown[]) => ipcRenderer.invoke('keyboard:setBindings', bindings),
+    resetBindings: () => ipcRenderer.invoke('keyboard:resetBindings')
   },
 
   // Sync
@@ -41,6 +73,23 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('sync:progress', (_event, progress) => cb(progress))
       return () => ipcRenderer.removeAllListeners('sync:progress')
     }
+  },
+
+  // App settings
+  settings: {
+    get: (key: string, fallback: string) => ipcRenderer.invoke('settings:get', key, fallback),
+    set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value)
+  },
+
+  // CBZ reader
+  manga: {
+    openCbz: (filePath: string) => ipcRenderer.invoke('manga:openCbz', filePath),
+    closeCbz: () => ipcRenderer.invoke('manga:closeCbz')
+  },
+
+  // System info
+  system: {
+    getInfo: () => ipcRenderer.invoke('system:getInfo')
   },
 
   // Platform info

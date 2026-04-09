@@ -78,6 +78,17 @@
   color: var(--text-primary);
 }
 
+.backBtn {
+  font-size: 14px;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  margin-right: 12px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.backBtn:hover { color: var(--text-primary); background: var(--bg-hover); }
+
 .body {
   flex: 1;
 }

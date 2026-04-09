@@ -44,7 +44,8 @@ export function findDriveByLabel(label: string): string | null {
   return null
 }
 
-const SYSTEM_FOLDERS = ['players', 'launcher']
+/** Folders on the vault drive that belong to the app, not the media library. Never synced to cold storage. */
+const SYSTEM_FOLDERS = ['players', 'app']
 
 /** Mark non-media folders on the drive as hidden so Explorer doesn't show them. Windows-only. */
 export function hideSystemFolders(driveRoot: string): void {
@@ -86,7 +87,7 @@ function runRobocopy(
   // /W:5  = 5 second wait between retries
   // /NP   = no percentage progress (cleaner output)
   // /NDL  = no directory list in output
-  const child = spawn('robocopy', [src, dest, '/MIR', '/MT:8', '/R:3', '/W:5', '/NP', '/NDL'], {
+  const child = spawn('robocopy', [src, dest, '/MIR', '/MT:8', '/R:3', '/W:5', '/NP', '/NDL', '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYSTEM_FOLDERS], {
     stdio: ['ignore', 'pipe', 'pipe']
   })
 
@@ -114,6 +115,10 @@ function runRobocopy(
     }
   })
 
+  child.on('error', (err) => {
+    send({ status: 'error', message: `Failed to launch robocopy: ${err.message}. Is it available on this system?` })
+  })
+
   child.on('close', (code) => {
     // Robocopy exit codes: 0-7 are success/info, 8+ are errors
     if ((code ?? 0) <= 7) {
@@ -139,7 +144,8 @@ function runRsync(
   // --delete      = remove files from dest that no longer exist in src
   // --info=progress2 = show overall progress
   // --human-readable = human readable sizes
-  const child = spawn('rsync', ['-a', '--delete', '--info=progress2', '--human-readable', `${src}/`, `${dest}/`], {
+  const excludes = SYSTEM_FOLDERS.flatMap((f) => ['--exclude', `${f}/`])
+  const child = spawn('rsync', ['-a', '--delete', '--info=progress2', '--human-readable', ...excludes, `${src}/`, `${dest}/`], {
     stdio: ['ignore', 'pipe', 'pipe']
   })
 
@@ -153,6 +159,10 @@ function runRsync(
   child.stderr.on('data', (chunk: string) => {
     const trimmed = chunk.trim()
     if (trimmed) send({ status: 'running', message: trimmed })
+  })
+
+  child.on('error', (err) => {
+    send({ status: 'error', message: `Failed to launch rsync: ${err.message}. Is rsync installed?` })
   })
 
   child.on('close', (code) => {

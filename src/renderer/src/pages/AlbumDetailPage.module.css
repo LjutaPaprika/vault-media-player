@@ -30,7 +30,7 @@
 /* ── Hero section ── */
 .hero {
   position: relative;
-  padding: 48px 32px 32px;
+  padding: 72px 32px 32px;
   overflow: hidden;
 }
 
@@ -104,6 +104,12 @@
   margin-bottom: 20px;
 }
 
+.btnRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .playAllBtn {
   display: inline-flex;
   align-items: center;
@@ -126,6 +132,36 @@
 .playAllBtn:hover {
   opacity: 0.88;
   transform: scale(1.03);
+}
+
+.shuffleBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 20px;
+  border-radius: 50px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.shuffleBtn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.shuffleBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.shuffleBtnActive {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ── Track list ── */
@@ -156,12 +192,19 @@
   transition: background 0.12s;
 }
 
-.trackRow:hover {
+.trackRow:hover,
+.trackRow.controllerFocus {
   background: var(--bg-elevated);
 }
 
-.trackRow:hover .trackNum { display: none; }
-.trackRow:hover .hoverPlay { display: block !important; }
+.trackRow.controllerFocus {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.trackRow:hover .trackNum,
+.trackRow.controllerFocus .trackNum { display: none; }
+.trackRow:hover .hoverPlay,
+.trackRow.controllerFocus .hoverPlay { display: block !important; }
 
 .trackRow.active {
   background: var(--bg-elevated);
@@ -169,6 +212,10 @@
 
 .trackRow.active .colTitle {
   color: var(--accent);
+}
+
+.trackRow.active .colDur {
+  color: var(--text-secondary);
 }
 
 .colNum {
@@ -204,6 +251,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   padding-right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.colArtist {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .colDur {

@@ -10,7 +10,7 @@
 }
 
 .sidebar.focused {
-  border-right-color: var(--accent-dim);
+  border-right-color: color-mix(in srgb, var(--sidebar-active) 40%, transparent);
 }
 
 .logo {
@@ -42,19 +42,6 @@
   color: var(--text-primary);
 }
 
-.section {
-  padding: 0 10px 8px;
-}
-
-.sectionLabel {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 12px 10px 6px;
-}
-
 .nav {
   list-style: none;
   display: flex;
@@ -83,8 +70,8 @@
 }
 
 .navItem.active {
-  background: var(--accent-glow);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--sidebar-active) 15%, transparent);
+  color: var(--sidebar-active);
 }
 
 .navItem.active::before {
@@ -94,7 +81,7 @@
   top: 20%;
   height: 60%;
   width: 3px;
-  background: var(--accent);
+  background: var(--sidebar-active);
   border-radius: 0 2px 2px 0;
 }
 
@@ -112,10 +99,4 @@
 
 .label {
   font-size: 13px;
-}
-
-.divider {
-  height: 1px;
-  background: var(--border);
-  margin: 8px 10px;
 }

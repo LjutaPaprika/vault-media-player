@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import PageShell from '../components/PageShell'
 import MediaGrid from '../components/MediaGrid'
 import ShowDetailPage from './ShowDetailPage'
 import { useLibrary } from '../hooks/useLibrary'
+import { useAppStore } from '../store/appStore'
 
 
 interface SelectedShow {
@@ -13,8 +14,11 @@ interface SelectedShow {
 
 export default function TVPage(): JSX.Element {
   const { items, loading, error } = useLibrary('tv')
+  const { contentResetKey } = useAppStore()
   const [selected, setSelected] = useState<SelectedShow | null>(null)
   const [query, setQuery] = useState('')
+
+  useEffect(() => { setSelected(null) }, [contentResetKey])
 
   if (selected) {
     return (

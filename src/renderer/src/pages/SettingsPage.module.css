@@ -1,8 +1,22 @@
 .sections {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.sectionFull {
+  grid-column: 1 / -1;
+}
+
+.sectionRight {
+  grid-column: 2;
+}
+
+.columnStack {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-width: 600px;
 }
 
 .section {
@@ -163,4 +177,233 @@
   font-weight: 700;
   font-size: 16px;
   line-height: 1;
+}
+
+/* ── Colours grid ─────────────────────────────────────────────────────────── */
+
+.colorGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 32px;
+}
+
+.colorRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.colorRowLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* ── Colour swatches ──────────────────────────────────────────────────────── */
+
+.swatches {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.swatch:hover {
+  transform: scale(1.15);
+}
+
+.swatchActive {
+  border-color: var(--text-primary);
+  transform: scale(1.1);
+}
+
+.colorInputLabel {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px dashed var(--border);
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+
+.colorInputLabel:hover {
+  border-color: var(--text-muted);
+}
+
+.colorInputLabel input[type='color'] {
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+
+/* ── Hardware decoding ────────────────────────────────────────────────────── */
+
+.select {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  min-width: 180px;
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.selectHint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ── Keyboard shortcuts ───────────────────────────────────────────────────── */
+
+.shortcutTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.shortcutTable td {
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.shortcutTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.shortcutDesc {
+  color: var(--text-primary);
+}
+
+.shortcutKeys {
+  text-align: right;
+  white-space: nowrap;
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.shortcutGroup {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 28px 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcutGroup:first-child {
+  padding-top: 4px;
+}
+
+/* ── Controller bindings ──────────────────────────────────────────────────── */
+
+.bindingTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.bindingTable th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 0 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bindingTable td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.bindingTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.bindingAction {
+  color: var(--text-primary);
+  width: 52%;
+}
+
+.bindingButtonCell {
+  width: 28%;
+}
+
+.keyBadge {
+  display: inline-block;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: 'Consolas', 'SF Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  font-style: normal;
+  letter-spacing: 0.02em;
+}
+
+.listeningRow td {
+  background: var(--accent-glow);
+}
+
+.listeningPrompt {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.bindingRebindCell {
+  width: 20%;
+  text-align: right;
+}
+
+.btnReset {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  transition: color 0.15s;
+}
+
+.btnReset:hover {
+  color: var(--text-primary);
 }

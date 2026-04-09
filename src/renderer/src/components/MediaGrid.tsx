@@ -26,15 +26,10 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
   const gridRef = useRef<HTMLDivElement | null>(null)
   const isFocused = focusZone === 'content'
 
-  // When focus enters content, highlight the first card
-  useEffect(() => {
-    if (isFocused && items.length) {
-      cardRefs.current[focusedIdx]?.focus()
-    }
-  }, [isFocused])
-
   function getCols(): number {
-    return Math.floor((gridRef.current?.clientWidth ?? 800) / 160)
+    const w = gridRef.current?.clientWidth ?? 800
+    // Match CSS: repeat(auto-fill, minmax(155px, 1fr)) gap: 20px
+    return Math.max(1, Math.floor((w + 20) / 175))
   }
 
   function move(dir: 'up' | 'down' | 'left' | 'right'): void {
@@ -46,7 +41,7 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
       if (dir === 'left')  next = Math.max(prev - 1, 0)
       if (dir === 'down')  next = Math.min(prev + cols, items.length - 1)
       if (dir === 'up')    next = Math.max(prev - cols, 0)
-      if (next !== prev) cardRefs.current[next]?.focus()
+      cardRefs.current[next]?.focus()
       return next
     })
   }
@@ -59,25 +54,34 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
       if (e.key === 'ArrowLeft')               move('left')
       if (e.key === 'ArrowDown')               move('down')
       if (e.key === 'ArrowUp')                 move('up')
-      if (e.key === 'Enter' || e.key === ' ')  onSelect(items[focusedIdx])
+      if ((e.key === 'Enter' || e.key === ' ') && items[focusedIdx])  onSelect(items[focusedIdx])
       if (e.key === 'Escape')                  setFocusZone('sidebar')
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [items, onSelect, focusedIdx, isFocused])
 
-  // Controller: only active when content owns focus
+  // Controller: guard with isFocused so sidebar inputs are ignored
   const handleButton = useCallback((btn: ControllerButton) => {
     if (!isFocused) return
     if (btn === 'right')   move('right')
     if (btn === 'left')    move('left')
     if (btn === 'down')    move('down')
     if (btn === 'up')      move('up')
-    if (btn === 'confirm') onSelect(items[focusedIdx])
+    if (btn === 'confirm' && items[focusedIdx]) onSelect(items[focusedIdx])
     if (btn === 'back')    setFocusZone('sidebar')
   }, [items, onSelect, focusedIdx, isFocused])
 
-  useController({ onButton: handleButton })
+  const { resetState } = useController({ onButton: handleButton })
+
+  // When focus enters content zone, absorb held buttons then highlight first card
+  useEffect(() => {
+    if (isFocused && items.length) {
+      resetState()
+      setFocusedIdx(0)
+      cardRefs.current[0]?.focus()
+    }
+  }, [isFocused])
 
   if (!items.length) {
     return <p className={styles.empty}>{emptyMessage}</p>
@@ -93,7 +97,7 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
         <button
           key={item.id}
           ref={(el) => (cardRefs.current[i] = el)}
-          className={styles.card}
+          className={`${styles.card} ${isFocused && i === focusedIdx ? styles.controllerFocus : ''}`}
           onClick={() => onSelect(item)}
           tabIndex={isFocused && i === focusedIdx ? 0 : -1}
         >

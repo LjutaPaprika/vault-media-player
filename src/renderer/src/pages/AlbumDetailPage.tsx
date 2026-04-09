@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMusicPlayer, Track, AlbumMeta } from '../context/MusicPlayerContext'
+import { useController } from '../hooks/useController'
+import { useAppStore } from '../store/appStore'
 import styles from './AlbumDetailPage.module.css'
 
 interface Props {
@@ -13,16 +15,23 @@ interface Props {
 
 function formatTime(s: number): string {
   if (!isFinite(s) || isNaN(s) || s <= 0) return ''
-  const m = Math.floor(s / 60)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
   const sec = Math.floor(s % 60)
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
 export default function AlbumDetailPage({ albumTitle, artist, year, artPath, firstTrackPath, onBack }: Props): JSX.Element {
-  const { play, playTrack, togglePlay, playing, currentIndex, albumMeta, queue } = useMusicPlayer()
+  const { setFocusZone } = useAppStore()
+  const { play, playTrack, togglePlay, playing, currentIndex, albumMeta, queue, seek, currentTime, shuffleEnabled, setShuffle, toggleShuffle } = useMusicPlayer()
+  const currentTimeRef = useRef(0)
+  useEffect(() => { currentTimeRef.current = currentTime }, [currentTime])
   const [tracks, setTracks] = useState<Track[]>([])
   const [artSrc, setArtSrc] = useState<string | null>(null)
-  const [durations, setDurations] = useState<Record<number, number>>({})
+  const [focusedIdx, setFocusedIdx] = useState(-1)
+  const focusedIdxRef = useRef(0)
+  const tracksRef = useRef<Track[]>([])
 
   const isThisAlbum = albumMeta?.title === albumTitle && albumMeta?.artist === artist
   const meta: AlbumMeta = { title: albumTitle, artist, artPath }
@@ -36,28 +45,19 @@ export default function AlbumDetailPage({ albumTitle, artist, year, artPath, fir
     window.api.library.readImage(artPath).then(setArtSrc)
   }, [artPath])
 
-  // Load durations by creating temporary audio elements
-  useEffect(() => {
-    if (tracks.length === 0) return
-    const newDurations: Record<number, number> = {}
-    let loaded = 0
-    tracks.forEach((track, i) => {
-      const audio = new Audio()
-      audio.preload = 'metadata'
-      audio.onloadedmetadata = () => {
-        newDurations[i] = audio.duration
-        loaded++
-        if (loaded === tracks.length) setDurations({ ...newDurations })
-      }
-      audio.onerror = () => { loaded++; if (loaded === tracks.length) setDurations({ ...newDurations }) }
-      audio.src = 'media:///' + encodeURI(track.path.replace(/\\/g, '/'))
-    })
-  }, [tracks])
-
   function handlePlay(index: number): void {
+    const clickedPath  = tracks[index]?.path
+    const playingPath  = isThisAlbum ? queue[currentIndex]?.path : null
+    const isCurrentTrack = clickedPath === playingPath
+
     if (isThisAlbum && queue.length > 0) {
-      if (currentIndex === index) { togglePlay(); return }
-      playTrack(index)
+      if (isCurrentTrack) { togglePlay(); return }
+      // When shuffle is on, clicking a track restarts shuffle from that track
+      if (shuffleEnabled) {
+        play(tracks, index, meta)
+      } else {
+        playTrack(index)
+      }
     } else {
       play(tracks, index, meta)
     }
@@ -67,7 +67,42 @@ export default function AlbumDetailPage({ albumTitle, artist, year, artPath, fir
     play(tracks, 0, meta)
   }
 
-  const isTrackPlaying = (i: number): boolean => isThisAlbum && currentIndex === i && playing
+  function handleShuffle(): void {
+    if (isThisAlbum && queue.length > 0) {
+      // Album already playing — toggle shuffle without restarting, same as the player bar button
+      toggleShuffle()
+    } else {
+      // Different album or nothing playing — start this album in shuffle mode
+      setShuffle(true)
+      play(tracks, Math.floor(Math.random() * tracks.length), meta)
+    }
+  }
+
+  useEffect(() => { tracksRef.current = tracks }, [tracks])
+
+  const { resetState } = useController({ onButton: (btn) => {
+    if (btn === 'back') { setFocusZone('content'); onBack(); return }
+    if (btn === 'up') {
+      const next = Math.max(0, focusedIdxRef.current - 1)
+      focusedIdxRef.current = next
+      setFocusedIdx(next)
+    }
+    if (btn === 'down') {
+      const next = Math.min(tracksRef.current.length - 1, focusedIdxRef.current + 1)
+      focusedIdxRef.current = next
+      setFocusedIdx(next)
+    }
+    if (btn === 'left')  seek(Math.max(0, currentTimeRef.current - 10))
+    if (btn === 'right') seek(currentTimeRef.current + 10)
+    if (btn === 'confirm') handlePlay(focusedIdxRef.current)
+  } })
+
+  // Absorb any held buttons when detail page mounts (e.g. A held from card selection)
+  useEffect(() => { resetState() }, [])
+
+  // Compare by path rather than index so shuffled queues highlight correctly
+  const currentPath = isThisAlbum ? (queue[currentIndex]?.path ?? null) : null
+  const isTrackPlaying = (i: number): boolean => isThisAlbum && tracks[i]?.path === currentPath && playing
 
   return (
     <div className={styles.page}>
@@ -88,11 +123,21 @@ export default function AlbumDetailPage({ albumTitle, artist, year, artPath, fir
           <div className={styles.heroMeta}>
             <p className={styles.heroType}>Album</p>
             <h1 className={styles.heroTitle}>{albumTitle}</h1>
-            <p className={styles.heroSub}>{artist}{year ? ` · ${year}` : ''} · {tracks.length} track{tracks.length !== 1 ? 's' : ''}</p>
-            <button className={styles.playAllBtn} onClick={handlePlayAll}>
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-              Play
-            </button>
+            <p className={styles.heroSub}>
+              {[artist, year ? String(year) : null].filter(Boolean).join(' · ')}
+              {(artist || year) ? ' · ' : ''}
+              {tracks.length} track{tracks.length !== 1 ? 's' : ''}
+            </p>
+            <div className={styles.btnRow}>
+              <button className={styles.playAllBtn} onClick={handlePlayAll}>
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                Play
+              </button>
+              <button className={`${styles.shuffleBtn} ${isThisAlbum && shuffleEnabled ? styles.shuffleBtnActive : ''}`} onClick={handleShuffle}>
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+                Shuffle
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -105,12 +150,12 @@ export default function AlbumDetailPage({ albumTitle, artist, year, artPath, fir
           <span className={styles.colDur}>Duration</span>
         </div>
         {tracks.map((track, i) => {
-          const active = isThisAlbum && currentIndex === i
+          const active = isThisAlbum && tracks[i]?.path === currentPath
           const thisPlaying = isTrackPlaying(i)
           return (
             <div
               key={track.path}
-              className={`${styles.trackRow} ${active ? styles.active : ''}`}
+              className={`${styles.trackRow} ${active ? styles.active : ''} ${focusedIdx >= 0 && i === focusedIdx ? styles.controllerFocus : ''}`}
               onClick={() => handlePlay(i)}
             >
               <span className={styles.colNum}>
@@ -120,8 +165,11 @@ export default function AlbumDetailPage({ albumTitle, artist, year, artPath, fir
                 }
                 <svg viewBox="0 0 24 24" fill="currentColor" className={styles.hoverPlay}><path d="M8 5v14l11-7z"/></svg>
               </span>
-              <span className={styles.colTitle}>{track.title}</span>
-              <span className={styles.colDur}>{formatTime(durations[i] ?? 0)}</span>
+              <span className={styles.colTitle}>
+                {track.title}
+                {track.artist && <span className={styles.colArtist}>{track.artist}</span>}
+              </span>
+              <span className={styles.colDur}>{formatTime(track.duration ?? 0)}</span>
             </div>
           )
         })}

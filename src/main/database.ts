@@ -2,22 +2,37 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join, dirname } from 'path'
 import { mkdirSync, existsSync } from 'fs'
+import type { MediaTechInfo } from './mediaInfo'
 
 let db: Database.Database | null = null
 
 /**
- * In production the app lives somewhere inside the drive (e.g. E:\launcher\windows\).
- * Walk up from the exe location until we find the .vault marker file that sits at
- * the drive root, then return <driveRoot>/launcher as the folder for library.db.
- *
- * In dev mode there is no packaged exe, so fall back to a local dev-data/ folder.
+ * Walk up from the packaged exe location until we find the .vault marker file
+ * at the drive root (e.g. E:\). Returns the drive root path, or null in dev mode
+ * or if the marker isn't found.
+ */
+export function findDriveRoot(): string | null {
+  if (!app.isPackaged) return null
+  let dir = dirname(app.getPath('exe'))
+  for (let i = 0; i < 10; i++) {
+    if (existsSync(join(dir, '.vault'))) return dir
+    const parent = dirname(dir)
+    if (parent === dir) break // reached filesystem root without finding marker
+    dir = parent
+  }
+  return null
+}
+
+/**
+ * Returns the directory where library.db and app data should be stored.
+ * In production: <driveRoot>/app  (travels with the drive)
+ * In dev:        <cwd>/dev-data
  */
 function getDbDir(): string {
-  if (!app.isPackaged) {
-    return join(process.cwd(), 'dev-data')
-  }
-  // Store DB in local app data so the VAULT drive is never locked by the app
-  return app.getPath('userData')
+  if (!app.isPackaged) return join(process.cwd(), 'dev-data')
+  const driveRoot = findDriveRoot()
+  if (driveRoot) return join(driveRoot, 'app')
+  return app.getPath('userData') // fallback if .vault marker not found
 }
 
 function getDb(): Database.Database {
@@ -55,8 +70,10 @@ function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_media_category ON media_items(category);
   `)
 
-  // Migrate existing DBs that don't have file_modified yet
+  // Migrations
   try { db.exec('ALTER TABLE media_items ADD COLUMN file_modified INTEGER DEFAULT 0') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE media_items ADD COLUMN tech_info TEXT') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE media_items ADD COLUMN last_opened_at INTEGER DEFAULT NULL') } catch { /* already exists */ }
 
   return db
 }
@@ -115,6 +132,27 @@ export function upsertItem(item: {
     )
 }
 
+export function updateTechInfo(filePath: string, info: MediaTechInfo): void {
+  getDb()
+    .prepare('UPDATE media_items SET tech_info = ? WHERE file_path = ?')
+    .run(JSON.stringify(info), filePath)
+}
+
+export function getTechInfo(filePath: string): MediaTechInfo | null {
+  const row = getDb()
+    .prepare('SELECT tech_info FROM media_items WHERE file_path = ?')
+    .get(filePath) as { tech_info: string | null } | undefined
+  if (!row?.tech_info) return null
+  try { return JSON.parse(row.tech_info) as MediaTechInfo } catch { return null }
+}
+
+export function needsTechInfo(filePath: string): boolean {
+  const row = getDb()
+    .prepare('SELECT tech_info FROM media_items WHERE file_path = ?')
+    .get(filePath) as { tech_info: string | null } | undefined
+  return !row?.tech_info
+}
+
 export function clearStoredFileTimes(): void {
   getDb().prepare('UPDATE media_items SET file_modified = 0').run()
 }
@@ -141,11 +179,18 @@ export function deleteOrphanedEntries(foundPaths: Set<string>): void {
   }
 }
 
+export function setLastOpened(filePath: string): void {
+  getDb()
+    .prepare('UPDATE media_items SET last_opened_at = unixepoch() WHERE file_path = ?')
+    .run(filePath)
+}
+
 export function getItems(category: string): object[] {
   return getDb()
     .prepare(
       `SELECT id, title, year, category, file_path as filePath,
-              poster_path as posterPath, description, genre, platform, executable
+              poster_path as posterPath, description, genre, platform, executable,
+              last_opened_at as lastOpenedAt
        FROM media_items WHERE category = ? ORDER BY title ASC`
     )
     .all(category)
@@ -156,7 +201,8 @@ export function getItem(id: number): object | null {
     (getDb()
       .prepare(
         `SELECT id, title, year, category, file_path as filePath,
-                poster_path as posterPath, description, genre, platform, executable
+                poster_path as posterPath, description, genre, platform, executable,
+                last_opened_at as lastOpenedAt
          FROM media_items WHERE id = ?`
       )
       .get(id) as object | undefined) ?? null
@@ -167,14 +213,11 @@ export function getExtras(seriesTitle: string): object[] {
   return getDb()
     .prepare(
       `SELECT id, title, year, category, file_path as filePath,
-              poster_path as posterPath, description, genre, platform, executable
+              poster_path as posterPath, description, genre, platform, executable,
+              last_opened_at as lastOpenedAt
        FROM media_items WHERE category = 'extras' AND genre = ? ORDER BY title ASC`
     )
     .all(seriesTitle)
-}
-
-export function clearCategory(category: string): void {
-  getDb().prepare('DELETE FROM media_items WHERE category = ?').run(category)
 }
 
 export function closeDb(): void {

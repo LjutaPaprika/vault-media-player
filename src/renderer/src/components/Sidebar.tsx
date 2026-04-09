@@ -3,6 +3,9 @@ import { useAppStore, type Page } from '../store/appStore'
 import { useController, type ControllerButton } from '../hooks/useController'
 import styles from './Sidebar.module.css'
 
+// Pages that render a navigable media grid in the content zone
+const CONTENT_PAGES = new Set<Page>(['movies', 'tv', 'anime', 'music', 'books', 'manga', 'games'])
+
 const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'home',     label: 'Home',     icon: '🏠' },
   { id: 'movies',   label: 'Movies',   icon: '🎬' },
@@ -25,12 +28,13 @@ export default function Sidebar(): JSX.Element {
     const next = dir === 'up' ? idx - 1 : idx + 1
     if (next >= 0 && next < NAV_ITEMS.length) {
       setActivePage(NAV_ITEMS[next].id)
+      setFocusZone('sidebar')
       itemRefs.current[next]?.focus()
     }
   }
 
   function enterContent(): void {
-    setFocusZone('content')
+    if (CONTENT_PAGES.has(activePage)) setFocusZone('content')
   }
 
   // Keyboard: only handle input when sidebar owns focus
@@ -45,11 +49,10 @@ export default function Sidebar(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [activePage, isFocused])
 
-  // Controller: only handle input when sidebar owns focus
   const handleButton = useCallback((btn: ControllerButton) => {
     if (!isFocused) return
-    if (btn === 'up')                      navigate('up')
-    if (btn === 'down')                    navigate('down')
+    if (btn === 'up')                        navigate('up')
+    if (btn === 'down')                      navigate('down')
     if (btn === 'right' || btn === 'confirm') enterContent()
   }, [activePage, isFocused])
 

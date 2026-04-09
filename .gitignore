@@ -9,3 +9,18 @@ docs/
 *.tsbuildinfo
 .env
 .env.*
+
+# Drive content — emulators, players, media, and game files never belong in the repo.
+# These entries catch anything that accidentally lands in the project folder
+# (e.g. MAME writing cfg/ relative to the working directory during dev).
+cfg/
+roms/
+media/
+emulators/
+players/
+
+# Generated build artifacts
+build/icon.png
+build/icon.ico
+builder-debug.yml
+builder-effective-config.yaml

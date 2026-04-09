@@ -1,11 +1,103 @@
+/* ── Action bar (shuffle controls) ───────────────────────────────────────── */
+
+.actionBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 24px 0;
+  flex-wrap: wrap;
+}
+
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  transition: color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+
+.actionBtn:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.playShuffledBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #000;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 7px 16px;
+  transition: opacity 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+}
+
+.playShuffledBtn:hover { opacity: 0.88; }
+
+.playShuffledBtn.controllerFocus {
+  box-shadow: 0 0 0 2px var(--bg-base, #1a1a1a), 0 0 0 4px var(--accent);
+}
+
+.btnIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* ── Card controller focus & checked states ──────────────────────────────── */
+
+.controllerFocus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cardChecked {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.checkOverlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.checkOverlayActive {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.checkmark {
+  font-size: 13px;
+  font-weight: 700;
+  color: #000;
+  line-height: 1;
+}
+
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: 20px;
   padding: 24px;
 }
 
 .card {
+  position: relative;
   background: none;
   border: none;
   text-align: left;

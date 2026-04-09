@@ -6,12 +6,14 @@ interface Props {
   actions?: React.ReactNode
   searchValue?: string
   onSearch?: (query: string) => void
+  onBack?: () => void
 }
 
-export default function PageShell({ title, children, actions, searchValue, onSearch }: Props): JSX.Element {
+export default function PageShell({ title, children, actions, searchValue, onSearch, onBack }: Props): JSX.Element {
   return (
     <div className={styles.shell}>
       <div className={styles.header}>
+        {onBack && <button className={styles.backBtn} onClick={onBack}>‹ Back</button>}
         <h1 className={styles.title}>{title}</h1>
         <div className={styles.actions}>
           {onSearch !== undefined && (

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import PageShell from '../components/PageShell'
 import MediaGrid from '../components/MediaGrid'
 import MovieDetailPage from './MovieDetailPage'
 import { useLibrary } from '../hooks/useLibrary'
+import { useAppStore } from '../store/appStore'
 
 interface SelectedMovie {
   title: string
@@ -13,8 +14,11 @@ interface SelectedMovie {
 
 export default function MoviesPage(): JSX.Element {
   const { items, loading, error } = useLibrary('movies')
+  const { contentResetKey } = useAppStore()
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<SelectedMovie | null>(null)
+
+  useEffect(() => { setSelected(null) }, [contentResetKey])
 
   if (selected) {
     return (

@@ -1,0 +1,249 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  min-height: 100%;
+}
+
+/* ── Back button ──────────────────────────────────────────────────────────── */
+
+.back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  width: fit-content;
+  padding: 6px 0;
+  transition: color 0.15s;
+}
+
+.back:hover { color: var(--text-primary); }
+
+.backArrow { font-size: 16px; line-height: 1; }
+
+/* ── Poster + title ───────────────────────────────────────────────────────── */
+
+.hero {
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+}
+
+.heroPoster {
+  width: 160px;
+  flex-shrink: 0;
+  aspect-ratio: 2/3;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+
+.heroPoster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.posterPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-hover) 100%);
+}
+
+.heroInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.heroTitle {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.heroYear {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.heroChips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  padding: 3px 8px;
+  letter-spacing: 0.02em;
+}
+
+.playButton {
+  margin-top: 2px;
+  padding: 9px 22px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  width: fit-content;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+
+.playButton:hover { opacity: 0.85; }
+
+.playButtonFocus {
+  box-shadow: 0 0 0 2px var(--bg-base, #1a1a1a), 0 0 0 4px var(--accent);
+}
+
+/* ── Technical metadata ───────────────────────────────────────────────────── */
+
+.metaSection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 40px;
+  padding: 16px 20px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border, rgba(255,255,255,0.07));
+}
+
+.metaBlock {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.metaLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+
+.metaRows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.metaLang {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.metaDot {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.metaValue {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ── Extras ───────────────────────────────────────────────────────────────── */
+
+.extrasSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.extrasHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+  padding-bottom: 10px;
+}
+
+.extrasTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.extrasCount {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.extrasList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.extraRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s;
+}
+
+.extraRow:hover,
+.extraRow:focus-visible,
+.extraRow.controllerFocus {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.extraRow:focus-visible,
+.extraRow.controllerFocus {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.extraRow.controllerFocus .playIcon { opacity: 1; }
+
+.extraTitle {
+  font-size: 13px;
+  color: var(--text-primary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playIcon {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.extraRow:hover .playIcon,
+.extraRow:focus-visible .playIcon { opacity: 1; }

@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs'
 import { join, extname, basename } from 'path'
-import { upsertItem, getStoredFileTimes, deleteOrphanedEntries } from './database'
+import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, updateTechInfo, needsTechInfo } from './database'
+import { probeFile } from './mediaInfo'
 
 // ─── Incremental scan session state ─────────────────────────────────────────
 // Populated at the start of each scanLibrary call, cleared at the end.
@@ -19,8 +20,8 @@ function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]
 const VIDEO_EXTS = new Set(['.mkv', '.mp4', '.avi', '.mov', '.m4v', '.wmv'])
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.aac', '.ogg', '.wav', '.m4a'])
 const BOOK_EXTS  = new Set(['.epub', '.pdf', '.mobi'])
-const MANGA_EXTS = new Set(['.cbz', '.cbr'])
-const ROM_EXTS   = new Set(['.z64', '.n64', '.iso', '.wbfs', '.rvz', '.xex', '.pkg', '.gba', '.nds', '.sfc', '.smc'])
+const MANGA_EXTS = new Set(['.cbz', '.cbr', '.epub', '.pdf'])
+const ROM_EXTS   = new Set(['.z64', '.n64', '.iso', '.wbfs', '.rvz', '.xex', '.pkg', '.gba', '.gbc', '.gb', '.nds', '.sfc', '.smc'])
 
 // Map rom subfolder name → platform key
 const ROM_PLATFORM: Record<string, string> = {
@@ -33,7 +34,8 @@ const ROM_PLATFORM: Record<string, string> = {
   nds: 'nds',
   snes: 'snes',
   gb: 'gb',
-  gbc: 'gbc'
+  gbc: 'gbc',
+  mame: 'mame'
 }
 
 function tryReadJson(filePath: string): Record<string, unknown> {
@@ -44,7 +46,7 @@ function tryReadJson(filePath: string): Record<string, unknown> {
   }
 }
 
-function findPoster(dir: string): string | null {
+export function findPoster(dir: string): string | null {
   // Check preferred names first
   for (const name of ['poster.jpg', 'poster.png', 'cover.jpg', 'cover.png', 'folder.jpg']) {
     const p = join(dir, name)
@@ -75,7 +77,7 @@ function yearFromFilename(filename: string): number | null {
 // Folders to scan as extras/bonus content
 const KNOWN_EXTRAS_FOLDERS = new Set([
   'featurettes', 'extras', 'bonus', 'specials', 'behind the scenes',
-  'deleted scenes', 'interviews', 'scenes', 'shorts', 'trailers'
+  'deleted scenes', 'interviews', 'scenes', 'shorts', 'trailers', 'nc'
 ])
 
 // Folders to skip entirely
@@ -88,12 +90,69 @@ function folderType(name: string): 'episode' | 'extras' | 'skip' {
   return 'episode'
 }
 
+// Matches strings that start with quality/release info (not real episode titles)
+const QUALITY_RE = /^(720p|1080p|2160p|480p|4k|blu[\s-]?ray|brrip|br\d{3,4}p|web[\s-]?dl|webrip|hdtv|dvdrip|x264|x265|hevc|avc|xvid|divx|aac|ac3|dts|mp3|flac|proper|repack|remux|extended|uncut|theatrical|directors|complete)/i
+
 // Parse episode info from a filename like:
 // "Show Name (2023) - S01E01 - Episode Title (quality).mkv"
+// "Show.Name.S01E01.Episode.Title.mkv"
+// "show.e01e01.extended.mkv" (non-standard season prefix)
 function parseEpisodeInfo(filename: string, season?: number): string | null {
-  // Standard SxxExx format: "- S01E01 - Title"
+  // Filename starts directly with SxxExx: "S01E01-Title [hash].mkv"
+  const leadMatch = filename.match(/^(S\d+E\d+)[-\s]+(.+?)(?:\s*\[[^\]]*\])?\.[^.]+$/i)
+  if (leadMatch) {
+    const badge = leadMatch[1].toUpperCase()
+    const title = leadMatch[2].trim()
+    if (!title || QUALITY_RE.test(title)) return badge
+    return `${badge} · ${title}`
+  }
+
+  // Standard dash-delimited SxxExx: "- S01E01 - Title"
   const seMatch = filename.match(/[-–]\s*(S\d+E\d+)\s*[-–]\s*(.+?)(?:\s*\(.*\))*\.[^.]+$/i)
   if (seMatch) return `${seMatch[1].toUpperCase()} · ${seMatch[2].trim()}`
+
+  // Dot-delimited SxxExx: "show.S01E01.title.or.quality.mkv"
+  const dotSeMatch = filename.match(/\.(S\d+E\d+)\.(.+?)\.[^.]+$/i)
+  if (dotSeMatch) {
+    const badge = dotSeMatch[1].toUpperCase()
+    const rawTitle = dotSeMatch[2].replace(/\./g, ' ').trim()
+    if (QUALITY_RE.test(rawTitle)) return badge   // quality tag — no real title
+    return `${badge} · ${rawTitle}`
+  }
+
+  // Dot-delimited ExxExx (non-standard, e.g. "poi.e01e01.extended..."):
+  // treat first number as season, second as episode
+  const dotEEMatch = filename.match(/\.E(\d+)E(\d+)\./i)
+  if (dotEEMatch) {
+    return `S${dotEEMatch[1].padStart(2, '0')}E${dotEEMatch[2].padStart(2, '0')}`
+  }
+
+  // Dash before SxxExx with no title after (optional version suffix): "[Group] Show - S03E01v2.mkv"
+  const dashBadgeMatch = filename.match(/[-–]\s*(S\d+E\d+)(?:v\d+)?\s*\.[^.]+$/i)
+  if (dashBadgeMatch) return dashBadgeMatch[1].toUpperCase()
+
+  // Space + dash: "Show Name S01E01 - Title - Year Quality.mkv"
+  const spaceDashMatch = filename.match(/\s(S\d+E\d+)\s*[-–]\s*(.+)\.[^.]+$/i)
+  if (spaceDashMatch) {
+    const badge = spaceDashMatch[1].toUpperCase()
+    const parts = spaceDashMatch[2].split(/\s*[-–]\s*/)
+    const titleParts: string[] = []
+    for (const part of parts) {
+      if (/^\d{4}/.test(part) || QUALITY_RE.test(part)) break
+      titleParts.push(part)
+    }
+    const title = titleParts.join(' - ').trim()
+    if (!title || QUALITY_RE.test(title)) return badge
+    return `${badge} · ${title}`
+  }
+
+  // Space-delimited without dashes: "Show Name S01E01 Episode Title.mkv"
+  const spaceMatch = filename.match(/\s(S\d+E\d+)\s+(.+?)\.[^.]+$/i)
+  if (spaceMatch) return `${spaceMatch[1].toUpperCase()} · ${spaceMatch[2].trim()}`
+
+  // Space-delimited badge only: "Show Name S01E01.mkv"
+  const spaceBadge = filename.match(/\s(S\d+E\d+)\.[^.]+$/i)
+  if (spaceBadge) return spaceBadge[1].toUpperCase()
 
   if (season !== undefined) {
     const s = String(season).padStart(2, '0')
@@ -139,7 +198,13 @@ function scanMovieExtras(dir: string, movieTitle: string, poster: string | null)
 
 // ─── Video (movies) ─────────────────────────────────────────────────────────
 
-function scanMovies(rootDir: string): number {
+function probeMovieIfNeeded(filePath: string, ffprobePath: string): void {
+  if (!ffprobePath || !needsTechInfo(filePath)) return
+  const info = probeFile(filePath, ffprobePath)
+  if (info) updateTechInfo(filePath, info)
+}
+
+function scanMovies(rootDir: string, ffprobePath = ''): number {
   if (!existsSync(rootDir)) return 0
   let count = 0
 
@@ -159,6 +224,7 @@ function scanMovies(rootDir: string): number {
           filePath,
           posterPath: sidecarPoster
         })
+        probeMovieIfNeeded(filePath, ffprobePath)
         count++
       }
       continue
@@ -179,6 +245,7 @@ function scanMovies(rootDir: string): number {
         description: (meta.description as string) ?? null,
         genre: Array.isArray(meta.genre) ? (meta.genre as string[]).join(', ') : null
       })
+      probeMovieIfNeeded(firstVideo, ffprobePath)
       scanMovieExtras(movieDir, movieTitle, poster)
       count++
     }
@@ -207,6 +274,29 @@ function findFirstMovieVideo(dir: string): string | null {
 
 // ─── Video (tv / anime — episode-per-entry) ─────────────────────────────────
 
+// Load optional episodes.json from a show's root folder.
+// Format: { "S01E01": "Pilot", "S01E02": "Ghosts", ... }
+function loadEpisodeMap(showDir: string): Record<string, string> | null {
+  const mapPath = join(showDir, 'episodes.json')
+  if (!existsSync(mapPath)) return null
+  try {
+    return JSON.parse(readFileSync(mapPath, 'utf-8')) as Record<string, string>
+  } catch {
+    return null
+  }
+}
+
+// Apply episode name lookup: given a raw episodeInfo string (e.g. "S01E01" or "S01E01 · Raw Title"),
+// replace/set the title from the map if available.
+function applyEpisodeMap(info: string, map: Record<string, string>): string {
+  const badgeMatch = info.match(/^(S\d+E\d+)/i)
+  if (!badgeMatch) return info
+  const badge = badgeMatch[1].toUpperCase()
+  const name = map[badge]
+  if (!name) return info
+  return `${badge} · ${name}`
+}
+
 function scanEpisodeCategory(rootDir: string, category: string): number {
   if (!existsSync(rootDir)) return 0
   let count = 0
@@ -217,7 +307,8 @@ function scanEpisodeCategory(rootDir: string, category: string): number {
     const poster = findPoster(showDir)
     const seriesTitle = titleFromFilename(entry.name)
     const year = yearFromFilename(entry.name)
-    count += scanEpisodes(showDir, seriesTitle, year, poster, category)
+    const episodeMap = loadEpisodeMap(showDir)
+    count += scanEpisodes(showDir, seriesTitle, year, poster, category, undefined, episodeMap)
   }
   return count
 }
@@ -228,7 +319,8 @@ function scanEpisodes(
   year: number | null,
   poster: string | null,
   category: string,
-  season?: number
+  season?: number,
+  episodeMap?: Record<string, string> | null
 ): number {
   let count = 0
   const entries = readdirSync(dir, { withFileTypes: true })
@@ -243,13 +335,14 @@ function scanEpisodes(
         // Detect season folder (S01, S02, Season 1, etc.)
         const seasonMatch = entry.name.match(/^(?:S|Season\s*)(\d+)$/i)
         const childSeason = seasonMatch ? parseInt(seasonMatch[1], 10) : season
-        count += scanEpisodes(join(dir, entry.name), seriesTitle, year, poster, category, childSeason)
+        count += scanEpisodes(join(dir, entry.name), seriesTitle, year, poster, category, childSeason, episodeMap)
       }
       continue
     }
     if (!entry.isFile() || !VIDEO_EXTS.has(extname(entry.name).toLowerCase())) continue
 
-    const episodeInfo = parseEpisodeInfo(entry.name, season) ?? titleFromFilename(entry.name)
+    let episodeInfo = parseEpisodeInfo(entry.name, season) ?? titleFromFilename(entry.name)
+    if (episodeMap) episodeInfo = applyEpisodeMap(episodeInfo, episodeMap)
     const epPath = join(dir, entry.name)
     checkAndUpsert(epPath, {
       title: seriesTitle,
@@ -290,78 +383,117 @@ function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | nul
 
 // ─── Music ─────────────────────────────────────────────────────────────────
 
-function scanMusic(rootDir: string): number {
+function scanMusic(rootDir: string, ffprobePath = ''): number {
   if (!existsSync(rootDir)) return 0
   let count = 0
-  // Artist → Album → tracks
-  for (const artist of readdirSync(rootDir, { withFileTypes: true })) {
-    if (!artist.isDirectory()) continue
-    const artistDir = join(rootDir, artist.name)
-    for (const album of readdirSync(artistDir, { withFileTypes: true })) {
-      if (!album.isDirectory()) continue
-      const albumDir = join(artistDir, album.name)
-      const firstTrack = readdirSync(albumDir).find((f) =>
-        AUDIO_EXTS.has(extname(f).toLowerCase())
-      )
-      if (firstTrack) {
-        const trackPath = join(albumDir, firstTrack)
-        checkAndUpsert(trackPath, {
-          title: album.name.replace(/\s*\(\d{4}\)$/, '').trim(),
-          year: yearFromFilename(album.name),
-          category: 'music',
-          filePath: trackPath,
-          posterPath: findPoster(albumDir),
-          genre: artist.name
-        })
-        count++
+  // Each top-level folder is an album or playlist
+  for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const albumDir = join(rootDir, entry.name)
+    const audioFiles = readdirSync(albumDir).filter((f) => AUDIO_EXTS.has(extname(f).toLowerCase())).sort()
+    if (audioFiles.length === 0) continue
+
+    // Probe and cache durations for all tracks during scan — keeps album opens instant
+    if (ffprobePath) {
+      const albumJsonPath = join(albumDir, 'album.json')
+      const albumData = tryReadJson(albumJsonPath)
+      const cache = (albumData.durations as Record<string, number>) ?? {}
+      let updated = false
+      for (const f of audioFiles) {
+        if (cache[f] !== undefined) continue
+        const info = probeFile(join(albumDir, f), ffprobePath)
+        if (info && info.duration > 0) { cache[f] = info.duration; updated = true }
+      }
+      if (updated) {
+        try { writeFileSync(albumJsonPath, JSON.stringify({ ...albumData, durations: cache })) } catch { /* non-fatal */ }
       }
     }
+
+    const firstTrack = audioFiles[0]
+    const trackPath = join(albumDir, firstTrack)
+    const albumMeta = tryReadJson(join(albumDir, 'album.json'))
+    checkAndUpsert(trackPath, {
+      title: entry.name.replace(/\s*\(\d{4}\)$/, '').trim(),
+      year: yearFromFilename(entry.name),
+      category: 'music',
+      filePath: trackPath,
+      posterPath: findPoster(albumDir),
+      genre: (albumMeta.artist as string) ?? null
+    })
+    count++
   }
   return count
 }
 
 // ─── Books ─────────────────────────────────────────────────────────────────
+// Structure: books/{Title} - {Author}/{filename}.epub
+//            books/{Title}.jpg   (optional cover at root level)
+
 
 function scanBooks(rootDir: string): number {
   if (!existsSync(rootDir)) return 0
   let count = 0
-  function walk(dir: string): void {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name)
-      if (entry.isDirectory()) { walk(full); continue }
-      if (BOOK_EXTS.has(extname(entry.name).toLowerCase())) {
-        checkAndUpsert(full, {
-          title: titleFromFilename(entry.name),
-          category: 'books',
-          filePath: full
-        })
-        count++
-      }
-    }
+
+  for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const bookDir = join(rootDir, entry.name)
+
+    // Parse "Title - Author" from folder name
+    const dashIdx = entry.name.indexOf(' - ')
+    const title   = dashIdx >= 0 ? entry.name.slice(0, dashIdx).trim() : entry.name
+    const author  = dashIdx >= 0 ? entry.name.slice(dashIdx + 3).trim() : null
+
+    // Find the first book file inside the folder
+    let bookFile: string | null = null
+    try {
+      bookFile = readdirSync(bookDir).find(f => BOOK_EXTS.has(extname(f).toLowerCase())) ?? null
+    } catch { continue }
+    if (!bookFile) continue
+
+    const filePath   = join(bookDir, bookFile)
+    const posterPath = findPoster(bookDir)
+
+    checkAndUpsert(filePath, {
+      title,
+      category: 'books',
+      filePath,
+      posterPath: posterPath ?? null,
+      genre: author   // repurpose genre field for author
+    })
+    count++
   }
-  walk(rootDir)
   return count
 }
 
 // ─── Manga ─────────────────────────────────────────────────────────────────
 
+// Strip Suwayomi scanlation group prefix: "Group Name_Vol.1 Ch.8.5 - Title" → "Vol.1 Ch.8.5 - Title"
+function cleanMangaTitle(raw: string): string {
+  const m = raw.match(/^.+_(Vol\.[\d.]+.*|Ch\.[\d.]+.*)$/i)
+  if (m) return m[1].trim()
+  return raw
+}
+
 function scanManga(rootDir: string): number {
   if (!existsSync(rootDir)) return 0
   let count = 0
-  // Series folder → volume files
   for (const series of readdirSync(rootDir, { withFileTypes: true })) {
     if (!series.isDirectory()) continue
     const seriesDir = join(rootDir, series.name)
-    const firstVol = readdirSync(seriesDir).find((f) =>
-      MANGA_EXTS.has(extname(f).toLowerCase())
-    )
-    if (firstVol) {
-      const volPath = join(seriesDir, firstVol)
-      checkAndUpsert(volPath, {
-        title: series.name,
+    let files: string[] = []
+    try { files = readdirSync(seriesDir).filter(f => MANGA_EXTS.has(extname(f).toLowerCase())).sort() }
+    catch { continue }
+    if (!files.length) continue
+    const poster = findPoster(seriesDir)
+    for (const file of files) {
+      const filePath = join(seriesDir, file)
+      // Single file in folder → use folder name as title; multiple → use filename
+      const title = files.length === 1 ? series.name : cleanMangaTitle(basename(file, extname(file)))
+      checkAndUpsert(filePath, {
+        title,
         category: 'manga',
-        filePath: volPath,
-        posterPath: findPoster(seriesDir)
+        filePath,
+        posterPath: poster
       })
       count++
     }
@@ -399,7 +531,30 @@ function scanPcGames(rootDir: string): number {
 
 function findExe(dir: string): string | null {
   const entries = readdirSync(dir)
-  return entries.find((f) => extname(f).toLowerCase() === '.exe') ?? null
+
+  if (process.platform === 'win32') {
+    return entries.find((f) => extname(f).toLowerCase() === '.exe') ?? null
+  }
+
+  if (process.platform === 'darwin') {
+    // .app bundles are directories — return the path to the inner binary so it can be spawned directly
+    const bundle = entries.find((f) => extname(f).toLowerCase() === '.app')
+    if (bundle) {
+      const appName = basename(bundle, '.app')
+      const innerBin = join(bundle, 'Contents', 'MacOS', appName)
+      if (existsSync(join(dir, innerBin))) return innerBin
+    }
+    return null
+  }
+
+  // Linux — find any file with executable permission bits set
+  for (const f of entries) {
+    try {
+      const st = statSync(join(dir, f))
+      if (!st.isDirectory() && (st.mode & 0o111) !== 0) return f
+    } catch { /* skip unreadable entries */ }
+  }
+  return null
 }
 
 // ─── ROMs ───────────────────────────────────────────────────────────────────
@@ -412,17 +567,67 @@ function scanRoms(rootDir: string): number {
     const platform = ROM_PLATFORM[platformFolder.name.toLowerCase()]
     if (!platform) continue
     const platformDir = join(rootDir, platformFolder.name)
-    for (const entry of readdirSync(platformDir, { withFileTypes: true })) {
-      if (!entry.isFile()) continue
-      if (!ROM_EXTS.has(extname(entry.name).toLowerCase())) continue
-      const romPath = join(platformDir, entry.name)
-      checkAndUpsert(romPath, {
-        title: titleFromFilename(entry.name),
-        category: 'games',
-        filePath: romPath,
-        platform
-      })
-      count++
+    if (platform === 'mame') {
+      // Each game lives in its own subfolder: mame/Mappy/mappy.zip
+      for (const entry of readdirSync(platformDir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        const gameDir = join(platformDir, entry.name)
+        const zips = readdirSync(gameDir).filter((f) => extname(f).toLowerCase() === '.zip')
+        if (!zips.length) continue
+        // When multiple zips exist (e.g. parent + clone), prefer the one whose
+        // name shares the longest common prefix with the folder name.
+        const folderKey = entry.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const zip = zips.reduce((best, f) => {
+          const nameKey = basename(f, '.zip').toLowerCase().replace(/[^a-z0-9]/g, '')
+          const bestKey = basename(best, '.zip').toLowerCase().replace(/[^a-z0-9]/g, '')
+          let nMatch = 0; let bMatch = 0
+          for (let i = 0; i < Math.min(nameKey.length, folderKey.length); i++) {
+            if (nameKey[i] !== folderKey[i]) break; nMatch++
+          }
+          for (let i = 0; i < Math.min(bestKey.length, folderKey.length); i++) {
+            if (bestKey[i] !== folderKey[i]) break; bMatch++
+          }
+          return nMatch > bMatch ? f : best
+        })
+        if (!zip) continue
+        const romPath = join(gameDir, zip)
+        checkAndUpsert(romPath, {
+          title: entry.name,
+          category: 'games',
+          filePath: romPath,
+          posterPath: findPoster(gameDir),
+          platform
+        })
+        count++
+      }
+    } else {
+      for (const entry of readdirSync(platformDir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          // Folder-per-game structure: rom/xbox360/Halo 3/game.iso — supports posters
+          const gameDir = join(platformDir, entry.name)
+          const rom = readdirSync(gameDir).find((f) => ROM_EXTS.has(extname(f).toLowerCase()))
+          if (!rom) continue
+          const romPath = join(gameDir, rom)
+          checkAndUpsert(romPath, {
+            title: entry.name,
+            category: 'games',
+            filePath: romPath,
+            posterPath: findPoster(gameDir),
+            platform
+          })
+          count++
+        } else if (entry.isFile() && ROM_EXTS.has(extname(entry.name).toLowerCase())) {
+          // Flat file fallback: rom/xbox360/game.iso
+          const romPath = join(platformDir, entry.name)
+          checkAndUpsert(romPath, {
+            title: titleFromFilename(entry.name),
+            category: 'games',
+            filePath: romPath,
+            platform
+          })
+          count++
+        }
+      }
     }
   }
   return count
@@ -430,7 +635,7 @@ function scanRoms(rootDir: string): number {
 
 // ─── Main entry ─────────────────────────────────────────────────────────────
 
-export function scanLibrary(root: string): number {
+export function scanLibrary(root: string, ffprobePath = ''): number {
   const m = (sub: string) => join(root, 'media', sub)
   const g = (sub: string) => join(root, 'games', sub)
 
@@ -439,10 +644,10 @@ export function scanLibrary(root: string): number {
   _foundPaths  = new Set<string>()
 
   let total = 0
-  total += scanMovies(m('movies'))
+  total += scanMovies(m('movies'), ffprobePath)
   total += scanEpisodeCategory(m('tv'), 'tv')
   total += scanEpisodeCategory(m('anime'), 'anime')
-  total += scanMusic(m('music'))
+  total += scanMusic(m('music'), ffprobePath)
   total += scanBooks(m('books'))
   total += scanManga(m('manga'))
   total += scanPcGames(g('pc'))
