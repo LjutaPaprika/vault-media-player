@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Post-build:
-// 1. Move all files from win-unpacked/ up into launcher/ (flatten)
-// 2. Embed icon.ico into Vault.exe using rcedit
+// 1. Move all files from win-unpacked/ up into app/ (flatten)
+// 2. Delete electron-builder build artifacts (not needed at runtime)
+// 3. Embed icon.ico and version info into Vault.exe using rcedit
+// 4. Unhide app/ folder, hide everything inside except Vault.exe
 
-const { execFileSync } = require('child_process')
+const { execFileSync, spawnSync } = require('child_process')
 const { readdirSync, existsSync, renameSync, rmSync } = require('fs')
 const path = require('path')
 const os = require('os')
@@ -12,7 +14,10 @@ const outputDir   = 'E:\\app'
 const unpackedDir = path.join(outputDir, 'win-unpacked')
 const icoPath     = path.join(__dirname, '..', 'build', 'icon.ico')
 
-// 1. Flatten win-unpacked/ into app/ (remove stale targets first so rename doesn't conflict)
+// Build artifacts written by electron-builder that serve no runtime purpose
+const BUILD_ARTIFACTS = new Set(['builder-debug.yml', 'builder-effective-config.yaml'])
+
+// 1. Flatten win-unpacked/ into app/
 if (existsSync(unpackedDir)) {
   for (const entry of readdirSync(unpackedDir)) {
     const dest = path.join(outputDir, entry)
@@ -23,7 +28,14 @@ if (existsSync(unpackedDir)) {
   console.log('✓ flattened win-unpacked into app/')
 }
 
-// 2. Apply icon
+// 2. Delete build artifacts
+for (const artifact of BUILD_ARTIFACTS) {
+  const p = path.join(outputDir, artifact)
+  if (existsSync(p)) rmSync(p, { force: true })
+}
+console.log('✓ build artifacts removed')
+
+// 3. Apply icon and version info
 function findRcedit() {
   const cacheBase = path.join(os.homedir(), 'AppData', 'Local', 'electron-builder', 'Cache', 'winCodeSign')
   if (!existsSync(cacheBase)) throw new Error('electron-builder winCodeSign cache not found')
@@ -36,8 +48,8 @@ function findRcedit() {
 }
 
 const vaultExe = path.join(outputDir, 'Vault.exe')
-const rcedit = findRcedit()
 if (existsSync(vaultExe)) {
+  const rcedit = findRcedit()
   execFileSync(rcedit, [vaultExe, '--set-icon', icoPath])
   execFileSync(rcedit, [vaultExe,
     '--set-version-string', 'FileDescription', 'Vault',
@@ -47,3 +59,11 @@ if (existsSync(vaultExe)) {
   ])
   console.log(`✓ icon and version info applied: ${vaultExe}`)
 }
+
+// 4. Unhide app/ folder itself, hide all contents except Vault.exe
+spawnSync('attrib', ['-h', '-s', outputDir], { shell: true })
+for (const entry of readdirSync(outputDir)) {
+  if (entry === 'Vault.exe') continue
+  spawnSync('attrib', ['+h', path.join(outputDir, entry)], { shell: true })
+}
+console.log('✓ app/ visible, internals hidden')

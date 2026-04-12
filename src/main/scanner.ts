@@ -1,19 +1,28 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs'
 import { join, extname, basename } from 'path'
-import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, updateTechInfo, needsTechInfo } from './database'
+import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, updateTechInfo, needsTechInfo, setConfig } from './database'
 import { probeFile } from './mediaInfo'
 
 // ─── Incremental scan session state ─────────────────────────────────────────
 // Populated at the start of each scanLibrary call, cleared at the end.
-let _storedTimes = new Map<string, number>()
-let _foundPaths  = new Set<string>()
+let _storedTimes     = new Map<string, number>()
+let _foundPaths      = new Set<string>()
+let _updatedCount    = 0
+let _categoryBytes   = new Map<string, number>()
+let _musicTrackCount = 0
+let _mangaSeriesCount = 0
 
 // Call instead of upsertItem directly. Skips files whose mtime hasn't changed.
 function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]): boolean {
-  const mtime = Math.floor(statSync(filePath).mtimeMs)
+  const { mtimeMs, size } = statSync(filePath)
+  const mtime = Math.floor(mtimeMs)
   _foundPaths.add(filePath)
+  // Accumulate file size per category regardless of whether the file changed
+  const cat = item.category
+  _categoryBytes.set(cat, (_categoryBytes.get(cat) ?? 0) + size)
   if (_storedTimes.get(filePath) === mtime) return false // unchanged — skip
   upsertItem({ ...item, fileModified: mtime })
+  _updatedCount++
   return true
 }
 
@@ -392,6 +401,7 @@ function scanMusic(rootDir: string, ffprobePath = ''): number {
     const albumDir = join(rootDir, entry.name)
     const audioFiles = readdirSync(albumDir).filter((f) => AUDIO_EXTS.has(extname(f).toLowerCase())).sort()
     if (audioFiles.length === 0) continue
+    _musicTrackCount += audioFiles.length
 
     // Probe and cache durations for all tracks during scan — keeps album opens instant
     if (ffprobePath) {
@@ -484,6 +494,7 @@ function scanManga(rootDir: string): number {
     try { files = readdirSync(seriesDir).filter(f => MANGA_EXTS.has(extname(f).toLowerCase())).sort() }
     catch { continue }
     if (!files.length) continue
+    _mangaSeriesCount++
     const poster = findPoster(seriesDir)
     for (const file of files) {
       const filePath = join(seriesDir, file)
@@ -635,13 +646,17 @@ function scanRoms(rootDir: string): number {
 
 // ─── Main entry ─────────────────────────────────────────────────────────────
 
-export function scanLibrary(root: string, ffprobePath = ''): number {
+export function scanLibrary(root: string, ffprobePath = ''): { total: number; updated: number } {
   const m = (sub: string) => join(root, 'media', sub)
   const g = (sub: string) => join(root, 'games', sub)
 
   // Initialize incremental scan session
-  _storedTimes = getStoredFileTimes()
-  _foundPaths  = new Set<string>()
+  _storedTimes      = getStoredFileTimes()
+  _foundPaths       = new Set<string>()
+  _updatedCount     = 0
+  _categoryBytes    = new Map<string, number>()
+  _musicTrackCount  = 0
+  _mangaSeriesCount = 0
 
   let total = 0
   total += scanMovies(m('movies'), ffprobePath)
@@ -656,9 +671,25 @@ export function scanLibrary(root: string, ffprobePath = ''): number {
   // Remove DB entries for files that no longer exist on disk
   deleteOrphanedEntries(_foundPaths)
 
-  // Clear session state
-  _storedTimes = new Map()
-  _foundPaths  = new Set()
+  const updated = _updatedCount
 
-  return total
+  // Persist storage and count stats to config so the stats page can read them without re-walking the disk
+  const storageTotal = [..._categoryBytes.values()].reduce((a, b) => a + b, 0)
+  setConfig('storageStats', JSON.stringify({
+    total: storageTotal,
+    byCategory: Object.fromEntries(_categoryBytes),
+    musicTrackCount: _musicTrackCount,
+    mangaSeriesCount: _mangaSeriesCount,
+    computedAt: Date.now()
+  }))
+
+  // Clear session state
+  _storedTimes      = new Map()
+  _foundPaths       = new Set()
+  _updatedCount     = 0
+  _categoryBytes    = new Map()
+  _musicTrackCount  = 0
+  _mangaSeriesCount = 0
+
+  return { total, updated }
 }

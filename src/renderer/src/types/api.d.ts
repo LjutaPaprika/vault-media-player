@@ -107,6 +107,32 @@ interface SystemInfo {
   gpus: GpuInfo[]
 }
 
+interface StorageStats {
+  total: number
+  byCategory: Record<string, number>
+  musicTrackCount: number
+  mangaSeriesCount: number
+  computedAt: number
+}
+
+interface LibraryStats {
+  counts: Record<string, number>
+  seriesCounts: Record<string, number>
+  platforms: { platform: string; count: number }[]
+  recentlyOpened: { title: string; category: string; filePath: string; lastOpenedAt: number }[]
+  total: number
+  storage: StorageStats | null
+}
+
+interface AppInfo {
+  version: string
+  runtime: { electron: string; node: string; chrome: string }
+  memoryMB: number
+  dbSize: number
+  tools: { ffprobe: boolean; ytdlp: boolean }
+  driveInfo: { freeBytes: number; totalBytes: number } | null
+}
+
 interface Window {
   api: {
     window: {
@@ -120,6 +146,7 @@ interface Window {
       findDrive: (label: string) => Promise<string | null>
       scan: () => Promise<{ count: number }>
       forceScan: () => Promise<{ count: number }>
+      getStats: () => Promise<LibraryStats>
       getItems: (category: string) => Promise<MediaItem[]>
       getItem: (id: number) => Promise<MediaItem | null>
       readImage: (filePath: string) => Promise<string | null>
@@ -167,7 +194,8 @@ interface Window {
       closeCbz: () => Promise<void>
     }
     system: {
-      getInfo: () => Promise<SystemInfo>
+      getInfo:    () => Promise<SystemInfo>
+      getAppInfo: () => Promise<AppInfo>
     }
     platform: NodeJS.Platform
   }

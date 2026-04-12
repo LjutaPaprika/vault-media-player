@@ -1,5 +1,5 @@
-import { ipcMain, BrowserWindow, shell, protocol } from 'electron'
-import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from 'fs'
+import { app, ipcMain, BrowserWindow, shell, protocol } from 'electron'
+import { readFileSync, existsSync, statSync, readdirSync, writeFileSync, mkdirSync } from 'fs'
 import { extname, dirname, join, basename } from 'path'
 import { spawn, spawnSync } from 'child_process'
 import { cpus, totalmem } from 'os'
@@ -10,7 +10,7 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened, getStats, getDbPath } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -71,8 +71,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const root = findDriveByLabel(label)
     if (!root) throw new Error(`Library drive "${label}" not found. Is it plugged in?`)
     hideSystemFolders(root)
-    const count = scanLibrary(root, getToolPath(root, 'ffprobe'))
-    return { count }
+    const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'))
+    return { count: updated }
   })
 
   ipcMain.handle('library:forceScan', () => {
@@ -82,8 +82,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (!root) throw new Error(`Library drive "${label}" not found. Is it plugged in?`)
     hideSystemFolders(root)
     clearStoredFileTimes()
-    const count = scanLibrary(root, getToolPath(root, 'ffprobe'))
-    return { count }
+    const { total } = scanLibrary(root, getToolPath(root, 'ffprobe'))
+    return { count: total }
   })
 
   // ─── Library queries ──────────────────────────────────────────────────────
@@ -139,6 +139,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return tracks
   })
 
+  ipcMain.handle('library:getStats',        () => getStats())
   ipcMain.handle('library:getItems',        (_event, category: string) => getItems(category))
   ipcMain.handle('library:getItem',         (_event, id: number) => getItem(id))
   ipcMain.handle('library:getExtras',       (_event, seriesTitle: string) => getExtras(seriesTitle))
@@ -374,6 +375,70 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
     cachedSystemInfo = { platform: process.platform as string, ramGB, cpuModel, cpuCores, gpus }
     return cachedSystemInfo
+  })
+
+  ipcMain.handle('system:getAppInfo', async () => {
+    const root = resolveLibraryRoot()
+
+    const version = app.getVersion()
+
+    const runtime = {
+      electron: process.versions.electron ?? 'unknown',
+      node:     process.versions.node     ?? 'unknown',
+      chrome:   process.versions.chrome   ?? 'unknown'
+    }
+
+    const memoryMB = Math.round(process.memoryUsage().rss / (1024 * 1024))
+
+    let dbSize = 0
+    try { dbSize = statSync(getDbPath()).size } catch { /* db not created yet */ }
+
+    const ffprobePath = getToolPath(root, 'ffprobe')
+    const ytdlpPath   = getToolPath(root, 'yt-dlp')
+    const tools = {
+      ffprobe: existsSync(ffprobePath),
+      ytdlp:   existsSync(ytdlpPath)
+    }
+
+    let driveInfo: { freeBytes: number; totalBytes: number } | null = null
+    if (process.platform === 'win32' && root.length >= 2) {
+      const driveLetter = root.charAt(0)
+      try {
+        const stdout = await new Promise<string>((resolve) => {
+          let out = ''
+          const ps = spawn('powershell', [
+            '-NoProfile', '-Command',
+            `Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='${driveLetter}:'" | Select-Object FreeSpace,Size | ConvertTo-Json -Compress`
+          ])
+          ps.stdout.on('data', (d: Buffer) => { out += d.toString() })
+          ps.on('close', () => resolve(out.trim()))
+          ps.on('error', () => resolve(''))
+          setTimeout(() => { try { ps.kill() } catch { /* ignore */ } resolve('') }, 5000)
+        })
+        if (stdout) {
+          const data = JSON.parse(stdout) as { FreeSpace: number; Size: number }
+          driveInfo = { freeBytes: data.FreeSpace, totalBytes: data.Size }
+        }
+      } catch { /* non-fatal */ }
+    } else if (process.platform !== 'win32') {
+      // macOS / Linux: use `df -k <path>` — output columns are:
+      // Filesystem  1K-blocks  Used  Available  Capacity  Mounted on  (macOS)
+      // Filesystem  1K-blocks  Used  Available  Use%      Mounted on  (Linux)
+      try {
+        const dfOut = spawnSync('df', ['-k', root], { encoding: 'utf-8' }).stdout ?? ''
+        const lines = dfOut.trim().split('\n')
+        if (lines.length >= 2) {
+          const parts = lines[1].trim().split(/\s+/)
+          const totalKB = parseInt(parts[1], 10)
+          const freeKB  = parseInt(parts[3], 10)
+          if (!isNaN(totalKB) && !isNaN(freeKB)) {
+            driveInfo = { freeBytes: freeKB * 1024, totalBytes: totalKB * 1024 }
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    return { version, runtime, memoryMB, dbSize, tools, driveInfo }
   })
 
   // ─── Sync ─────────────────────────────────────────────────────────────────

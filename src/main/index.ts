@@ -1,7 +1,8 @@
 import { app, BrowserWindow, shell, protocol } from 'electron'
-import { join } from 'path'
+import { join, dirname } from 'path'
 import { createReadStream, statSync, existsSync } from 'fs'
 import { Readable } from 'stream'
+import { spawnSync } from 'child_process'
 
 // Must be called before app.whenReady()
 protocol.registerSchemesAsPrivileged([
@@ -10,6 +11,10 @@ protocol.registerSchemesAsPrivileged([
 ])
 import { registerIpcHandlers } from './ipc'
 import { closeDb } from './database'
+
+if (app.isPackaged && process.platform === 'win32') {
+  spawnSync('attrib', ['-h', '-s', dirname(app.getPath('exe'))], { shell: true })
+}
 
 function createWindow(): void {
   const win = new BrowserWindow({

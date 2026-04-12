@@ -11,7 +11,7 @@ export default function HomePage(): JSX.Element {
     setScanResult(null)
     try {
       const result = await window.api.library.scan()
-      setScanResult(`Scan complete — ${result.count} items indexed.`)
+      setScanResult(result.count === 0 ? 'Scan complete — no changes detected.' : `Scan complete — ${result.count} new or updated item${result.count === 1 ? '' : 's'} indexed.`)
     } catch (e) {
       setScanResult('Scan failed. Check your library root path in settings.')
     } finally {

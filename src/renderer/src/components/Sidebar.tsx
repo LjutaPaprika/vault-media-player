@@ -12,9 +12,10 @@ const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'tv',       label: 'TV Shows', icon: '📺' },
   { id: 'anime',    label: 'Anime',    icon: '⛩️' },
   { id: 'music',    label: 'Music',    icon: '🎵' },
-  { id: 'books',    label: 'Books',    icon: '📚' },
-  { id: 'manga',    label: 'Manga',    icon: '🗂️' },
+  { id: 'books',    label: 'Books',    icon: '📖' },
+  { id: 'manga',    label: 'Manga',    icon: '📚' },
   { id: 'games',    label: 'Games',    icon: '🎮' },
+  { id: 'stats',    label: 'Stats',    icon: '📊' },
   { id: 'settings', label: 'Settings', icon: '⚙️' }
 ]
 

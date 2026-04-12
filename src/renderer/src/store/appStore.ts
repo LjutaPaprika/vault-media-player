@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type Page = 'home' | 'movies' | 'tv' | 'anime' | 'music' | 'books' | 'manga' | 'games' | 'settings'
+export type Page = 'home' | 'movies' | 'tv' | 'anime' | 'music' | 'books' | 'manga' | 'games' | 'stats' | 'settings'
 
 // 'sidebar' = controller/keyboard controls sidebar navigation
 // 'content' = controller/keyboard controls the media grid / page content

@@ -9,6 +9,7 @@
     "build:win": "npm run build && electron-builder --win",
     "deploy": "npm run build && electron-builder --win --config.directories.output=E:\\app && node scripts/apply-icon.js",
     "build:mac": "npm run build && electron-builder --mac",
+    "deploy:mac": "npm run build && electron-builder --mac --config.mac.target=dir --config.directories.output=/Volumes/VAULT/app",
     "build:linux": "npm run build && electron-builder --linux",
     "rebuild-native": "electron-rebuild -f -w better-sqlite3"
   },
@@ -40,6 +41,7 @@
     "directories": {
       "output": "dist"
     },
+    "afterPack": "scripts/after-pack.js",
     "asar": true,
     "asarUnpack": [
       "node_modules/better-sqlite3/**/*"
@@ -58,10 +60,14 @@
       }
     },
     "mac": {
-      "target": "dmg",
-      "artifactName": "Vault.dmg"
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] }
+      ],
+      "artifactName": "Vault-${arch}.dmg"
     },
     "linux": {
+      "icon": "build/icon.png",
       "target": "AppImage",
       "artifactName": "Vault.AppImage"
     }

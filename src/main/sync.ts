@@ -45,7 +45,7 @@ export function findDriveByLabel(label: string): string | null {
 }
 
 /** Folders on the vault drive that belong to the app, not the media library. Never synced to cold storage. */
-const SYSTEM_FOLDERS = ['players', 'app']
+const SYSTEM_FOLDERS = ['players']
 
 /** Mark non-media folders on the drive as hidden so Explorer doesn't show them. Windows-only. */
 export function hideSystemFolders(driveRoot: string): void {

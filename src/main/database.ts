@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
-import { join, dirname } from 'path'
+import { join, dirname, basename } from 'path'
 import { mkdirSync, existsSync } from 'fs'
 import type { MediaTechInfo } from './mediaInfo'
 
@@ -218,6 +218,85 @@ export function getExtras(seriesTitle: string): object[] {
        FROM media_items WHERE category = 'extras' AND genre = ? ORDER BY title ASC`
     )
     .all(seriesTitle)
+}
+
+export interface LibraryStats {
+  counts: Record<string, number>
+  seriesCounts: Record<string, number>
+  platforms: { platform: string; count: number }[]
+  recentlyOpened: { title: string; category: string; filePath: string; lastOpenedAt: number }[]
+  total: number
+  storage: {
+    total: number
+    byCategory: Record<string, number>
+    musicTrackCount: number
+    mangaSeriesCount: number
+    computedAt: number
+  } | null
+}
+
+export function getStats(): LibraryStats {
+  const db = getDb()
+
+  const countRows = db
+    .prepare('SELECT category, COUNT(*) as count FROM media_items GROUP BY category')
+    .all() as { category: string; count: number }[]
+  const counts: Record<string, number> = {}
+  for (const r of countRows) counts[r.category] = r.count
+
+  // TV and anime: COUNT(DISTINCT title) works because all episodes share the show's title
+  const seriesRows = db
+    .prepare("SELECT category, COUNT(DISTINCT title) as count FROM media_items WHERE category IN ('tv', 'anime') GROUP BY category")
+    .all() as { category: string; count: number }[]
+  const seriesCounts: Record<string, number> = {}
+  for (const r of seriesRows) seriesCounts[r.category] = r.count
+
+  // Manga: each chapter has its own title, so we count distinct parent directories in JS
+  const mangaPaths = db
+    .prepare("SELECT file_path FROM media_items WHERE category = 'manga'")
+    .all() as { file_path: string }[]
+  if (mangaPaths.length > 0) {
+    seriesCounts.manga = new Set(mangaPaths.map((r) => dirname(r.file_path))).size
+  }
+
+  const platforms = db
+    .prepare("SELECT platform, COUNT(*) as count FROM media_items WHERE category = 'games' AND platform IS NOT NULL GROUP BY platform ORDER BY count DESC")
+    .all() as { platform: string; count: number }[]
+
+  // Recently opened: fetch a larger window and deduplicate in JS so manga chapters
+  // collapse to their series name (TV/anime already share a title, so SQL GROUP BY
+  // works for them, but manga chapter titles are unique per file).
+  const allRecent = db
+    .prepare('SELECT title, category, file_path as filePath, last_opened_at as lastOpenedAt FROM media_items WHERE last_opened_at IS NOT NULL ORDER BY last_opened_at DESC LIMIT 200')
+    .all() as { title: string; category: string; filePath: string; lastOpenedAt: number }[]
+
+  const seen = new Map<string, { title: string; category: string; filePath: string; lastOpenedAt: number }>()
+  for (const row of allRecent) {
+    const key = row.category === 'manga'
+      ? `manga:${dirname(row.filePath)}`
+      : `${row.category}:${row.title}`
+    if (!seen.has(key)) {
+      seen.set(key, {
+        ...row,
+        title: row.category === 'manga' ? basename(dirname(row.filePath)) : row.title
+      })
+    }
+  }
+  const recentlyOpened = [...seen.values()].slice(0, 8)
+
+  const totalRow = db.prepare('SELECT COUNT(*) as total FROM media_items').get() as { total: number }
+
+  let storage: LibraryStats['storage'] = null
+  const storageJson = getConfig('storageStats')
+  if (storageJson) {
+    try { storage = JSON.parse(storageJson) as LibraryStats['storage'] } catch { /* corrupt — leave null */ }
+  }
+
+  return { counts, seriesCounts, platforms, recentlyOpened, total: totalRow.total, storage }
+}
+
+export function getDbPath(): string {
+  return join(getDbDir(), 'library.db')
 }
 
 export function closeDb(): void {
