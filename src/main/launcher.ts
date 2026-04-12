@@ -134,6 +134,9 @@ ${gamepadBinding}`
 }
 
 function getMpvPath(driveRoot: string): string {
+  if (process.platform === 'darwin') {
+    return join(driveRoot, 'players', 'mpv', 'mac', 'mpv.app', 'Contents', 'MacOS', 'mpv')
+  }
   const ext = process.platform === 'win32' ? '.exe' : ''
   return join(driveRoot, 'players', 'mpv', platformFolder(), `mpv${ext}`)
 }
