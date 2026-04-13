@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join, dirname, basename } from 'path'
-import { mkdirSync, existsSync } from 'fs'
+import { mkdirSync, existsSync, readdirSync } from 'fs'
 import type { MediaTechInfo } from './mediaInfo'
 
 let db: Database.Database | null = null
@@ -13,13 +13,34 @@ let db: Database.Database | null = null
  */
 export function findDriveRoot(): string | null {
   if (!app.isPackaged) return null
-  let dir = dirname(app.getPath('exe'))
-  for (let i = 0; i < 10; i++) {
-    if (existsSync(join(dir, '.vault'))) return dir
-    const parent = dirname(dir)
-    if (parent === dir) break // reached filesystem root without finding marker
-    dir = parent
+
+  if (process.platform === 'win32') {
+    // On Windows the app runs from the drive itself — walk up from the exe.
+    let dir = dirname(app.getPath('exe'))
+    for (let i = 0; i < 10; i++) {
+      if (existsSync(join(dir, '.vault'))) return dir
+      const parent = dirname(dir)
+      if (parent === dir) break // reached filesystem root
+      dir = parent
+    }
+    return null
   }
+
+  // On macOS / Linux the .app lives outside the drive (Applications, DMG, etc.),
+  // so walk up from the exe won't find .vault. Scan mounted volumes instead.
+  const mountRoots = process.platform === 'darwin'
+    ? ['/Volumes']
+    : ['/mnt', '/media', '/run/media']
+
+  for (const root of mountRoots) {
+    try {
+      for (const entry of readdirSync(root)) {
+        const candidate = join(root, entry)
+        if (existsSync(join(candidate, '.vault'))) return candidate
+      }
+    } catch { /* mount root doesn't exist on this system */ }
+  }
+
   return null
 }
 
