@@ -383,15 +383,15 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
         )
       })}
 
-      {extras.length > 0 && (
+      {sortedExtras.length > 0 && (
         <div className={styles.section}>
           <div className={styles.sectionHeaderPlain}>
             <span className={styles.sectionTitle}>Extras</span>
-            <span className={styles.sectionCount}>{extras.length}</span>
+            <span className={styles.sectionCount}>{sortedExtras.length}</span>
           </div>
           <div className={styles.episodeList}>
             <div className={styles.episodeListInner}>
-              {extras.map((item) => {
+              {sortedExtras.map((item) => {
                 const thisIdx = navIdx++
                 return (
                   <button

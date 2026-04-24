@@ -78,6 +78,45 @@ function titleFromFilename(filename: string): string {
     .trim()
 }
 
+// Abbreviation → readable label for anime extras
+const EXTRAS_TYPE_MAP: [RegExp, string][] = [
+  [/^NCED/i, 'Non-Credit Ending'],
+  [/^NCOP/i, 'Non-Credit Opening'],
+  [/^PV/i,   'Promo Video'],
+  [/^CM/i,   'Commercial'],
+  [/^OP/i,   'Opening'],
+  [/^ED/i,   'Ending'],
+  [/^OAD/i,  'OAD'],
+  [/^OVA/i,  'OVA'],
+  [/^SP/i,   'Special'],
+]
+
+function titleFromExtrasFilename(filename: string): string {
+  let name = basename(filename, extname(filename))
+  // Strip leading [Group] tag
+  name = name.replace(/^\[.*?\]\s*/, '')
+  // Strip trailing quality/encoding parenthetical: _(10bit_BD1080p_x265), _(Dual Audio_...)
+  name = name.replace(/_?\([^)]*(?:\d+bit|\d+p)[^)]*\)$/, '')
+  // Normalize underscores → spaces
+  name = name.replace(/_/g, ' ').trim()
+  // If pattern is "Series Name - Suffix", strip the series prefix when suffix is a known type code
+  const sep = name.indexOf(' - ')
+  if (sep > 0) {
+    const suffix = name.slice(sep + 3).trim()
+    if (EXTRAS_TYPE_MAP.some(([pat]) => pat.test(suffix))) {
+      name = suffix
+    }
+  }
+  // Translate abbreviations, e.g. "NCED01" → "Non-Credit Ending 01", "NCOP(EP24)" → "Non-Credit Opening (EP24)"
+  for (const [pat, label] of EXTRAS_TYPE_MAP) {
+    if (pat.test(name)) {
+      const rest = name.replace(pat, '').trim()
+      return rest ? `${label} ${rest}` : label
+    }
+  }
+  return name || titleFromFilename(filename)
+}
+
 function yearFromFilename(filename: string): number | null {
   // Prefer explicit (YYYY) form; fall back to bare year between word boundaries
   const explicit = filename.match(/\((\d{4})\)/)
@@ -379,7 +418,7 @@ function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | nul
       continue
     }
     if (!entry.isFile() || !VIDEO_EXTS.has(extname(entry.name).toLowerCase())) continue
-    const fileTitle = titleFromFilename(entry.name)
+    const fileTitle = titleFromExtrasFilename(entry.name)
     // Prefix with subfolder name when inside a named subfolder (e.g. "Next Episode Preview - Episode 9")
     const title = prefix ? `${prefix} - ${fileTitle}` : fileTitle
     const extraPath = join(dir, entry.name)

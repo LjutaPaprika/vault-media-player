@@ -25,6 +25,8 @@ function DriveField({
   const [saved, setSaved] = useState(false)
   const [detected, setDetected] = useState<string | null | undefined>(undefined)
 
+  useEffect(() => { setLabel(initialLabel) }, [initialLabel])
+
   async function handleSave(): Promise<void> {
     const trimmed = label.trim()
     if (!trimmed) return
@@ -464,7 +466,7 @@ export default function SettingsPage(): JSX.Element {
           title="Backup Drive"
           description="The volume label of your backup HDD. Set this label on the HDD once and the app will find it when plugged in."
           initialLabel={backupLabelInit}
-          onSave={(label) => window.api.sync.setBackupLabel(label)}
+          onSave={async (label) => { await window.api.sync.setBackupLabel(label); setBackupLabelInit(label) }}
           onDetect={(label) => window.api.sync.findDrive(label)}
         />
 
