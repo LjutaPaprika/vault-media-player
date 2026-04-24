@@ -213,6 +213,16 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     return entries
   }, [seasons, watchOrder])
 
+  const sortedExtras = useMemo(() => {
+    const order = watchOrder?.itemOrder['extras']
+    if (!order?.length) return extras
+    return [...extras].sort((a, b) => {
+      const ai = order.findIndex((t) => t.toLowerCase() === a.title.toLowerCase())
+      const bi = order.findIndex((t) => t.toLowerCase() === b.title.toLowerCase())
+      return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi)
+    })
+  }, [extras, watchOrder])
+
   // Flat nav items — rebuilt whenever collapsed state or data changes
   const navItems = useMemo((): NavItem[] => {
     const items: NavItem[] = []
@@ -222,11 +232,11 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
         for (const ep of eps) items.push({ kind: 'episode', ep })
       }
     }
-    for (const item of extras) {
+    for (const item of sortedExtras) {
       if (item.filePath) items.push({ kind: 'extra', item })
     }
     return items
-  }, [orderedSeasons, collapsedSeasons, extras])
+  }, [orderedSeasons, collapsedSeasons, sortedExtras])
 
   // Keep ref in sync for controller callbacks
   navItemsRef.current = navItems

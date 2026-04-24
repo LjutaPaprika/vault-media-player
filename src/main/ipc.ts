@@ -10,7 +10,7 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened, getStats, getDbPath } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened, getStats, getDbPath, rerootPaths } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -65,11 +65,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('library:findDrive', (_event, label: string) => findDriveByLabel(label))
 
   // ─── Library scan ─────────────────────────────────────────────────────────
+  function resolveRootForScan(label: string): string {
+    const root = findDriveByLabel(label)
+    if (!root) throw new Error(`Library drive "${label}" not found. Is it plugged in?`)
+    const storedRoot = getConfig('driveRoot')
+    if (storedRoot && storedRoot !== root) rerootPaths(storedRoot, root)
+    setConfig('driveRoot', root)
+    return root
+  }
+
   ipcMain.handle('library:scan', () => {
     const label = getConfig('libraryLabel')
     if (!label) throw new Error('Library drive label is not configured.')
-    const root = findDriveByLabel(label)
-    if (!root) throw new Error(`Library drive "${label}" not found. Is it plugged in?`)
+    const root = resolveRootForScan(label)
     hideSystemFolders(root)
     const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'))
     return { count: updated }
@@ -78,8 +86,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('library:forceScan', () => {
     const label = getConfig('libraryLabel')
     if (!label) throw new Error('Library drive label is not configured.')
-    const root = findDriveByLabel(label)
-    if (!root) throw new Error(`Library drive "${label}" not found. Is it plugged in?`)
+    const root = resolveRootForScan(label)
     hideSystemFolders(root)
     clearStoredFileTimes()
     const { total } = scanLibrary(root, getToolPath(root, 'ffprobe'))
@@ -469,7 +476,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       const entry = cbzEntries[index]
       const ext = entry.name.split('.').pop()?.toLowerCase() ?? 'jpg'
       const mime = (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : `image/${ext}`
-      return new Response(entry.getData(), { headers: { 'Content-Type': mime } })
+      return new Response(entry.getData(), { headers: { 'Content-Type': mime, 'Cache-Control': 'no-store' } })
     } catch {
       return new Response(null, { status: 500 })
     }

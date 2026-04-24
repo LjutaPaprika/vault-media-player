@@ -200,6 +200,19 @@ export function deleteOrphanedEntries(foundPaths: Set<string>): void {
   }
 }
 
+export function rerootPaths(oldRoot: string, newRoot: string): void {
+  const db = getDb()
+  db.prepare(`
+    UPDATE media_items
+    SET
+      file_path   = ? || SUBSTR(file_path,   LENGTH(?) + 1),
+      poster_path = CASE WHEN poster_path IS NOT NULL
+                    THEN ? || SUBSTR(poster_path, LENGTH(?) + 1)
+                    ELSE NULL END
+    WHERE file_path LIKE ? || '%'
+  `).run(newRoot, oldRoot, newRoot, oldRoot, oldRoot)
+}
+
 export function setLastOpened(filePath: string): void {
   getDb()
     .prepare('UPDATE media_items SET last_opened_at = unixepoch() WHERE file_path = ?')

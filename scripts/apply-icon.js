@@ -63,7 +63,7 @@ if (existsSync(vaultExe)) {
 // 4. Unhide app/ folder itself, hide all contents except Vault.exe
 spawnSync('attrib', ['-h', '-s', outputDir], { shell: true })
 for (const entry of readdirSync(outputDir)) {
-  if (entry === 'Vault.exe') continue
+  if (entry === 'Vault.exe' || entry === 'Vault-arm64.dmg' || entry === 'Vault-x64.dmg') continue
   spawnSync('attrib', ['+h', path.join(outputDir, entry)], { shell: true })
 }
 console.log('✓ app/ visible, internals hidden')

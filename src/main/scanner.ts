@@ -79,8 +79,11 @@ function titleFromFilename(filename: string): string {
 }
 
 function yearFromFilename(filename: string): number | null {
-  const match = filename.match(/\((\d{4})\)/)
-  return match ? parseInt(match[1], 10) : null
+  // Prefer explicit (YYYY) form; fall back to bare year between word boundaries
+  const explicit = filename.match(/\((\d{4})\)/)
+  if (explicit) return parseInt(explicit[1], 10)
+  const bare = filename.match(/\b((?:19|20)\d{2})\b/)
+  return bare ? parseInt(bare[1], 10) : null
 }
 
 // Folders to scan as extras/bonus content
@@ -247,7 +250,7 @@ function scanMovies(rootDir: string, ffprobePath = ''): number {
       const movieTitle = (meta.title as string) ?? titleFromFilename(entry.name)
       checkAndUpsert(firstVideo, {
         title: movieTitle,
-        year: (meta.year as number) ?? yearFromFilename(entry.name),
+        year: (meta.year as number) ?? yearFromFilename(entry.name) ?? yearFromFilename(basename(firstVideo)),
         category: 'movies',
         filePath: firstVideo,
         posterPath: poster,
