@@ -103,6 +103,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   const [extras, setExtras] = useState<MediaItem[]>([])
   const [techInfo, setTechInfo] = useState<MediaTechInfo | null>(null)
   const [watchOrder, setWatchOrder] = useState<WatchOrderData | null>(null)
+  const [watchGuide, setWatchGuide] = useState<string[] | null>(null)
   const [launchingPath, setLaunchingPath] = useState<string | null>(null)
   const [collapsedSeasons, setCollapsedSeasons] = useState<Set<number>>(new Set())
   const [focusedIdx, setFocusedIdx] = useState(0)
@@ -122,6 +123,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     })
     window.api.library.getExtras(seriesTitle).then(setExtras)
     window.api.library.getWatchOrder(seriesTitle, category).then(setWatchOrder)
+    window.api.library.getWatchGuide(seriesTitle, category).then(setWatchGuide)
   }, [seriesTitle])
 
   function playFile(filePath: string): void {
@@ -328,6 +330,18 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Watch guide */}
+        {watchGuide && watchGuide.length > 0 && (
+          <div className={styles.guideSection}>
+            <div className={styles.metaLabel}>Watch Order</div>
+            <ol className={styles.guideList}>
+              {watchGuide.map((entry, i) => (
+                <li key={i} className={styles.guideEntry}>{entry}</li>
+              ))}
+            </ol>
           </div>
         )}
       </div>

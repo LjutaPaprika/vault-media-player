@@ -90,6 +90,47 @@
   color: var(--text-secondary);
 }
 
+/* ── Watch guide ── */
+.guideSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border, rgba(255,255,255,0.07));
+}
+
+.guideList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  counter-reset: guide-counter;
+}
+
+.guideEntry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  counter-increment: guide-counter;
+}
+
+.guideEntry::before {
+  content: counter(guide-counter);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 14px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 /* ── Right panel — episode list ── */
 .rightPanel {
   flex: 1;

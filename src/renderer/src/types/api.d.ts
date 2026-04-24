@@ -156,6 +156,7 @@ interface Window {
       getEpubInfo:     (filePath: string) => Promise<{ title: string; author: string; chapters: { id: string; title: string; href: string }[]; coverDataUrl: string | null }>
       readEpubChapter: (filePath: string, chapterHref: string) => Promise<string>
       getWatchOrder: (seriesTitle: string, category: string) => Promise<WatchOrderData | null>
+      getWatchGuide: (seriesTitle: string, category: string) => Promise<string[] | null>
       markOpened: (filePath: string) => Promise<void>
       getMusicAlbums: () => Promise<MusicAlbumsResult>
       downloadYouTube: (args: { urls: { url: string; title: string; artist?: string }[]; albumPath: string; artist?: string }) => Promise<{ success: boolean }>

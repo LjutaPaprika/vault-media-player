@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('api', {
     getEpubInfo:     (filePath: string) => ipcRenderer.invoke('library:getEpubInfo', filePath),
     readEpubChapter: (filePath: string, chapterHref: string) => ipcRenderer.invoke('library:readEpubChapter', filePath, chapterHref),
     getWatchOrder: (seriesTitle: string, category: string) => ipcRenderer.invoke('library:getWatchOrder', seriesTitle, category),
+    getWatchGuide: (seriesTitle: string, category: string) => ipcRenderer.invoke('library:getWatchGuide', seriesTitle, category),
     markOpened: (filePath: string) => ipcRenderer.invoke('library:markOpened', filePath),
     getMusicAlbums: () => ipcRenderer.invoke('library:getMusicAlbums'),
     downloadYouTube: (args: { urls: { url: string; title: string }[]; albumPath: string; artist?: string }) =>

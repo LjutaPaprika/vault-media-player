@@ -158,28 +158,29 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('library:markOpened', (_event, filePath: string) => setLastOpened(filePath))
 
   // ─── Watch order ──────────────────────────────────────────────────────────
-  ipcMain.handle('library:getWatchOrder', (_event, seriesTitle: string, category: string) => {
+
+  function resolveSeriesDir(seriesTitle: string, category: string): string | null {
     const root = resolveLibraryRoot()
     const categoryDir = join(root, 'media', category)
+    const direct = join(categoryDir, seriesTitle)
+    if (existsSync(direct)) return direct
+    try {
+      const match = readdirSync(categoryDir, { withFileTypes: true }).find((d) => {
+        if (!d.isDirectory()) return false
+        const processed = d.name
+          .replace(/\s*\(\d{4}\).*$/, '')
+          .replace(/\s*\[.*?\]/g, '')
+          .replace(/\./g, ' ')
+          .trim()
+        return processed === seriesTitle
+      })
+      return match ? join(categoryDir, match.name) : null
+    } catch { return null }
+  }
 
-    // seriesTitle is the processed name (year stripped). The actual folder may still have
-    // a year suffix like "(2018)", so try the direct path first then scan for a match.
-    let seriesDir = join(categoryDir, seriesTitle)
-    if (!existsSync(seriesDir)) {
-      try {
-        const match = readdirSync(categoryDir, { withFileTypes: true }).find((d) => {
-          if (!d.isDirectory()) return false
-          const processed = d.name
-            .replace(/\s*\(\d{4}\).*$/, '')
-            .replace(/\s*\[.*?\]/g, '')
-            .replace(/\./g, ' ')
-            .trim()
-          return processed === seriesTitle
-        })
-        if (!match) return null
-        seriesDir = join(categoryDir, match.name)
-      } catch { return null }
-    }
+  ipcMain.handle('library:getWatchOrder', (_event, seriesTitle: string, category: string) => {
+    const seriesDir = resolveSeriesDir(seriesTitle, category)
+    if (!seriesDir) return null
 
     const filePath = join(seriesDir, 'watchorder.txt')
     if (!existsSync(filePath)) return null
@@ -205,6 +206,17 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
 
     return { sectionOrder, itemOrder }
+  })
+
+  ipcMain.handle('library:getWatchGuide', (_event, seriesTitle: string, category: string) => {
+    const seriesDir = resolveSeriesDir(seriesTitle, category)
+    if (!seriesDir) return null
+    const filePath = join(seriesDir, 'watchguide.txt')
+    if (!existsSync(filePath)) return null
+    return readFileSync(filePath, 'utf8')
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
   })
 
   // ─── Image loading ────────────────────────────────────────────────────────
