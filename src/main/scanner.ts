@@ -131,6 +131,10 @@ function yearFromFilename(filename: string): number | null {
   return bare ? parseInt(bare[1], 10) : null
 }
 
+// Matches extras titles that are pure type-code labels with no built-in series/season context
+// (i.e. the series prefix was stripped). These get a season prefix prepended when available.
+const NEEDS_CONTEXT_RE = /^(?:Special|Non-Credit (?:Ending|Opening)|Promo Video|Commercial|Opening|Ending|OAD|OVA)(?:\s*\d+)?$/i
+
 // Folders to scan as extras/bonus content
 const KNOWN_EXTRAS_FOLDERS = new Set([
   'featurettes', 'extras', 'bonus', 'specials', 'behind the scenes',
@@ -388,7 +392,8 @@ function scanEpisodes(
       const type = folderType(entry.name)
       if (type === 'skip') continue
       if (type === 'extras') {
-        scanExtrasFolder(join(dir, entry.name), seriesTitle, poster)
+        const ctx = subSeriesLabel ?? (season !== undefined ? `Season ${season}` : undefined)
+        scanExtrasFolder(join(dir, entry.name), seriesTitle, poster, undefined, ctx)
       } else {
         // Detect season folder (S01, S02, Season 1, etc.)
         const seasonMatch = entry.name.match(/^(?:S|Season\s*)(\d+)$/i)
@@ -400,24 +405,9 @@ function scanEpisodes(
           const subVideoCount = readdirSync(subDir, { withFileTypes: true })
             .filter((e) => e.isFile() && VIDEO_EXTS.has(extname(e.name).toLowerCase())).length
           if (subVideoCount > 1) {
-            // Multi-episode sub-series: assign a stable synthetic season number and label.
-            // Optionally load episodes.json from the subfolder; keys use bare Exx format
-            // which we promote to the synthetic SxxxExx badge so applyEpisodeMap works.
-            const subSeason = stableSeasonHash(entry.name)
-            const rawSubMap = loadEpisodeMap(subDir)
-            let subEpisodeMap: Record<string, string> | null = rawSubMap
-            if (rawSubMap) {
-              subEpisodeMap = {}
-              for (const [k, v] of Object.entries(rawSubMap)) {
-                const eKey = k.match(/^E(\d+)$/i)
-                if (eKey) {
-                  subEpisodeMap[`S${subSeason}E${eKey[1].padStart(2, '0')}`] = v
-                } else {
-                  subEpisodeMap[k] = v
-                }
-              }
-            }
-            count += scanEpisodes(subDir, seriesTitle, year, poster, category, subSeason, subEpisodeMap, entry.name)
+            // Multi-episode sub-series: description is stored as "§Label§Exx · Title".
+            // episodes.json uses bare Exx keys (E01, E02, ...).
+            count += scanEpisodes(subDir, seriesTitle, year, poster, category, stableSeasonHash(entry.name), loadEpisodeMap(subDir), entry.name)
           } else {
             // Single file or unknown: fall back to current behaviour (season 0 = Movies / Specials)
             count += scanEpisodes(subDir, seriesTitle, year, poster, category, season, episodeMap)
@@ -428,9 +418,18 @@ function scanEpisodes(
     }
     if (!entry.isFile() || !VIDEO_EXTS.has(extname(entry.name).toLowerCase())) continue
 
-    let episodeInfo = parseEpisodeInfo(entry.name, season) ?? titleFromFilename(entry.name)
-    if (episodeMap) episodeInfo = applyEpisodeMap(episodeInfo, episodeMap)
-    if (subSeriesLabel) episodeInfo = `§${subSeriesLabel}§${episodeInfo}`
+    let episodeInfo: string
+    if (subSeriesLabel) {
+      // Sub-series: strip synthetic season, produce "§Label§Exx · Title"
+      const raw = parseEpisodeInfo(entry.name, season) ?? titleFromFilename(entry.name)
+      const bare = raw.replace(/^S\d+E(\d+)(?:\s*·\s*.+)?$/, 'E$1')
+      const eKey = bare.match(/^(E\d+)$/i)
+      const title = eKey && episodeMap?.[eKey[1]] ? `${bare} · ${episodeMap[eKey[1]]}` : bare
+      episodeInfo = `§${subSeriesLabel}§${title}`
+    } else {
+      episodeInfo = parseEpisodeInfo(entry.name, season) ?? titleFromFilename(entry.name)
+      if (episodeMap) episodeInfo = applyEpisodeMap(episodeInfo, episodeMap)
+    }
     const epPath = join(dir, entry.name)
     checkAndUpsert(epPath, {
       title: seriesTitle,
@@ -445,19 +444,22 @@ function scanEpisodes(
   return count
 }
 
-function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | null, prefix?: string): void {
+function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | null, prefix?: string, seasonContext?: string): void {
   if (!existsSync(dir)) return
   const entries = readdirSync(dir, { withFileTypes: true })
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      // Use this folder's name as prefix for files inside it
-      scanExtrasFolder(join(dir, entry.name), seriesTitle, poster, entry.name)
+      scanExtrasFolder(join(dir, entry.name), seriesTitle, poster, entry.name, seasonContext)
       continue
     }
     if (!entry.isFile() || !VIDEO_EXTS.has(extname(entry.name).toLowerCase())) continue
-    const fileTitle = titleFromExtrasFilename(entry.name)
-    // Prefix with subfolder name when inside a named subfolder (e.g. "Next Episode Preview - Episode 9")
-    const title = prefix ? `${prefix} - ${fileTitle}` : fileTitle
+    const rawTitle = titleFromExtrasFilename(entry.name)
+    // Prepend season/sub-series context when the title is a bare type label (e.g. "Special 01")
+    // that would be ambiguous across seasons without it.
+    const withContext = (seasonContext && NEEDS_CONTEXT_RE.test(rawTitle))
+      ? `${seasonContext} ${rawTitle}`
+      : rawTitle
+    const title = prefix ? `${prefix} - ${withContext}` : withContext
     const extraPath = join(dir, entry.name)
     checkAndUpsert(extraPath, {
       title,

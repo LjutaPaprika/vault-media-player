@@ -27,6 +27,12 @@ type ExtrasSection =
   | { kind: 'single'; item: MediaItem }
   | { kind: 'group'; key: string; items: MediaItem[] }
 
+function stableSeasonHash(name: string): number {
+  let h = 5381
+  for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) & 0x7fffffff
+  return 100 + (h % 900)
+}
+
 function extrasGroupKey(title: string): string | null {
   const dashNum = title.match(/^(.+?)\s+-\s+(\d+)$/)
   if (dashNum) return dashNum[1].trim()
@@ -40,15 +46,14 @@ function sectionLabel(seasonNum: number, subLabels: Map<number, string>): string
 }
 
 function parseEpisode(item: MediaItem): ParsedEpisode {
-  // Sub-series: "§Label§SxxxExx" or "§Label§SxxxExx · Title"
-  const subMatch = item.description?.match(/^§([^§]+)§(S\d+E\d+)(?:\s*·\s*(.+))?$/i)
+  // Sub-series: "§Label§Exx" or "§Label§Exx · Title"
+  const subMatch = item.description?.match(/^§([^§]+)§(E\d+)(?:\s*·\s*(.+))?$/i)
   if (subMatch) {
-    const [, subLabel, code, rawTitle] = subMatch
-    const [, s, e] = code.match(/^S(\d+)E(\d+)$/i)!
-    const ep = parseInt(e, 10)
+    const [, subLabel, eCode, rawTitle] = subMatch
+    const ep = parseInt(eCode.slice(1), 10)
     return {
       id: item.id,
-      season: parseInt(s, 10),
+      season: stableSeasonHash(subLabel),
       episode: ep,
       badge: `E${String(ep).padStart(2, '0')}`,
       title: rawTitle ?? `Episode ${ep}`,
