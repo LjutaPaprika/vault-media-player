@@ -400,8 +400,24 @@ function scanEpisodes(
           const subVideoCount = readdirSync(subDir, { withFileTypes: true })
             .filter((e) => e.isFile() && VIDEO_EXTS.has(extname(e.name).toLowerCase())).length
           if (subVideoCount > 1) {
-            // Multi-episode sub-series: assign a stable synthetic season number and label
-            count += scanEpisodes(subDir, seriesTitle, year, poster, category, stableSeasonHash(entry.name), episodeMap, entry.name)
+            // Multi-episode sub-series: assign a stable synthetic season number and label.
+            // Optionally load episodes.json from the subfolder; keys use bare Exx format
+            // which we promote to the synthetic SxxxExx badge so applyEpisodeMap works.
+            const subSeason = stableSeasonHash(entry.name)
+            const rawSubMap = loadEpisodeMap(subDir)
+            let subEpisodeMap: Record<string, string> | null = rawSubMap
+            if (rawSubMap) {
+              subEpisodeMap = {}
+              for (const [k, v] of Object.entries(rawSubMap)) {
+                const eKey = k.match(/^E(\d+)$/i)
+                if (eKey) {
+                  subEpisodeMap[`S${subSeason}E${eKey[1].padStart(2, '0')}`] = v
+                } else {
+                  subEpisodeMap[k] = v
+                }
+              }
+            }
+            count += scanEpisodes(subDir, seriesTitle, year, poster, category, subSeason, subEpisodeMap, entry.name)
           } else {
             // Single file or unknown: fall back to current behaviour (season 0 = Movies / Specials)
             count += scanEpisodes(subDir, seriesTitle, year, poster, category, season, episodeMap)
