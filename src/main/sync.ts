@@ -87,7 +87,7 @@ function runRobocopy(
   // /W:5  = 5 second wait between retries
   // /NP   = no percentage progress (cleaner output)
   // /NDL  = no directory list in output
-  const child = spawn('robocopy', [src, dest, '/MIR', '/MT:8', '/R:3', '/W:5', '/NP', '/NDL', '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYSTEM_FOLDERS], {
+  const child = spawn('robocopy', [src, dest, '/MIR', '/MT:8', '/R:3', '/W:5', '/NP', '/NDL', '/FFT', '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYSTEM_FOLDERS], {
     stdio: ['ignore', 'pipe', 'pipe']
   })
 
@@ -145,7 +145,7 @@ function runRsync(
   // --info=progress2 = show overall progress
   // --human-readable = human readable sizes
   const excludes = SYSTEM_FOLDERS.flatMap((f) => ['--exclude', `${f}/`])
-  const child = spawn('rsync', ['-a', '--delete', '--info=progress2', '--human-readable', ...excludes, `${src}/`, `${dest}/`], {
+  const child = spawn('rsync', ['-a', '--delete', '--modify-window=2', '--info=progress2', '--human-readable', ...excludes, `${src}/`, `${dest}/`], {
     stdio: ['ignore', 'pipe', 'pipe']
   })
 
