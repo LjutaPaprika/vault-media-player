@@ -69,6 +69,12 @@ export function findPoster(dir: string): string | null {
   return null
 }
 
+function stableSeasonHash(name: string): number {
+  let h = 5381
+  for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) & 0x7fffffff
+  return 100 + (h % 900)
+}
+
 function titleFromFilename(filename: string): string {
   // "The Dark Knight (2008) [1080p].mkv" → "The Dark Knight"
   return basename(filename, extname(filename))
@@ -371,7 +377,8 @@ function scanEpisodes(
   poster: string | null,
   category: string,
   season?: number,
-  episodeMap?: Record<string, string> | null
+  episodeMap?: Record<string, string> | null,
+  subSeriesLabel?: string
 ): number {
   let count = 0
   const entries = readdirSync(dir, { withFileTypes: true })
@@ -385,8 +392,21 @@ function scanEpisodes(
       } else {
         // Detect season folder (S01, S02, Season 1, etc.)
         const seasonMatch = entry.name.match(/^(?:S|Season\s*)(\d+)$/i)
-        const childSeason = seasonMatch ? parseInt(seasonMatch[1], 10) : season
-        count += scanEpisodes(join(dir, entry.name), seriesTitle, year, poster, category, childSeason, episodeMap)
+        if (seasonMatch) {
+          count += scanEpisodes(join(dir, entry.name), seriesTitle, year, poster, category, parseInt(seasonMatch[1], 10), episodeMap)
+        } else {
+          // Named subfolder (e.g. "Heya Camp", "OVA") — check if it contains multiple video files
+          const subDir = join(dir, entry.name)
+          const subVideoCount = readdirSync(subDir, { withFileTypes: true })
+            .filter((e) => e.isFile() && VIDEO_EXTS.has(extname(e.name).toLowerCase())).length
+          if (subVideoCount > 1) {
+            // Multi-episode sub-series: assign a stable synthetic season number and label
+            count += scanEpisodes(subDir, seriesTitle, year, poster, category, stableSeasonHash(entry.name), episodeMap, entry.name)
+          } else {
+            // Single file or unknown: fall back to current behaviour (season 0 = Movies / Specials)
+            count += scanEpisodes(subDir, seriesTitle, year, poster, category, season, episodeMap)
+          }
+        }
       }
       continue
     }
@@ -394,6 +414,7 @@ function scanEpisodes(
 
     let episodeInfo = parseEpisodeInfo(entry.name, season) ?? titleFromFilename(entry.name)
     if (episodeMap) episodeInfo = applyEpisodeMap(episodeInfo, episodeMap)
+    if (subSeriesLabel) episodeInfo = `§${subSeriesLabel}§${episodeInfo}`
     const epPath = join(dir, entry.name)
     checkAndUpsert(epPath, {
       title: seriesTitle,

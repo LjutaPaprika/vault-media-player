@@ -20,9 +20,42 @@ interface ParsedEpisode {
   badge: string
   title: string
   filePath: string
+  subLabel?: string
+}
+
+type ExtrasSection =
+  | { kind: 'single'; item: MediaItem }
+  | { kind: 'group'; key: string; items: MediaItem[] }
+
+function extrasGroupKey(title: string): string | null {
+  const dashNum = title.match(/^(.+?)\s+-\s+(\d+)$/)
+  if (dashNum) return dashNum[1].trim()
+  const spaceNum = title.match(/^(.+?)\s+(\d+)$/)
+  if (spaceNum) return spaceNum[1].trim()
+  return null
+}
+
+function sectionLabel(seasonNum: number, subLabels: Map<number, string>): string {
+  return subLabels.get(seasonNum) ?? (seasonNum === 0 ? 'Movies / Specials' : `Season ${seasonNum}`)
 }
 
 function parseEpisode(item: MediaItem): ParsedEpisode {
+  // Sub-series: "§Label§SxxxExx" or "§Label§SxxxExx · Title"
+  const subMatch = item.description?.match(/^§([^§]+)§(S\d+E\d+)(?:\s*·\s*(.+))?$/i)
+  if (subMatch) {
+    const [, subLabel, code, rawTitle] = subMatch
+    const [, s, e] = code.match(/^S(\d+)E(\d+)$/i)!
+    const ep = parseInt(e, 10)
+    return {
+      id: item.id,
+      season: parseInt(s, 10),
+      episode: ep,
+      badge: `E${String(ep).padStart(2, '0')}`,
+      title: rawTitle ?? `Episode ${ep}`,
+      filePath: item.filePath,
+      subLabel
+    }
+  }
   // Full format: "S01E01 · Title"
   const full = item.description?.match(/^(S(\d+)E(\d+))\s*·\s*(.+)$/)
   if (full) {
@@ -181,9 +214,13 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     return map
   }, [parsed])
 
-  function sectionLabel(seasonNum: number): string {
-    return seasonNum === 0 ? 'Movies / Specials' : `Season ${seasonNum}`
-  }
+  const subLabelMap = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const ep of parsed) {
+      if (ep.subLabel && !m.has(ep.season)) m.set(ep.season, ep.subLabel)
+    }
+    return m
+  }, [parsed])
 
   const orderedSeasons = useMemo(() => {
     let entries = Array.from(seasons.entries())
@@ -191,14 +228,14 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     if (watchOrder) {
       // Order sections
       entries = entries.sort(([a], [b]) => {
-        const ai = watchOrder.sectionOrder.findIndex((l) => l.toLowerCase() === sectionLabel(a).toLowerCase())
-        const bi = watchOrder.sectionOrder.findIndex((l) => l.toLowerCase() === sectionLabel(b).toLowerCase())
+        const ai = watchOrder.sectionOrder.findIndex((l) => l.toLowerCase() === sectionLabel(a, subLabelMap).toLowerCase())
+        const bi = watchOrder.sectionOrder.findIndex((l) => l.toLowerCase() === sectionLabel(b, subLabelMap).toLowerCase())
         return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi)
       })
 
       // Order items within sections that have explicit item lists
       entries = entries.map(([seasonNum, eps]) => {
-        const order = watchOrder.itemOrder[sectionLabel(seasonNum).toLowerCase()]
+        const order = watchOrder.itemOrder[sectionLabel(seasonNum, subLabelMap).toLowerCase()]
         if (!order?.length) return [seasonNum, eps] as [number, ParsedEpisode[]]
         const sorted = [...eps].sort((a, b) => {
           const ai = order.findIndex((t) => t.toLowerCase() === a.title.toLowerCase())
@@ -213,7 +250,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     }
 
     return entries
-  }, [seasons, watchOrder])
+  }, [seasons, watchOrder, subLabelMap])
 
   const sortedExtras = useMemo(() => {
     const order = watchOrder?.itemOrder['extras']
@@ -224,6 +261,31 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
       return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi)
     })
   }, [extras, watchOrder])
+
+  const extrasGroups = useMemo((): ExtrasSection[] => {
+    const keyCount = new Map<string, number>()
+    for (const item of sortedExtras) {
+      const key = extrasGroupKey(item.title)
+      if (key) keyCount.set(key, (keyCount.get(key) ?? 0) + 1)
+    }
+    const validGroups = new Set([...keyCount.entries()].filter(([, c]) => c >= 2).map(([k]) => k))
+    const sections: ExtrasSection[] = []
+    const seenGroups = new Map<string, ExtrasSection & { kind: 'group' }>()
+    for (const item of sortedExtras) {
+      const key = extrasGroupKey(item.title)
+      if (key && validGroups.has(key)) {
+        if (!seenGroups.has(key)) {
+          const section: ExtrasSection & { kind: 'group' } = { kind: 'group', key, items: [] }
+          seenGroups.set(key, section)
+          sections.push(section)
+        }
+        seenGroups.get(key)!.items.push(item)
+      } else {
+        sections.push({ kind: 'single', item })
+      }
+    }
+    return sections
+  }, [sortedExtras])
 
   // Flat nav items — rebuilt whenever collapsed state or data changes
   const navItems = useMemo((): NavItem[] => {
@@ -361,7 +423,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
             >
               <span className={`${styles.chevron} ${isCollapsed ? '' : styles.chevronOpen}`}>›</span>
               <span className={styles.sectionTitle}>
-                {sectionLabel(seasonNum)}
+                {sectionLabel(seasonNum, subLabelMap)}
               </span>
               <span className={styles.sectionCount}>{eps.length}</span>
             </button>
@@ -405,19 +467,44 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
           </div>
           <div className={styles.episodeList}>
             <div className={styles.episodeListInner}>
-              {sortedExtras.map((item) => {
-                const thisIdx = navIdx++
-                return (
-                  <button
-                    key={item.id}
-                    ref={(el) => (rowRefs.current[thisIdx] = el)}
-                    className={`${styles.episodeRow} ${thisIdx === focusedIdx ? styles.controllerFocus : ''}`}
-                    onClick={() => item.filePath && playFile(item.filePath as string)}
-                  >
-                    <span className={styles.episodeTitle}>{item.title}</span>
-                    <span className={styles.playIcon}>▶</span>
-                  </button>
-                )
+              {extrasGroups.map((section) => {
+                if (section.kind === 'single') {
+                  const thisIdx = navIdx++
+                  return (
+                    <button
+                      key={section.item.id}
+                      ref={(el) => (rowRefs.current[thisIdx] = el)}
+                      className={`${styles.episodeRow} ${thisIdx === focusedIdx ? styles.controllerFocus : ''}`}
+                      onClick={() => section.item.filePath && playFile(section.item.filePath as string)}
+                    >
+                      <span className={styles.episodeTitle}>{section.item.title}</span>
+                      <span className={styles.playIcon}>▶</span>
+                    </button>
+                  )
+                } else {
+                  return (
+                    <div key={section.key}>
+                      <div className={styles.extrasSubHeader}>
+                        <span className={styles.extrasSubLabel}>{section.key}</span>
+                        <span className={styles.extrasSubCount}>{section.items.length}</span>
+                      </div>
+                      {section.items.map((item) => {
+                        const thisIdx = navIdx++
+                        return (
+                          <button
+                            key={item.id}
+                            ref={(el) => (rowRefs.current[thisIdx] = el)}
+                            className={`${styles.episodeRow} ${thisIdx === focusedIdx ? styles.controllerFocus : ''}`}
+                            onClick={() => item.filePath && playFile(item.filePath as string)}
+                          >
+                            <span className={styles.episodeTitle}>{item.title}</span>
+                            <span className={styles.playIcon}>▶</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                }
               })}
             </div>
           </div>
