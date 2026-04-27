@@ -11,6 +11,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 import { registerIpcHandlers } from './ipc'
 import { closeDb } from './database'
+import { teardown as mpvTeardown } from './mpvManager'
 
 if (app.isPackaged && process.platform === 'win32') {
   spawnSync('attrib', ['-h', '-s', dirname(app.getPath('exe'))], { shell: true })
@@ -23,7 +24,8 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     frame: false,
-    backgroundColor: '#0f0f0f',
+    transparent: true,
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -118,5 +120,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  mpvTeardown().catch(() => {})
   closeDb()
 })

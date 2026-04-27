@@ -133,6 +133,15 @@ interface AppInfo {
   driveInfo: { freeBytes: number; totalBytes: number } | null
 }
 
+interface MpvTrack {
+  id: number
+  type: 'audio' | 'sub' | 'video'
+  lang?: string
+  title?: string
+  selected: boolean
+  default: boolean
+}
+
 interface Window {
   api: {
     window: {
@@ -197,6 +206,16 @@ interface Window {
     system: {
       getInfo:    () => Promise<SystemInfo>
       getAppInfo: () => Promise<AppInfo>
+    }
+    mpv: {
+      launch: (filePath: string, category?: string) => Promise<void>
+      command: (cmd: unknown[]) => Promise<unknown>
+      quit: () => Promise<void>
+      onTimePos:   (cb: (t: number) => void) => () => void
+      onPause:     (cb: (paused: boolean) => void) => () => void
+      onDuration:  (cb: (d: number) => void) => () => void
+      onTrackList: (cb: (tracks: MpvTrack[]) => void) => () => void
+      onEnded:     (cb: () => void) => () => void
     }
     platform: NodeJS.Platform
   }

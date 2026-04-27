@@ -163,6 +163,24 @@ function ensureMpvConfig(mpvExePath: string, hwdec: string): string {
   return configFile
 }
 
+export function ensureMpvEmbeddedConfig(mpvExePath: string, hwdec: string): string {
+  const configDir = join(dirname(mpvExePath), 'portable_config_embedded')
+  const configFile = join(configDir, 'mpv.conf')
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(configFile, `\
+# Embedded player config — no OSC, no keyboard bindings (React handles input)
+osd-font-size=32
+osd-border-size=1.5
+osc=no
+input-gamepad=no
+hwdec=${hwdec}
+`, 'utf-8')
+  writeFileSync(join(configDir, 'input.conf'), '', 'utf-8')
+  return configFile
+}
+
+export { getMpvPath }
+
 // ─── Spawn helpers ────────────────────────────────────────────────────────────
 
 function spawnDetached(exe: string, args: string[]): void {

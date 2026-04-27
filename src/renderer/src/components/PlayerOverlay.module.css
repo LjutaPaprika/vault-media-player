@@ -1,0 +1,186 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 10;
+}
+
+.overlay.hidden {
+  opacity: 0;
+}
+
+/* Top bar */
+.topBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px 32px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.75) 0%, transparent 100%);
+  pointer-events: auto;
+}
+
+.backButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: #f2f2f4;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.backButton:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.titleText {
+  font-size: 14px;
+  color: rgba(242,242,244,0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Middle click area */
+.middle {
+  flex: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* Bottom controls */
+.bottomBar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 32px 18px 14px;
+  background: linear-gradient(to top, rgba(0,0,0,0.80) 0%, transparent 100%);
+  pointer-events: auto;
+}
+
+.seekRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.playButton {
+  background: none;
+  border: none;
+  color: #f2f2f4;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.playButton:hover {
+  background: rgba(255,255,255,0.12);
+}
+
+.seekBar {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.25);
+  cursor: pointer;
+  outline: none;
+}
+.seekBar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e8b44b;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.seekBar:hover::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+
+.timeDisplay {
+  font-size: 12px;
+  color: rgba(242,242,244,0.75);
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.controlsRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.volumeGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.iconButton {
+  background: none;
+  border: none;
+  color: rgba(242,242,244,0.8);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.iconButton:hover {
+  color: #f2f2f4;
+  background: rgba(255,255,255,0.1);
+}
+
+.volumeSlider {
+  width: 72px;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.25);
+  cursor: pointer;
+  outline: none;
+}
+.volumeSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #e8b44b;
+  cursor: pointer;
+}
+
+.trackSelect {
+  background: rgba(28,28,33,0.85);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #f2f2f4;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  outline: none;
+  max-width: 120px;
+}
+.trackSelect:hover {
+  border-color: rgba(255,255,255,0.35);
+}

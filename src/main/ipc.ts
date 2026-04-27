@@ -13,7 +13,8 @@ let cbzEntries: AdmZip.IZipEntry[] | null = null
 import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened, getStats, getDbPath, rerootPaths } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
-import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
+import { openVideo, openAudio, launchGame, getToolPath, openWithSystem, ensureMpvEmbeddedConfig, getMpvPath } from './launcher'
+import { launchEmbedded, teardown, sendCommand, getMpvSession, reapplyZOrder } from './mpvManager'
 import { findDriveByLabel, hideSystemFolders, runSync } from './sync'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings, setKeyboardBindings, resetKeyboardBindings, type KeyboardBinding } from './keyboardBindings'
@@ -248,6 +249,35 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     setLastOpened(filePath)
     openVideo(filePath, resolveLibraryRoot(), getConfig('hwdec') ?? 'off', category)
     win.webContents.send('music:pause')
+  })
+
+  ipcMain.handle('mpv:launch', async (_event, filePath: string, category?: string) => {
+    if (process.platform !== 'win32') {
+      // macOS/Linux: fall back to detached window
+      setLastOpened(filePath)
+      openVideo(filePath, resolveLibraryRoot(), getConfig('hwdec') ?? 'off', category)
+      win.webContents.send('music:pause')
+      return
+    }
+    setLastOpened(filePath)
+    const driveRoot = resolveLibraryRoot()
+    const mpvPath = getMpvPath(driveRoot)
+    const hwdec = getConfig('hwdec') ?? 'off'
+    const configFile = ensureMpvEmbeddedConfig(mpvPath, hwdec)
+    const hwnd = win.getNativeWindowHandle().readBigUInt64LE(0)
+    await launchEmbedded(filePath, mpvPath, configFile, hwnd, category, win)
+    win.webContents.send('music:pause')
+  })
+
+  ipcMain.handle('mpv:command', (_event, cmd: unknown[]) => sendCommand(cmd))
+
+  ipcMain.handle('mpv:quit', async () => { await teardown() })
+
+  win.on('resize', () => {
+    if (getMpvSession()) {
+      const hwnd = win.getNativeWindowHandle().readBigUInt64LE(0)
+      reapplyZOrder(hwnd)
+    }
   })
 
   ipcMain.handle('settings:get', (_event, key: string, fallback: string) => getConfig(key) ?? fallback)

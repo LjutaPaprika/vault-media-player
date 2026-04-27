@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
 import PosterImage from '../components/PosterImage'
 import { useController } from '../hooks/useController'
 import { useAppStore } from '../store/appStore'
+import { useVideoPlayerStore } from '../store/videoPlayerStore'
 import styles from './MovieDetailPage.module.css'
 
 interface Props {
@@ -85,12 +85,10 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, onB
 
   useEffect(() => { extrasRef.current = extras }, [extras])
 
-  const [launching, setLaunching] = useState(false)
+  const openVideo = useVideoPlayerStore((s) => s.open)
 
   function launchVideo(path: string): void {
-    flushSync(() => setLaunching(true))
-    setTimeout(() => setLaunching(false), 1500)
-    window.api.playback.openVideo(path)
+    openVideo(path)
   }
 
   function playMovie(): void { launchVideo(filePath) }
@@ -151,10 +149,10 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, onB
             ref={playBtnRef}
             className={`${styles.playButton} ${focusedIdx === 0 ? styles.playButtonFocus : ''}`}
             onClick={playMovie}
-            disabled={launching}
-            style={launching ? { opacity: 0.5, cursor: 'default' } : undefined}
+            disabled={false}
+            style={undefined}
           >
-            {launching ? 'Opening…' : '▶ Play'}
+            {'▶ Play'}
           </button>
         </div>
       </div>

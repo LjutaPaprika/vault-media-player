@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
 import PosterImage from '../components/PosterImage'
 import { useController } from '../hooks/useController'
 import { useAppStore } from '../store/appStore'
+import { useVideoPlayerStore } from '../store/videoPlayerStore'
 import styles from './ShowDetailPage.module.css'
 
 interface Props {
@@ -142,7 +142,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   const [techInfo, setTechInfo] = useState<MediaTechInfo | null>(null)
   const [watchOrder, setWatchOrder] = useState<WatchOrderData | null>(null)
   const [watchGuide, setWatchGuide] = useState<string[] | null>(null)
-  const [launchingPath, setLaunchingPath] = useState<string | null>(null)
+  const openVideo = useVideoPlayerStore((s) => s.open)
   const [collapsedSeasons, setCollapsedSeasons] = useState<Set<number>>(new Set())
   const [focusedIdx, setFocusedIdx] = useState(0)
   const focusedIdxRef = useRef(0)
@@ -165,9 +165,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   }, [seriesTitle])
 
   function playFile(filePath: string): void {
-    flushSync(() => setLaunchingPath(filePath))
-    setTimeout(() => setLaunchingPath(null), 1500)
-    window.api.playback.openVideo(filePath, category)
+    openVideo(filePath, category)
     const now = Math.floor(Date.now() / 1000)
     setEpisodes((prev) => prev.map((ep) => ep.filePath === filePath ? { ...ep, lastOpenedAt: now } : ep))
   }
@@ -441,7 +439,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                     <button
                       key={ep.id}
                       ref={(el) => (rowRefs.current[thisIdx] = el)}
-                      className={`${styles.episodeRow} ${thisIdx === focusedIdx ? styles.controllerFocus : ''} ${launchingPath === ep.filePath ? styles.episodeRowLaunching : ''}`}
+                      className={`${styles.episodeRow} ${thisIdx === focusedIdx ? styles.controllerFocus : ''}`}
                       onClick={() => playFile(ep.filePath)}
                     >
                       {ep.badge && <span className={styles.episodeBadge}>{ep.badge}</span>}
@@ -451,10 +449,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                           <span className={styles.lastOpenedPill}>Last Watched</span>
                         )}
                       </div>
-                      {launchingPath === ep.filePath
-                        ? <span className={styles.launchingLabel}>Opening…</span>
-                        : <span className={styles.playIcon}>▶</span>
-                      }
+                      <span className={styles.playIcon}>▶</span>
                     </button>
                   )
                 })}

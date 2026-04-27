@@ -95,6 +95,40 @@ contextBridge.exposeInMainWorld('api', {
     getAppInfo: () => ipcRenderer.invoke('system:getAppInfo')
   },
 
+  // Embedded mpv player
+  mpv: {
+    launch: (filePath: string, category?: string) =>
+      ipcRenderer.invoke('mpv:launch', filePath, category),
+    command: (cmd: unknown[]) => ipcRenderer.invoke('mpv:command', cmd),
+    quit: () => ipcRenderer.invoke('mpv:quit'),
+
+    onTimePos: (cb: (t: number) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, v: number): void => cb(v)
+      ipcRenderer.on('mpv:timePos', handler)
+      return () => ipcRenderer.removeListener('mpv:timePos', handler)
+    },
+    onPause: (cb: (paused: boolean) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, v: boolean): void => cb(v)
+      ipcRenderer.on('mpv:pause', handler)
+      return () => ipcRenderer.removeListener('mpv:pause', handler)
+    },
+    onDuration: (cb: (d: number) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, v: number): void => cb(v)
+      ipcRenderer.on('mpv:duration', handler)
+      return () => ipcRenderer.removeListener('mpv:duration', handler)
+    },
+    onTrackList: (cb: (tracks: MpvTrack[]) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, v: MpvTrack[]): void => cb(v)
+      ipcRenderer.on('mpv:trackList', handler)
+      return () => ipcRenderer.removeListener('mpv:trackList', handler)
+    },
+    onEnded: (cb: () => void) => {
+      const handler = (): void => cb()
+      ipcRenderer.on('mpv:ended', handler)
+      return () => ipcRenderer.removeListener('mpv:ended', handler)
+    }
+  },
+
   // Platform info
   platform: process.platform
 })

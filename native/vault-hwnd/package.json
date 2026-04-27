@@ -1,0 +1,12 @@
+{
+  "name": "vault-hwnd",
+  "version": "1.0.0",
+  "description": "Win32 HWND utilities for Vault embedded mpv",
+  "main": "build/Release/vault_hwnd.node",
+  "scripts": {
+    "build": "node-gyp rebuild"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.7.0"
+  }
+}

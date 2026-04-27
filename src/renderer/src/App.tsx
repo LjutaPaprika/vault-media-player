@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from './store/appStore'
+import { useVideoPlayerStore, initVideoPlayerListeners } from './store/videoPlayerStore'
+import VideoPlayer from './components/VideoPlayer'
 import {
   applyAccentColor, applyColor,
   DEFAULT_ACCENT, DEFAULT_PILL_LAST_WATCHED, DEFAULT_PILL_EXTRA,
@@ -37,6 +39,17 @@ const PAGES: Record<string, JSX.Element> = {
 export default function App(): JSX.Element {
   const { activePage, libraryLabel, setLibrary } = useAppStore()
   const [configLoading, setConfigLoading] = useState(true)
+  const videoActive   = useVideoPlayerStore((s) => s.active)
+  const videoFilePath = useVideoPlayerStore((s) => s.filePath)
+  const videoCategory = useVideoPlayerStore((s) => s.category)
+
+  useEffect(() => {
+    initVideoPlayerListeners()
+  }, [])
+
+  useEffect(() => {
+    document.body.style.background = videoActive ? 'transparent' : ''
+  }, [videoActive])
 
   useEffect(() => {
     const minDelay = new Promise((r) => setTimeout(r, 1000))
@@ -88,11 +101,19 @@ export default function App(): JSX.Element {
     <MusicPlayerProvider>
       <div className="app">
         <TitleBar />
-        <div className="app-body">
-          <Sidebar />
-          <main className="content">{PAGES[activePage] ?? <HomePage />}</main>
-        </div>
-        <MusicPlayerBar />
+        {videoActive && videoFilePath ? (
+          <div className="video-shell">
+            <VideoPlayer filePath={videoFilePath} category={videoCategory} />
+          </div>
+        ) : (
+          <>
+            <div className="app-body">
+              <Sidebar />
+              <main className="content">{PAGES[activePage] ?? <HomePage />}</main>
+            </div>
+            <MusicPlayerBar />
+          </>
+        )}
       </div>
     </MusicPlayerProvider>
   )
