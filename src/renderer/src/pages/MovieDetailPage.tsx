@@ -137,7 +137,10 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, des
       {/* Hero card with blurred backdrop */}
       <div className={styles.heroCard}>
         {backdropSrc && (
-          <img className={styles.backdrop} src={backdropSrc} alt="" aria-hidden />
+          <div
+            className={styles.backdrop}
+            style={{ backgroundImage: `url(${backdropSrc})` }}
+          />
         )}
         <div className={styles.backdropOverlay} />
 
