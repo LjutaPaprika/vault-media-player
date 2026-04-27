@@ -1,6 +1,5 @@
-const WP_API  = 'https://en.wikipedia.org/w/api.php'
-const WP_REST = 'https://en.wikipedia.org/api/rest_v1'
-const UA      = 'Vault/1.0 (personal media player; no commercial use)'
+const WP_API = 'https://en.wikipedia.org/w/api.php'
+const UA     = 'Vault/1.0 (personal media player; non-commercial)'
 
 export interface MovieMetadata {
   title: string
@@ -10,28 +9,21 @@ export interface MovieMetadata {
 }
 
 const GENRES = [
+  'science fiction', 'martial arts',          // multi-word first
   'action', 'adventure', 'animated', 'animation', 'biographical', 'biography',
-  'comedy', 'crime', 'documentary', 'drama', 'fantasy', 'horror', 'martial arts',
-  'musical', 'mystery', 'noir', 'psychological', 'romance', 'science fiction',
+  'comedy', 'crime', 'documentary', 'drama', 'fantasy', 'horror',
+  'musical', 'mystery', 'noir', 'psychological', 'romance',
   'sport', 'superhero', 'thriller', 'war', 'western'
 ]
 
-// Country/nationality adjectives to skip when parsing genres
-const SKIP_WORDS = new Set([
-  'american', 'british', 'french', 'german', 'italian', 'japanese', 'korean',
-  'chinese', 'indian', 'australian', 'canadian', 'spanish', 'russian',
-  'english', 'irish', 'international', 'animated'
-])
-
 function firstNSentences(text: string, n: number): string {
   const sentences = text.match(/[^.!?]+[.!?][\s"')»]*/g) ?? []
-  const result = sentences.slice(0, n).join('').trim()
-  return result || text.slice(0, 500).trim()
+  return sentences.slice(0, n).join('').trim() || text.slice(0, 500).trim()
 }
 
-function parseYear(shortDesc: string): number | null {
-  // "1979 American science fiction horror film directed by..."
-  const m = shortDesc.match(/^(\d{4})\s/)
+function parseYear(text: string): number | null {
+  // First sentence typically: "Alien is a 1979 American science fiction horror film..."
+  const m = text.match(/\b((?:19|20)\d{2})\b/)
   if (m) {
     const y = parseInt(m[1], 10)
     if (y >= 1880 && y <= 2100) return y
@@ -41,81 +33,66 @@ function parseYear(shortDesc: string): number | null {
 
 function parseGenres(text: string): string | null {
   const lower = text.toLowerCase()
-  // Multi-word genres must be checked before their component words
   const found: string[] = []
   const usedRanges: [number, number][] = []
 
-  const sorted = [...GENRES].sort((a, b) => b.length - a.length) // longest first
-  for (const g of sorted) {
+  for (const g of GENRES) {  // longest-first ordering already in array
     const idx = lower.indexOf(g)
     if (idx === -1) continue
-    // Skip if this range overlaps a previously matched genre
     const overlaps = usedRanges.some(([s, e]) => idx < e && idx + g.length > s)
     if (overlaps) continue
-    // Only accept if near (within 120 chars of) the word "film" or "movie"
-    const nearFilm = /\b(film|movie)\b/.test(lower.slice(Math.max(0, idx - 5), idx + g.length + 80))
-    if (!nearFilm) continue
+    // Only count genres that appear near the word "film" or "movie"
+    const window = lower.slice(Math.max(0, idx - 10), idx + g.length + 100)
+    if (!/\b(film|movie)\b/.test(window)) continue
     usedRanges.push([idx, idx + g.length])
     found.push(g.charAt(0).toUpperCase() + g.slice(1))
   }
   return found.length ? found.join(', ') : null
 }
 
-async function wpFetch(url: string): Promise<unknown> {
+async function wpFetch(url: string, attempt = 0): Promise<unknown> {
   const resp = await fetch(url, { headers: { 'User-Agent': UA } })
-  if (!resp.ok) throw new Error(`Wikipedia HTTP ${resp.status}`)
-  return resp.json()
-}
+  if (resp.ok) return resp.json()
 
-async function searchWikipedia(query: string): Promise<string | null> {
-  const url = `${WP_API}?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=5`
-  const data = await wpFetch(url) as { query: { search: { title: string }[] } }
-  return data.query.search[0]?.title ?? null
-}
-
-async function getPageSummary(pageTitle: string): Promise<{
-  shortDesc: string | null
-  extract: string | null
-} | null> {
-  const slug = encodeURIComponent(pageTitle.replace(/ /g, '_'))
-  const url = `${WP_REST}/page/summary/${slug}`
-  const resp = await fetch(url, { headers: { 'User-Agent': UA } })
-  if (!resp.ok) return null
-  const data = await resp.json() as { description?: string; extract?: string; type?: string }
-  // Skip disambiguation pages
-  if (data.type === 'disambiguation') return null
-  return {
-    shortDesc: data.description ?? null,
-    extract: data.extract ?? null
+  if ((resp.status === 429 || resp.status === 503) && attempt < 3) {
+    const retryAfter = parseInt(resp.headers.get('Retry-After') ?? '0', 10)
+    const delay = retryAfter > 0 ? retryAfter * 1000 : 2000 * 2 ** attempt
+    await new Promise((r) => setTimeout(r, delay))
+    return wpFetch(url, attempt + 1)
   }
+
+  throw new Error(`Wikipedia HTTP ${resp.status}`)
 }
 
 export async function fetchMovieMetadata(
   title: string,
   year: number | null
 ): Promise<MovieMetadata | null> {
-  // Include year in the search query for better disambiguation
   const query = year ? `${title} ${year} film` : `${title} film`
-  const pageTitle = await searchWikipedia(query)
-  if (!pageTitle) return null
 
-  const summary = await getPageSummary(pageTitle)
-  if (!summary) return null
+  // Single request: generator=search returns search results WITH their extracts
+  const url =
+    `${WP_API}?action=query` +
+    `&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1` +
+    `&prop=extracts&exintro=true&explaintext=true` +
+    `&format=json`
 
-  const resolvedYear = year
-    ?? (summary.shortDesc ? parseYear(summary.shortDesc) : null)
+  const data = await wpFetch(url) as {
+    query?: { pages?: Record<string, { extract?: string }> }
+  }
 
-  // Parse genre from the short description ("1979 American science fiction horror film...")
-  // then fall back to the full extract if nothing found there
-  const genreSource = summary.shortDesc ?? summary.extract ?? ''
-  const genre = parseGenres(genreSource)
+  const pages = Object.values(data.query?.pages ?? {})
+  if (!pages.length) return null
 
-  const description = summary.extract ? firstNSentences(summary.extract, 3) : null
+  const extract = pages[0].extract?.trim() ?? ''
+  if (!extract) return null
+
+  const firstSentence = extract.match(/^[^.!?]+[.!?]/)?.[0] ?? extract.slice(0, 250)
 
   return {
     title,
-    year: resolvedYear,
-    description,
-    genre
+    year: year ?? parseYear(firstSentence),
+    description: firstNSentences(extract, 3),
+    genre: parseGenres(firstSentence) ?? parseGenres(extract)
   }
 }

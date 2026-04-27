@@ -542,7 +542,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           done, total: movies.length, title: movie.title, found: false, error: (err as Error).message
         })
       }
-      await new Promise((r) => setTimeout(r, 150)) // courteous rate for Wikipedia
+      await new Promise((r) => setTimeout(r, 800)) // Wikipedia rate limit headroom
     }
     return { done, total: movies.length }
   })
