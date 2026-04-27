@@ -21,8 +21,8 @@
   height: 100%;
   object-fit: cover;
   object-position: center 20%;
-  filter: blur(48px) brightness(0.35) saturate(1.2);
-  transform: scale(1.08); /* avoids blur edge fringing */
+  filter: blur(40px) brightness(0.6) saturate(1.4);
+  transform: scale(1.12); /* avoids blur edge fringing */
   pointer-events: none;
   user-select: none;
 }
@@ -32,9 +32,9 @@
   inset: 0;
   background: linear-gradient(
     to bottom,
-    rgba(10, 10, 11, 0.2) 0%,
-    rgba(10, 10, 11, 0.55) 60%,
-    rgba(10, 10, 11, 0.85) 100%
+    rgba(10, 10, 11, 0.05) 0%,
+    rgba(10, 10, 11, 0.4) 60%,
+    rgba(10, 10, 11, 0.75) 100%
   );
   pointer-events: none;
 }
