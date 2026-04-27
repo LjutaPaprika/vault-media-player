@@ -207,8 +207,6 @@ interface Window {
       getAppInfo: () => Promise<AppInfo>
     }
     metadata: {
-      getApiKey: () => Promise<string>
-      setApiKey: (key: string) => Promise<void>
       getStatus: () => Promise<{ total: number; missing: number }>
       fetchOne: (filePath: string, title: string, year: number | null) => Promise<{ title: string; year: number | null; description: string | null; genre: string | null } | null>
       fetchAll: () => Promise<{ done: number; total: number }>

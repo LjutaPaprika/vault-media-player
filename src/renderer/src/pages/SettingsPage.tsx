@@ -401,29 +401,17 @@ function HwdecSelector(): JSX.Element {
   )
 }
 
-function TmdbSection(): JSX.Element {
-  const [apiKey, setApiKey] = useState('')
-  const [saved, setSaved] = useState(false)
+function MetadataSection(): JSX.Element {
   const [status, setStatus] = useState<{ total: number; missing: number } | null>(null)
   const [fetching, setFetching] = useState(false)
   const [log, setLog] = useState<MetadataProgress[]>([])
   const logRef = useRef<HTMLDivElement | null>(null)
 
-  useEffect(() => {
-    window.api.metadata.getApiKey().then(setApiKey)
-    window.api.metadata.getStatus().then(setStatus)
-  }, [])
+  useEffect(() => { window.api.metadata.getStatus().then(setStatus) }, [])
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [log])
-
-  async function handleSave(): Promise<void> {
-    await window.api.metadata.setApiKey(apiKey)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-    window.api.metadata.getStatus().then(setStatus)
-  }
 
   async function handleFetchAll(): Promise<void> {
     setFetching(true)
@@ -446,34 +434,22 @@ function TmdbSection(): JSX.Element {
     <section className={`${styles.section} ${styles.sectionFull}`}>
       <h2 className={styles.sectionTitle}>Movie Metadata</h2>
       <p className={styles.sectionDesc}>
-        Fetches description, genre, and release year for your movies from The Movie Database (TMDb).
-        Get a free API key at <strong>themoviedb.org/settings/api</strong> — sign up, then copy the
-        "API Read Access Token" (the long one).
+        Fetches description, genre, and release year for your movies from Wikipedia.
+        No account or API key needed. Run this after adding new movies to your library.
       </p>
 
       {status && (
         <p className={covered === status.total ? styles.statusOk : styles.sectionDesc} style={{ marginBottom: 12 }}>
           {covered} / {status.total} movies have metadata
-          {status.missing > 0 ? ` · ${status.missing} missing` : ''}
+          {status.missing > 0 ? ` — ${status.missing} missing` : ''}
         </p>
       )}
 
       <div className={styles.row}>
-        <input
-          className={styles.input}
-          type="password"
-          value={apiKey}
-          onChange={(e) => { setApiKey(e.target.value); setSaved(false) }}
-          placeholder="Paste your TMDb API key here"
-          spellCheck={false}
-        />
-        <button className={styles.btn} onClick={handleSave} disabled={!apiKey.trim()}>
-          {saved ? 'Saved' : 'Save'}
-        </button>
         <button
           className={styles.btn}
           onClick={handleFetchAll}
-          disabled={fetching || !apiKey.trim() || status?.missing === 0}
+          disabled={fetching || status?.missing === 0}
         >
           {fetching ? 'Fetching…' : `Fetch Missing${status?.missing ? ` (${status.missing})` : ''}`}
         </button>
@@ -482,11 +458,14 @@ function TmdbSection(): JSX.Element {
       {log.length > 0 && (
         <div className={styles.log} ref={logRef}>
           {log.map((entry, i) => (
-            <div key={i} className={entry.error ? styles.logError : entry.found ? styles.logLine : styles.logLine}
-              style={{ color: entry.error ? 'var(--danger)' : entry.found ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+            <div
+              key={i}
+              className={styles.logLine}
+              style={{ color: entry.error ? 'var(--danger)' : entry.found ? 'var(--text-secondary)' : 'var(--text-muted)' }}
+            >
               {entry.found ? '✓' : entry.error ? '✗' : '–'} {entry.title}
               {entry.error ? ` — ${entry.error}` : ''}
-              <span style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>{entry.done}/{entry.total}</span>
+              <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', flexShrink: 0 }}>{entry.done}/{entry.total}</span>
             </div>
           ))}
         </div>
@@ -613,8 +592,8 @@ export default function SettingsPage(): JSX.Element {
           )}
         </section>
 
-        {/* TMDb metadata */}
-        <TmdbSection />
+        {/* Movie metadata */}
+        <MetadataSection />
 
         {/* Colours */}
         <section className={`${styles.section} ${styles.sectionFull}`}>

@@ -95,10 +95,8 @@ contextBridge.exposeInMainWorld('api', {
     getAppInfo: () => ipcRenderer.invoke('system:getAppInfo')
   },
 
-  // Movie metadata (TMDb)
+  // Movie metadata (Wikipedia)
   metadata: {
-    getApiKey: () => ipcRenderer.invoke('metadata:getApiKey'),
-    setApiKey: (key: string) => ipcRenderer.invoke('metadata:setApiKey', key),
     getStatus: () => ipcRenderer.invoke('metadata:getStatus'),
     fetchOne: (filePath: string, title: string, year: number | null) =>
       ipcRenderer.invoke('metadata:fetchOne', filePath, title, year),
