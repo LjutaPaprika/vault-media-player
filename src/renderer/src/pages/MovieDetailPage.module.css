@@ -1,44 +1,83 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 28px;
   min-height: 100%;
+}
+
+/* ── Hero card (backdrop + poster + info) ─────────────────────────────────── */
+
+.heroCard {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+  filter: blur(48px) brightness(0.35) saturate(1.2);
+  transform: scale(1.08); /* avoids blur edge fringing */
+  pointer-events: none;
+  user-select: none;
+}
+
+.backdropOverlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(10, 10, 11, 0.2) 0%,
+    rgba(10, 10, 11, 0.55) 60%,
+    rgba(10, 10, 11, 0.85) 100%
+  );
+  pointer-events: none;
 }
 
 /* ── Back button ──────────────────────────────────────────────────────────── */
 
 .back {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
+  gap: 6px;
+  color: rgba(242, 242, 244, 0.7);
   font-size: 13px;
   font-weight: 500;
+  padding: 16px 20px 0;
   width: fit-content;
-  padding: 6px 0;
   transition: color 0.15s;
 }
 
 .back:hover { color: var(--text-primary); }
 
-.backArrow { font-size: 16px; line-height: 1; }
+.backArrow { font-size: 18px; line-height: 1; }
 
-/* ── Poster + title ───────────────────────────────────────────────────────── */
+/* ── Hero inner (poster + info row) ──────────────────────────────────────── */
 
-.hero {
+.heroInner {
+  position: relative;
+  z-index: 1;
   display: flex;
-  gap: 32px;
-  align-items: flex-start;
+  gap: 28px;
+  align-items: flex-end;
+  padding: 20px 28px 28px;
 }
 
 .heroPoster {
-  width: 160px;
+  width: 200px;
   flex-shrink: 0;
   aspect-ratio: 2/3;
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--bg-elevated);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
 }
 
 .heroPoster img {
@@ -54,7 +93,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
+  font-size: 40px;
   font-weight: 700;
   color: var(--text-muted);
   background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-hover) 100%);
@@ -64,23 +103,58 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-top: 4px;
+  padding-bottom: 4px;
+  min-width: 0;
 }
 
+/* ── Genre row ────────────────────────────────────────────────────────────── */
+
+.genreRow {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.genreChip {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(232, 180, 75, 0.12);
+  border: 1px solid rgba(232, 180, 75, 0.25);
+  border-radius: 3px;
+  padding: 2px 7px;
+}
+
+/* ── Title + meta ─────────────────────────────────────────────────────────── */
+
 .heroTitle {
-  font-size: 32px;
+  font-size: 34px;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.03em;
   line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.heroYear {
+.heroMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   color: var(--text-secondary);
 }
 
-.heroChips {
+.metaSep {
+  color: var(--text-muted);
+}
+
+/* ── Tech chips ───────────────────────────────────────────────────────────── */
+
+.techChips {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
@@ -90,28 +164,40 @@
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
-  background: var(--bg-elevated);
+  background: rgba(255, 255, 255, 0.07);
   border-radius: 4px;
   padding: 3px 8px;
   letter-spacing: 0.02em;
 }
 
+/* ── Play button ──────────────────────────────────────────────────────────── */
+
 .playButton {
-  margin-top: 2px;
-  padding: 9px 22px;
+  margin-top: 4px;
+  padding: 10px 26px;
   background: var(--accent);
-  color: #fff;
+  color: #111;
   border-radius: var(--radius-sm);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   width: fit-content;
+  letter-spacing: 0.01em;
   transition: opacity 0.15s, box-shadow 0.15s;
 }
 
-.playButton:hover { opacity: 0.85; }
+.playButton:hover { opacity: 0.88; }
 
 .playButtonFocus {
-  box-shadow: 0 0 0 2px var(--bg-base, #1a1a1a), 0 0 0 4px var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-base, #0a0a0b), 0 0 0 4px var(--accent);
+}
+
+/* ── Description ──────────────────────────────────────────────────────────── */
+
+.description {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  max-width: 720px;
 }
 
 /* ── Technical metadata ───────────────────────────────────────────────────── */

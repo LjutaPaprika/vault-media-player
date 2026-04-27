@@ -10,6 +10,8 @@ interface SelectedMovie {
   year: number | null
   posterPath: string | null
   filePath: string
+  description: string | null
+  genre: string | null
 }
 
 export default function MoviesPage(): JSX.Element {
@@ -27,6 +29,8 @@ export default function MoviesPage(): JSX.Element {
         year={selected.year}
         posterPath={selected.posterPath}
         filePath={selected.filePath}
+        description={selected.description}
+        genre={selected.genre}
         onBack={() => setSelected(null)}
       />
     )
@@ -45,7 +49,9 @@ export default function MoviesPage(): JSX.Element {
             title: item.title,
             year: item.year ?? null,
             posterPath: item.posterPath ?? null,
-            filePath: item.filePath ?? ''
+            filePath: item.filePath ?? '',
+            description: (item as { description?: string | null }).description ?? null,
+            genre: (item as { genre?: string | null }).genre ?? null
           })}
           emptyMessage="No movies found. Add .mkv or .mp4 files to media/movies/ and scan your library."
         />

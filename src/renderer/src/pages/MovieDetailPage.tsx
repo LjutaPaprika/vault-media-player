@@ -10,6 +10,8 @@ interface Props {
   year: number | null
   posterPath: string | null
   filePath: string
+  description: string | null
+  genre: string | null
   onBack: () => void
 }
 
@@ -68,10 +70,11 @@ function formatAudioCodec(codec: string): string {
   return map[codec.toLowerCase()] ?? codec.toUpperCase()
 }
 
-export default function MovieDetailPage({ title, year, posterPath, filePath, onBack }: Props): JSX.Element {
+export default function MovieDetailPage({ title, year, posterPath, filePath, description, genre, onBack }: Props): JSX.Element {
   const { setFocusZone } = useAppStore()
   const [extras, setExtras] = useState<MediaItem[]>([])
   const [techInfo, setTechInfo] = useState<MediaTechInfo | null>(null)
+  const [backdropSrc, setBackdropSrc] = useState<string | null>(null)
   const [focusedIdx, setFocusedIdx] = useState(0)
   const focusedIdxRef = useRef(0)
   const playBtnRef = useRef<HTMLButtonElement | null>(null)
@@ -81,7 +84,10 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, onB
   useEffect(() => {
     window.api.library.getExtras(title).then(setExtras)
     window.api.library.getTechInfo(filePath).then(setTechInfo)
-  }, [title, filePath])
+    if (posterPath) {
+      window.api.library.readImage(posterPath).then(setBackdropSrc)
+    }
+  }, [title, filePath, posterPath])
 
   useEffect(() => { extrasRef.current = extras }, [extras])
 
@@ -123,41 +129,64 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, onB
   const codec      = techInfo ? formatCodec(techInfo.videoCodec) : ''
   const duration   = techInfo ? formatDuration(techInfo.duration) : ''
   const fileSize   = techInfo ? formatFileSize(techInfo.fileSize) : ''
-  const metaChips  = [duration, resolution, codec, fileSize].filter(Boolean)
+  const techChips  = [resolution, codec, fileSize].filter(Boolean)
+  const genres     = genre ? genre.split(',').map((g) => g.trim()).filter(Boolean) : []
 
   return (
     <div className={styles.page}>
-      <button className={styles.back} onClick={onBack}>
-        <span className={styles.backArrow}>‹</span> Back
-      </button>
+      {/* Hero card with blurred backdrop */}
+      <div className={styles.heroCard}>
+        {backdropSrc && (
+          <img className={styles.backdrop} src={backdropSrc} alt="" aria-hidden />
+        )}
+        <div className={styles.backdropOverlay} />
 
-      {/* Poster + title + play */}
-      <div className={styles.hero}>
-        <div className={styles.heroPoster}>
-          {posterPath
-            ? <PosterImage filePath={posterPath} title={title} />
-            : <div className={styles.posterPlaceholder}>{title.charAt(0)}</div>
-          }
-        </div>
-        <div className={styles.heroInfo}>
-          <div className={styles.heroTitle}>{title}</div>
-          {year && <div className={styles.heroYear}>{year}</div>}
-          {metaChips.length > 0 && (
-            <div className={styles.heroChips}>
-              {metaChips.map((chip, i) => <span key={i} className={styles.chip}>{chip}</span>)}
+        <button className={styles.back} onClick={onBack}>
+          <span className={styles.backArrow}>‹</span> Back
+        </button>
+
+        <div className={styles.heroInner}>
+          <div className={styles.heroPoster}>
+            {posterPath
+              ? <PosterImage filePath={posterPath} title={title} />
+              : <div className={styles.posterPlaceholder}>{title.charAt(0)}</div>
+            }
+          </div>
+
+          <div className={styles.heroInfo}>
+            {genres.length > 0 && (
+              <div className={styles.genreRow}>
+                {genres.map((g) => <span key={g} className={styles.genreChip}>{g}</span>)}
+              </div>
+            )}
+            <div className={styles.heroTitle}>{title}</div>
+            <div className={styles.heroMeta}>
+              {year && <span>{year}</span>}
+              {year && duration && <span className={styles.metaSep}>·</span>}
+              {duration && <span>{duration}</span>}
             </div>
-          )}
-          <button
-            ref={playBtnRef}
-            className={`${styles.playButton} ${focusedIdx === 0 ? styles.playButtonFocus : ''}`}
-            onClick={playMovie}
-            disabled={launching}
-            style={launching ? { opacity: 0.5, cursor: 'default' } : undefined}
-          >
-            {launching ? 'Opening…' : '▶ Play'}
-          </button>
+            {techChips.length > 0 && (
+              <div className={styles.techChips}>
+                {techChips.map((chip, i) => <span key={i} className={styles.chip}>{chip}</span>)}
+              </div>
+            )}
+            <button
+              ref={playBtnRef}
+              className={`${styles.playButton} ${focusedIdx === 0 ? styles.playButtonFocus : ''}`}
+              onClick={playMovie}
+              disabled={launching}
+              style={launching ? { opacity: 0.5, cursor: 'default' } : undefined}
+            >
+              {launching ? 'Opening…' : '▶  Play'}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Description */}
+      {description && (
+        <p className={styles.description}>{description}</p>
+      )}
 
       {/* Technical metadata */}
       {techInfo && (
