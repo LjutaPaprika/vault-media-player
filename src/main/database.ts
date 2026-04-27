@@ -202,15 +202,39 @@ export function deleteOrphanedEntries(foundPaths: Set<string>): void {
 
 export function rerootPaths(oldRoot: string, newRoot: string): void {
   const db = getDb()
-  db.prepare(`
-    UPDATE media_items
-    SET
-      file_path   = ? || SUBSTR(file_path,   LENGTH(?) + 1),
-      poster_path = CASE WHEN poster_path IS NOT NULL
-                    THEN ? || SUBSTR(poster_path, LENGTH(?) + 1)
-                    ELSE NULL END
-    WHERE file_path LIKE ? || '%'
-  `).run(newRoot, oldRoot, newRoot, oldRoot, oldRoot)
+
+  // Normalize to forward slashes and strip any trailing separator so startsWith is reliable
+  const fwd = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '')
+  const normOld = fwd(oldRoot)
+  const normNew = fwd(newRoot)
+
+  function reroot(p: string | null): string | null {
+    if (!p) return null
+    const normP = fwd(p)
+    if (!normP.startsWith(normOld)) return p
+    // Rebuild with the new root, then apply the native separator for this platform
+    let result = normNew + normP.slice(normOld.length)
+    if (process.platform === 'win32') result = result.replace(/\//g, '\\')
+    return result
+  }
+
+  const rows = db
+    .prepare('SELECT rowid, file_path, poster_path FROM media_items')
+    .all() as { rowid: number; file_path: string; poster_path: string | null }[]
+
+  const update = db.prepare(
+    'UPDATE media_items SET file_path = ?, poster_path = ? WHERE rowid = ?'
+  )
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const newFilePath   = reroot(row.file_path)
+      const newPosterPath = reroot(row.poster_path)
+      if (newFilePath !== row.file_path || newPosterPath !== row.poster_path) {
+        update.run(newFilePath, newPosterPath, row.rowid)
+      }
+    }
+  })
+  tx()
 }
 
 export function setLastOpened(filePath: string): void {
