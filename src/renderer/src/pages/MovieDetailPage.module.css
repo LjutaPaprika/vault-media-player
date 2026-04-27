@@ -189,6 +189,37 @@
   box-shadow: 0 0 0 2px var(--bg-base, #0a0a0b), 0 0 0 4px var(--accent);
 }
 
+/* ── Action row (play + refresh) ──────────────────────────────────────────── */
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.refreshButton {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-secondary);
+  font-size: 16px;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.refreshButton:hover { background: rgba(255,255,255,0.12); color: var(--text-primary); }
+.refreshButton:disabled { opacity: 0.4; cursor: default; }
+
+.refreshMsg {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ── Description ──────────────────────────────────────────────────────────── */
 
 .description {

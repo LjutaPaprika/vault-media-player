@@ -93,6 +93,14 @@ interface MediaItem {
   lastOpenedAt: number | null
 }
 
+interface MetadataProgress {
+  done: number
+  total: number
+  title: string
+  found: boolean
+  error?: string
+}
+
 interface GpuInfo {
   name: string
   vramMB: number
@@ -197,6 +205,14 @@ interface Window {
     system: {
       getInfo:    () => Promise<SystemInfo>
       getAppInfo: () => Promise<AppInfo>
+    }
+    metadata: {
+      getApiKey: () => Promise<string>
+      setApiKey: (key: string) => Promise<void>
+      getStatus: () => Promise<{ total: number; missing: number }>
+      fetchOne: (filePath: string, title: string, year: number | null) => Promise<{ title: string; year: number | null; description: string | null; genre: string | null } | null>
+      fetchAll: () => Promise<{ done: number; total: number }>
+      onProgress: (cb: (p: MetadataProgress) => void) => () => void
     }
     platform: NodeJS.Platform
   }

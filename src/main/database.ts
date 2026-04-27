@@ -339,3 +339,34 @@ export function closeDb(): void {
     db = null
   }
 }
+
+export function updateMovieMetadata(
+  filePath: string,
+  data: { year?: number | null; description?: string | null; genre?: string | null }
+): void {
+  const sets: string[] = []
+  const vals: unknown[] = []
+  if ('year' in data)        { sets.push('year = ?');        vals.push(data.year ?? null) }
+  if ('description' in data) { sets.push('description = ?'); vals.push(data.description ?? null) }
+  if ('genre' in data)       { sets.push('genre = ?');       vals.push(data.genre ?? null) }
+  if (!sets.length) return
+  vals.push(filePath)
+  getDb().prepare(`UPDATE media_items SET ${sets.join(', ')} WHERE file_path = ?`).run(...vals)
+}
+
+export function getMoviesNeedingMetadata(): { filePath: string; title: string; year: number | null }[] {
+  return getDb()
+    .prepare(
+      `SELECT file_path as filePath, title, year FROM media_items
+       WHERE category = 'movies' AND (description IS NULL OR description = '')
+       ORDER BY title ASC`
+    )
+    .all() as { filePath: string; title: string; year: number | null }[]
+}
+
+export function getMovieMetadataStatus(): { total: number; missing: number } {
+  const db = getDb()
+  const total   = (db.prepare(`SELECT COUNT(*) as n FROM media_items WHERE category = 'movies'`).get() as { n: number }).n
+  const missing = (db.prepare(`SELECT COUNT(*) as n FROM media_items WHERE category = 'movies' AND (description IS NULL OR description = '')`).get() as { n: number }).n
+  return { total, missing }
+}

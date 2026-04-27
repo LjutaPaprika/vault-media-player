@@ -10,7 +10,8 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened, getStats, getDbPath, rerootPaths } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened, getStats, getDbPath, rerootPaths, updateMovieMetadata, getMoviesNeedingMetadata, getMovieMetadataStatus } from './database'
+import { fetchMovieMetadata, clearGenreCache } from './tmdb'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -510,5 +511,51 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('manga:closeCbz', () => {
     cbzEntries = null
+  })
+
+  // ─── Movie metadata (TMDb) ────────────────────────────────────────────────
+
+  ipcMain.handle('metadata:getApiKey', () => getConfig('tmdbApiKey') ?? '')
+
+  ipcMain.handle('metadata:setApiKey', (_event, key: string) => {
+    setConfig('tmdbApiKey', key.trim())
+    clearGenreCache()
+  })
+
+  ipcMain.handle('metadata:getStatus', () => getMovieMetadataStatus())
+
+  ipcMain.handle('metadata:fetchOne', async (
+    _event, filePath: string, title: string, year: number | null
+  ) => {
+    const apiKey = getConfig('tmdbApiKey')
+    if (!apiKey) throw new Error('TMDb API key not configured. Add it in Settings.')
+    const result = await fetchMovieMetadata(title, year, apiKey)
+    if (result) updateMovieMetadata(filePath, { year: result.year, description: result.description, genre: result.genre })
+    return result
+  })
+
+  ipcMain.handle('metadata:fetchAll', async (event) => {
+    const apiKey = getConfig('tmdbApiKey')
+    if (!apiKey) throw new Error('TMDb API key not configured. Add it in Settings.')
+    const movies = getMoviesNeedingMetadata()
+    let done = 0
+    for (const movie of movies) {
+      try {
+        const result = await fetchMovieMetadata(movie.title, movie.year, apiKey)
+        if (result) updateMovieMetadata(movie.filePath, { year: result.year, description: result.description, genre: result.genre })
+        done++
+        event.sender.send('metadata:progress', {
+          done, total: movies.length, title: movie.title, found: Boolean(result)
+        })
+      } catch (err) {
+        done++
+        event.sender.send('metadata:progress', {
+          done, total: movies.length, title: movie.title, found: false, error: (err as Error).message
+        })
+        if ((err as Error).message.includes('Invalid TMDb API key')) break
+      }
+      await new Promise((r) => setTimeout(r, 280)) // 40 req/10s TMDb rate limit
+    }
+    return { done, total: movies.length }
   })
 }

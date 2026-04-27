@@ -81,6 +81,13 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, des
   const extraRefs = useRef<(HTMLButtonElement | null)[]>([])
   const extrasRef = useRef<MediaItem[]>([])
 
+  // Local overrides — updated after a metadata refresh
+  const [localYear, setLocalYear] = useState(year)
+  const [localDescription, setLocalDescription] = useState(description)
+  const [localGenre, setLocalGenre] = useState(genre)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null)
+
   useEffect(() => {
     window.api.library.getExtras(title).then(setExtras)
     window.api.library.getTechInfo(filePath).then(setTechInfo)
@@ -90,6 +97,27 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, des
   }, [title, filePath, posterPath])
 
   useEffect(() => { extrasRef.current = extras }, [extras])
+
+  async function handleRefreshMetadata(): Promise<void> {
+    setRefreshing(true)
+    setRefreshMsg(null)
+    try {
+      const result = await window.api.metadata.fetchOne(filePath, title, localYear)
+      if (result) {
+        if (result.year !== null) setLocalYear(result.year)
+        setLocalDescription(result.description)
+        setLocalGenre(result.genre)
+        setRefreshMsg('Updated')
+      } else {
+        setRefreshMsg('No match found')
+      }
+    } catch (e) {
+      setRefreshMsg((e as Error).message)
+    } finally {
+      setRefreshing(false)
+      setTimeout(() => setRefreshMsg(null), 3000)
+    }
+  }
 
   const [launching, setLaunching] = useState(false)
 
@@ -130,7 +158,7 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, des
   const duration   = techInfo ? formatDuration(techInfo.duration) : ''
   const fileSize   = techInfo ? formatFileSize(techInfo.fileSize) : ''
   const techChips  = [resolution, codec, fileSize].filter(Boolean)
-  const genres     = genre ? genre.split(',').map((g) => g.trim()).filter(Boolean) : []
+  const genres     = localGenre ? localGenre.split(',').map((g) => g.trim()).filter(Boolean) : []
 
   return (
     <div className={styles.page}>
@@ -164,8 +192,8 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, des
             )}
             <div className={styles.heroTitle}>{title}</div>
             <div className={styles.heroMeta}>
-              {year && <span>{year}</span>}
-              {year && duration && <span className={styles.metaSep}>·</span>}
+              {localYear && <span>{localYear}</span>}
+              {localYear && duration && <span className={styles.metaSep}>·</span>}
               {duration && <span>{duration}</span>}
             </div>
             {techChips.length > 0 && (
@@ -173,22 +201,33 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, des
                 {techChips.map((chip, i) => <span key={i} className={styles.chip}>{chip}</span>)}
               </div>
             )}
-            <button
-              ref={playBtnRef}
-              className={`${styles.playButton} ${focusedIdx === 0 ? styles.playButtonFocus : ''}`}
-              onClick={playMovie}
-              disabled={launching}
-              style={launching ? { opacity: 0.5, cursor: 'default' } : undefined}
-            >
-              {launching ? 'Opening…' : '▶  Play'}
-            </button>
+            <div className={styles.actionRow}>
+              <button
+                ref={playBtnRef}
+                className={`${styles.playButton} ${focusedIdx === 0 ? styles.playButtonFocus : ''}`}
+                onClick={playMovie}
+                disabled={launching}
+                style={launching ? { opacity: 0.5, cursor: 'default' } : undefined}
+              >
+                {launching ? 'Opening…' : '▶  Play'}
+              </button>
+              <button
+                className={styles.refreshButton}
+                onClick={handleRefreshMetadata}
+                disabled={refreshing}
+                title="Fetch metadata from TMDb"
+              >
+                {refreshing ? '…' : '↻'}
+              </button>
+              {refreshMsg && <span className={styles.refreshMsg}>{refreshMsg}</span>}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Description */}
-      {description && (
-        <p className={styles.description}>{description}</p>
+      {localDescription && (
+        <p className={styles.description}>{localDescription}</p>
       )}
 
       {/* Technical metadata */}

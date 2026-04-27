@@ -95,6 +95,21 @@ contextBridge.exposeInMainWorld('api', {
     getAppInfo: () => ipcRenderer.invoke('system:getAppInfo')
   },
 
+  // Movie metadata (TMDb)
+  metadata: {
+    getApiKey: () => ipcRenderer.invoke('metadata:getApiKey'),
+    setApiKey: (key: string) => ipcRenderer.invoke('metadata:setApiKey', key),
+    getStatus: () => ipcRenderer.invoke('metadata:getStatus'),
+    fetchOne: (filePath: string, title: string, year: number | null) =>
+      ipcRenderer.invoke('metadata:fetchOne', filePath, title, year),
+    fetchAll: () => ipcRenderer.invoke('metadata:fetchAll'),
+    onProgress: (cb: (p: MetadataProgress) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, p: MetadataProgress): void => cb(p)
+      ipcRenderer.on('metadata:progress', handler)
+      return () => ipcRenderer.removeListener('metadata:progress', handler)
+    }
+  },
+
   // Platform info
   platform: process.platform
 })
