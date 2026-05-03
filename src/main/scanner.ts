@@ -408,12 +408,12 @@ function scanEpisodes(
           const subDir = join(dir, entry.name)
           const subVideoCount = readdirSync(subDir, { withFileTypes: true })
             .filter((e) => e.isFile() && VIDEO_EXTS.has(extname(e.name).toLowerCase())).length
-          if (subVideoCount > 1) {
-            // Multi-episode sub-series: description is stored as "§Label§Exx · Title".
+          if (subVideoCount >= 1) {
+            // Named sub-series (single or multi-file): description is stored as "§Label§Exx · Title".
             // episodes.json uses bare Exx keys (E01, E02, ...).
             count += scanEpisodes(subDir, seriesTitle, year, poster, category, stableSeasonHash(entry.name), loadEpisodeMap(subDir), entry.name)
           } else {
-            // Single file or unknown: fall back to current behaviour (season 0 = Movies / Specials)
+            // No video files directly in folder — recurse without a sub-series label
             count += scanEpisodes(subDir, seriesTitle, year, poster, category, season, episodeMap)
           }
         }
