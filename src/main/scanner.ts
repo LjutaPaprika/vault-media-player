@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs'
-import { join, extname, basename } from 'path'
+import { join, extname, basename, dirname } from 'path'
 import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, updateTechInfo, needsTechInfo, setConfig } from './database'
 import { probeFile } from './mediaInfo'
 
