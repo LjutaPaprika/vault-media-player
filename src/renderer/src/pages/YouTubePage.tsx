@@ -203,6 +203,7 @@ export default function YouTubePage(): JSX.Element {
   const { contentResetKey } = useAppStore()
   const [query, setQuery] = useState('')
   const [showDownload, setShowDownload] = useState(false)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
   useEffect(() => { setQuery('') }, [contentResetKey])
 
@@ -215,6 +216,29 @@ export default function YouTubePage(): JSX.Element {
       if (!playlistMap.has(item.genre)) playlistMap.set(item.genre, [])
       playlistMap.get(item.genre)!.push(item)
     }
+  }
+
+  // Collapse new playlists by default when they first appear
+  useEffect(() => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      for (const name of playlistMap.keys()) {
+        if (!next.has(`seen:${name}`)) {
+          next.add(name)
+          next.add(`seen:${name}`)
+        }
+      }
+      return next
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items])
+
+  function togglePlaylist(name: string): void {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name); else next.add(name)
+      return next
+    })
   }
 
   const isEmpty = !loading && !error && filtered.length === 0
@@ -251,17 +275,31 @@ export default function YouTubePage(): JSX.Element {
         </>
       )}
 
-      {/* Playlists */}
-      {!loading && !error && [...playlistMap.entries()].map(([playlist, videos]) => (
-        <div key={playlist}>
-          <p className={styles.sectionLabel}>{playlist}</p>
-          <div className={styles.grid}>
-            {videos.map((item) => (
-              <VideoCard key={item.id} item={item} />
-            ))}
+      {/* Playlists — collapsible */}
+      {!loading && !error && [...playlistMap.entries()].map(([playlist, videos]) => {
+        const isCollapsed = collapsed.has(playlist)
+        return (
+          <div key={playlist}>
+            <button className={styles.playlistHeader} onClick={() => togglePlaylist(playlist)}>
+              <span className={styles.playlistName}>{playlist}</span>
+              <span className={styles.playlistCount}>{videos.length} video{videos.length !== 1 ? 's' : ''}</span>
+              <svg
+                viewBox="0 0 24 24" fill="currentColor"
+                className={`${styles.chevron} ${isCollapsed ? styles.chevronCollapsed : ''}`}
+              >
+                <path d="M7 10l5 5 5-5z"/>
+              </svg>
+            </button>
+            {!isCollapsed && (
+              <div className={styles.grid}>
+                {videos.map((item) => (
+                  <VideoCard key={item.id} item={item} />
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        )
+      })}
     </PageShell>
 
     {showDownload && (

@@ -125,6 +125,49 @@
   line-height: 1.4;
 }
 
+/* ── Collapsible playlist header ─────────────────────────────────────────── */
+
+.playlistHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 24px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  border-top: 1px solid var(--border);
+  transition: background 0.15s;
+}
+
+.playlistHeader:hover { background: var(--bg-elevated); }
+
+.playlistName {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.playlistCount {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.chevron {
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.chevronCollapsed {
+  transform: rotate(-90deg);
+}
+
 /* ── Download modal ──────────────────────────────────────────────────────── */
 
 .modalBackdrop {
