@@ -295,7 +295,8 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
       if (key) keyCount.set(key, (keyCount.get(key) ?? 0) + 1)
     }
     const validGroups = new Set([...keyCount.entries()].filter(([, c]) => c >= 1).map(([k]) => k))
-    const sections: ExtrasSection[] = []
+    const singles: ExtrasSection[] = []
+    const groups: ExtrasSection[] = []
     const seenGroups = new Map<string, ExtrasSection & { kind: 'group' }>()
     for (const item of sortedExtras) {
       const key = extrasGroupKey(item.title)
@@ -303,14 +304,14 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
         if (!seenGroups.has(key)) {
           const section: ExtrasSection & { kind: 'group' } = { kind: 'group', key, items: [] }
           seenGroups.set(key, section)
-          sections.push(section)
+          groups.push(section)
         }
         seenGroups.get(key)!.items.push(item)
       } else {
-        sections.push({ kind: 'single', item })
+        singles.push({ kind: 'single', item })
       }
     }
-    return sections
+    return [...singles, ...groups]
   }, [sortedExtras])
 
   // Flat nav items — rebuilt whenever collapsed state or data changes
