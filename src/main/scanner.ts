@@ -94,7 +94,7 @@ const EXTRAS_TYPE_MAP: [RegExp, string][] = [
   [/^ED/i,   'Ending'],
   [/^OAD/i,  'OAD'],
   [/^OVA/i,  'OVA'],
-  [/^SP/i,   'Special'],
+  [/^SP\b/i, 'Special'],
 ]
 
 function titleFromExtrasFilename(filename: string): string {
@@ -138,7 +138,7 @@ const NEEDS_CONTEXT_RE = /^(?:Special|Non-Credit (?:Ending|Opening)|Promo Video|
 // Folders to scan as extras/bonus content
 const KNOWN_EXTRAS_FOLDERS = new Set([
   'featurettes', 'extras', 'bonus', 'specials', 'behind the scenes',
-  'deleted scenes', 'interviews', 'scenes', 'shorts', 'trailers', 'nc'
+  'deleted scenes', 'interviews', 'scenes', 'shorts', 'trailers', 'nc', 'movies'
 ])
 
 // Folders to skip entirely
@@ -171,6 +171,10 @@ function parseEpisodeInfo(filename: string, season?: number): string | null {
   // Standard dash-delimited SxxExx: "- S01E01 - Title"
   const seMatch = filename.match(/[-–]\s*(S\d+E\d+)\s*[-–]\s*(.+?)(?:\s*\(.*\))*\.[^.]+$/i)
   if (seMatch) return `${seMatch[1].toUpperCase()} · ${seMatch[2].trim()}`
+
+  // Space-separated SxxExx: "- S01 E01 - Title" (e.g. GitS SAC naming)
+  const seSpaceMatch = filename.match(/[-–]\s*(S\d+)\s+(E\d+)\s*[-–]\s*(.+?)(?:\s*\(.*\))*\.[^.]+$/i)
+  if (seSpaceMatch) return `${seSpaceMatch[1].toUpperCase()}${seSpaceMatch[2].toUpperCase()} · ${seSpaceMatch[3].trim()}`
 
   // Dot-delimited SxxExx: "show.S01E01.title.or.quality.mkv"
   const dotSeMatch = filename.match(/\.(S\d+E\d+)\.(.+?)\.[^.]+$/i)
@@ -424,7 +428,11 @@ function scanEpisodes(
       const raw = parseEpisodeInfo(entry.name, season) ?? titleFromFilename(entry.name)
       const bare = raw.replace(/^S\d+E(\d+)(?:\s*·\s*.+)?$/, 'E$1')
       const eKey = bare.match(/^(E\d+)$/i)
-      const title = eKey && episodeMap?.[eKey[1]] ? `${bare} · ${episodeMap[eKey[1]]}` : bare
+      // Prefer episodes.json title; fall back to inline title parsed from filename
+      const mappedTitle = eKey ? episodeMap?.[eKey[1]] : undefined
+      const inlineTitle = raw.match(/^S\d+E\d+\s*·\s*(.+)$/)?.[1]
+      const titleSuffix = mappedTitle ?? inlineTitle
+      const title = titleSuffix ? `${bare} · ${titleSuffix}` : bare
       episodeInfo = `§${subSeriesLabel}§${title}`
     } else {
       episodeInfo = parseEpisodeInfo(entry.name, season) ?? titleFromFilename(entry.name)
