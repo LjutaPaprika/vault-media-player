@@ -38,6 +38,8 @@ function extrasGroupKey(title: string): string | null {
   if (dashNum) return dashNum[1].trim()
   const spaceNum = title.match(/^(.+?)\s+(\d+)$/)
   if (spaceNum) return spaceNum[1].trim()
+  const seasonTag = title.match(/^(.+?)\s+\(S\d+\)$/)
+  if (seasonTag) return seasonTag[1].trim()
   return null
 }
 
