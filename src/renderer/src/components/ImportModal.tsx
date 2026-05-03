@@ -172,8 +172,7 @@ export default function ImportModal({ onClose }: Props): JSX.Element {
     const resolved = resolveAlbumPath()
     if (!resolved) return
 
-    // Show one placeholder track while we wait for yt-dlp to start reporting
-    setTracks([{ url: playlistUrl, title: 'Fetching playlist…', status: 'pending', percent: 0 }])
+    setTracks([{ url: playlistUrl, title: 'Track 1', status: 'pending', percent: 0 }])
     setStep('downloading')
 
     try {

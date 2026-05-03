@@ -67,3 +67,27 @@ export function probeFile(filePath: string, ffprobePath: string): MediaTechInfo 
   }
 }
 
+export interface AudioFileMeta {
+  duration: number
+  title?: string
+  artist?: string
+}
+
+export function probeAudioFileSync(filePath: string, ffprobePath: string): AudioFileMeta {
+  try {
+    const result = spawnSync(
+      ffprobePath,
+      ['-v', 'quiet', '-print_format', 'json', '-show_entries', 'format_tags=title,artist:format=duration', filePath],
+      { timeout: 8000, encoding: 'utf-8', windowsHide: true }
+    )
+    if (result.status !== 0 || !result.stdout) return { duration: 0 }
+    const data = JSON.parse(result.stdout) as { format?: { duration?: string; tags?: { title?: string; artist?: string } } }
+    return {
+      duration: parseFloat(data.format?.duration ?? '0') || 0,
+      title:    data.format?.tags?.title  || undefined,
+      artist:   data.format?.tags?.artist || undefined,
+    }
+  } catch {
+    return { duration: 0 }
+  }
+}

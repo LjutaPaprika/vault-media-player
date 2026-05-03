@@ -18,24 +18,34 @@ import { findDriveByLabel, hideSystemFolders, runSync } from './sync'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings, setKeyboardBindings, resetKeyboardBindings, type KeyboardBinding } from './keyboardBindings'
 
-/** Async, non-blocking ffprobe — reads only the duration from a file's format metadata. */
-function probeFileDuration(filePath: string, ffprobePath: string): Promise<number> {
+const YT_SUFFIX_RE = /\s*[\[(](audio|official\s*audio|official\s*video|official\s*music\s*video|music\s*video|lyric\s*video?|lyrics|official|hd|hq)[\])]$/i
+
+/** Async, non-blocking ffprobe — reads duration + ID3 tags from a file. */
+function probeAudioMeta(filePath: string, ffprobePath: string): Promise<{ duration: number; title?: string; artist?: string }> {
   return new Promise((resolve) => {
     const proc = spawn(ffprobePath, [
-      '-v', 'quiet', '-print_format', 'json', '-show_format', filePath
+      '-v', 'quiet', '-print_format', 'json',
+      '-show_entries', 'format_tags=title,artist:format=duration',
+      filePath
     ], { windowsHide: true })
     let stdout = ''
     proc.stdout.on('data', (d: Buffer) => { stdout += d.toString() })
     proc.on('close', (code) => {
-      if (code !== 0 || !stdout) { resolve(0); return }
+      if (code !== 0 || !stdout) { resolve({ duration: 0 }); return }
       try {
-        const data = JSON.parse(stdout) as { format?: { duration?: string } }
-        resolve(parseFloat(data.format?.duration ?? '0') || 0)
-      } catch { resolve(0) }
+        const data = JSON.parse(stdout) as { format?: { duration?: string; tags?: { title?: string; artist?: string } } }
+        resolve({
+          duration: parseFloat(data.format?.duration ?? '0') || 0,
+          title:  data.format?.tags?.title,
+          artist: data.format?.tags?.artist
+        })
+      } catch { resolve({ duration: 0 }) }
     })
-    proc.on('error', () => resolve(0))
+    proc.on('error', () => resolve({ duration: 0 }))
   })
 }
+
+/** Async, non-blocking ffprobe — reads only the duration from a file's format metadata. */
 
 /** Cached drive root — findDriveByLabel runs execSync in a loop, so we only do it once per session. */
 let cachedLibraryRoot: string | null = null
@@ -104,40 +114,70 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     // Find album art to attach to each track (enables per-track cover in multi-album shuffle)
     const artPath = findPoster(dir)
 
-    // Duration cache — stored inside album.json under a "durations" key
+    // Metadata cache — stored inside album.json under a "durations" key
+    // Format evolved from Record<string, number> → Record<string, { duration, title?, artist?, probed? }>
     const albumJsonPath = join(dir, 'album.json')
     let albumData: Record<string, unknown> = {}
     try { albumData = JSON.parse(readFileSync(albumJsonPath, 'utf8')) } catch { /* no file yet */ }
-    let cache: Record<string, number> = (albumData.durations as Record<string, number>) ?? {}
+    const rawCache = (albumData.durations ?? {}) as Record<string, number | { duration: number; title?: string; artist?: string; probed?: boolean }>
+    type TrackMeta = { duration: number; title?: string; artist?: string; probed?: boolean }
+    const cache: Record<string, TrackMeta> = {}
+    for (const [k, v] of Object.entries(rawCache)) {
+      cache[k] = typeof v === 'number' ? { duration: v } : v
+    }
 
-    let ffprobePath: string | null = null  // resolved lazily — avoids drive scan on cache hits
-    let cacheUpdated = false
+    // Resolve ffprobe path once if any tracks need probing
+    const needsProbe = audioFiles.some((f) => !cache[f]?.probed)
+    const ffprobePath = needsProbe ? getToolPath(resolveLibraryRoot(), 'ffprobe') : ''
 
-    const tracks: { path: string; trackNumber: number; title: string; artist?: string; duration: number; artPath: string | null }[] = []
-    for (const f of audioFiles) {
+    // Probe all uncached tracks in parallel
+    const entries = await Promise.all(audioFiles.map(async (f) => {
+      let entry = cache[f]
+      if (!entry?.probed) {
+        const meta = await probeAudioMeta(join(dir, f), ffprobePath)
+        entry = { ...meta, probed: true }
+        cache[f] = entry
+      }
+      return { f, entry }
+    }))
+
+    const cacheUpdated = needsProbe
+
+    const tracks = entries.map(({ f, entry }) => {
       const fullPath = join(dir, f)
       const base = basename(f, extname(f))
-      const match = base.match(/^(\d+)[.\s\-]+(.+)$/)
-      let duration = cache[f]
-      if (duration === undefined) {
-        if (!ffprobePath) ffprobePath = getToolPath(resolveLibraryRoot(), 'ffprobe')
-        duration = await probeFileDuration(fullPath, ffprobePath)  // non-blocking
-        cache[f] = duration
-        cacheUpdated = true
+      const trackMatch = base.match(/^(\d+)[.\s\-]+(.+)$/)
+      const trackNumber = trackMatch ? parseInt(trackMatch[1], 10) : 0
+
+      // Parse filename — convention: "NN - Title - Artist.mp3"
+      const rawFilename = trackMatch ? trackMatch[2].trim() : base
+      const stripped = rawFilename.replace(/^\d+[\.\s]+/, '').trim() || rawFilename
+      const firstDash = stripped.indexOf(' - ')
+      const fileTitle  = firstDash >= 0 ? stripped.slice(0, firstDash).trim() : stripped
+      const fileArtist = firstDash >= 0 ? stripped.slice(firstDash + 3).trim() || undefined : undefined
+
+      const idTitle  = entry.title  ? entry.title.replace(YT_SUFFIX_RE, '').trim()  : ''
+      const idArtist = entry.artist ? entry.artist.replace(YT_SUFFIX_RE, '').trim() : ''
+
+      // Some YouTube Music playlists embed the track title as the ID3 artist and the album
+      // name as the ID3 title — detectable when the artist field starts with an ordinal like "1. "
+      const metaInverted = !!idArtist && /^\d+[\.\s]/.test(idArtist)
+
+      let title: string
+      let artist: string | undefined
+      if (metaInverted) {
+        title  = fileTitle
+        artist = fileArtist
+      } else if (idTitle) {
+        title  = idTitle
+        artist = idArtist || undefined
+      } else {
+        title  = fileTitle
+        artist = fileArtist
       }
-      const rawTitle = match ? match[2].trim() : base
-      const lastDash = rawTitle.lastIndexOf(' - ')
-      const title = lastDash >= 0 ? rawTitle.slice(0, lastDash).trim() : rawTitle
-      const artist = lastDash >= 0 ? rawTitle.slice(lastDash + 3).trim() : undefined
-      tracks.push({
-        path: fullPath,
-        trackNumber: match ? parseInt(match[1], 10) : 0,
-        title,
-        artist,
-        duration,
-        artPath
-      })
-    }
+
+      return { path: fullPath, trackNumber, title, artist, duration: entry.duration, artPath }
+    })
 
     if (cacheUpdated) {
       try { writeFileSync(albumJsonPath, JSON.stringify({ ...albumData, durations: cache })) } catch { /* non-fatal */ }
@@ -361,8 +401,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const ytdlpPath = getToolPath(resolveLibraryRoot(), 'yt-dlp')
     const outTemplate = join(albumPath, '%(playlist_index)02d - %(title)s.%(ext)s')
 
-    let currentItem = 0
+    let currentItem = -1  // -1 = no track started yet
     let totalItems = 0
+    let lineBuffer = ''
 
     await new Promise<void>((resolve) => {
       const proc = spawn(ytdlpPath, [
@@ -372,46 +413,57 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       ])
 
       proc.stdout.on('data', (chunk: Buffer) => {
-        const text = chunk.toString()
+        lineBuffer += chunk.toString()
+        const lines = lineBuffer.split('\n')
+        lineBuffer = lines.pop() ?? ''
 
-        // "Downloading item 3 of 12"
-        const itemMatch = text.match(/Downloading item (\d+) of (\d+)/)
-        if (itemMatch) {
-          currentItem = parseInt(itemMatch[1], 10) - 1
-          totalItems  = parseInt(itemMatch[2], 10)
-          win.webContents.send('download:progress', {
-            index: currentItem, total: totalItems, url, status: 'downloading', percent: 0
-          })
-        }
+        for (const text of lines) {
+          // "Downloading item 3 of 12" — mark previous track done, start next
+          const itemMatch = text.match(/Downloading item (\d+) of (\d+)/)
+          if (itemMatch) {
+            const newItem = parseInt(itemMatch[1], 10) - 1  // 0-based
+            totalItems = parseInt(itemMatch[2], 10)
+            // Mark the previous track as done before starting the next
+            if (currentItem >= 0) {
+              win.webContents.send('download:progress', {
+                index: currentItem, total: totalItems, url, status: 'done', percent: 100
+              })
+            }
+            currentItem = newItem
+            win.webContents.send('download:progress', {
+              index: currentItem, total: totalItems, url, status: 'downloading', percent: 0
+            })
+          }
 
-        const pctMatch = text.match(/\[download\]\s+([\d.]+)%/)
-        if (pctMatch && totalItems > 0) {
-          win.webContents.send('download:progress', {
-            index: currentItem, total: totalItems, url, status: 'downloading', percent: parseFloat(pctMatch[1])
-          })
-        }
+          const pctMatch = text.match(/\[download\]\s+([\d.]+)%/)
+          if (pctMatch && currentItem >= 0) {
+            win.webContents.send('download:progress', {
+              index: currentItem, total: Math.max(totalItems, 1), url, status: 'downloading', percent: parseFloat(pctMatch[1])
+            })
+          }
 
-        if (text.includes('[ExtractAudio]') && totalItems > 0) {
-          win.webContents.send('download:progress', {
-            index: currentItem, total: totalItems, url, status: 'converting', percent: 100
-          })
+          if (text.includes('[ExtractAudio]') && currentItem >= 0) {
+            win.webContents.send('download:progress', {
+              index: currentItem, total: Math.max(totalItems, 1), url, status: 'converting', percent: 100
+            })
+          }
         }
       })
 
       proc.on('error', () => {
         win.webContents.send('download:progress', {
-          index: currentItem, total: Math.max(totalItems, 1), url, status: 'error', percent: 0
+          index: Math.max(currentItem, 0), total: Math.max(totalItems, 1), url, status: 'error', percent: 0
         })
         resolve()
       })
       proc.on('close', (code) => {
-        win.webContents.send('download:progress', {
-          index: Math.max(currentItem, 0),
-          total: Math.max(totalItems, 1),
-          url,
-          status: code === 0 ? 'done' : 'error',
-          percent: 100
-        })
+        // Mark the final track done (or errored)
+        if (currentItem >= 0) {
+          win.webContents.send('download:progress', {
+            index: currentItem, total: Math.max(totalItems, 1), url,
+            status: code === 0 ? 'done' : 'error', percent: 100
+          })
+        }
         resolve()
       })
     })

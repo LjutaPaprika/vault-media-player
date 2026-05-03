@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs'
 import { join, extname, basename, dirname } from 'path'
 import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, updateTechInfo, needsTechInfo, setConfig } from './database'
-import { probeFile } from './mediaInfo'
+import { probeFile, probeAudioFileSync } from './mediaInfo'
 
 // ─── Incremental scan session state ─────────────────────────────────────────
 // Populated at the start of each scanLibrary call, cleared at the end.
@@ -492,16 +492,22 @@ function scanMusic(rootDir: string, ffprobePath = ''): number {
     if (audioFiles.length === 0) continue
     _musicTrackCount += audioFiles.length
 
-    // Probe and cache durations for all tracks during scan — keeps album opens instant
+    // Probe and cache full audio metadata during scan so album opens are instant
     if (ffprobePath) {
       const albumJsonPath = join(albumDir, 'album.json')
       const albumData = tryReadJson(albumJsonPath)
-      const cache = (albumData.durations as Record<string, number>) ?? {}
+      const rawCache = (albumData.durations ?? {}) as Record<string, number | { duration: number; probed?: boolean }>
+      // Normalise legacy number entries
+      const cache: Record<string, { duration: number; title?: string; artist?: string; probed?: boolean }> = {}
+      for (const [k, v] of Object.entries(rawCache)) {
+        cache[k] = typeof v === 'number' ? { duration: v } : v
+      }
       let updated = false
       for (const f of audioFiles) {
-        if (cache[f] !== undefined) continue
-        const info = probeFile(join(albumDir, f), ffprobePath)
-        if (info && info.duration > 0) { cache[f] = info.duration; updated = true }
+        if (cache[f]?.probed) continue  // already fully cached
+        const meta = probeAudioFileSync(join(albumDir, f), ffprobePath)
+        cache[f] = { ...meta, probed: true }
+        updated = true
       }
       if (updated) {
         try { writeFileSync(albumJsonPath, JSON.stringify({ ...albumData, durations: cache })) } catch { /* non-fatal */ }
