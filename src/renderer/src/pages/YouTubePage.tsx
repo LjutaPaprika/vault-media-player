@@ -40,7 +40,9 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
   }
 
   async function download(): Promise<void> {
-    if (urls.length === 0) return
+    const finalUrls = urlInput.trim() ? [...urls, urlInput.trim()] : urls
+    if (finalUrls.length === 0) return
+    setUrlInput('')
     const playlistName =
       playlistMode === 'existing' ? selectedPlaylist || null
       : playlistMode === 'new'    ? newPlaylistName.trim() || null
@@ -56,7 +58,7 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
     })
 
     await window.api.youtube.downloadVideo({
-      urls: urls.map((url) => ({ url, title: '' })),
+      urls: finalUrls.map((url) => ({ url, title: '' })),
       playlistName
     })
 
@@ -87,17 +89,7 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
           <>
             {/* URL input */}
             <div className={styles.field}>
-              <label className={styles.label}>Video URL</label>
-              <div className={styles.urlRow}>
-                <input
-                  className={styles.input}
-                  placeholder="https://youtube.com/watch?v=..."
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') addUrl() }}
-                />
-                <button className={styles.addBtn} onClick={addUrl}>Add</button>
-              </div>
+              <label className={styles.label}>Video URLs</label>
               {urls.length > 0 && (
                 <ul className={styles.urlList}>
                   {urls.map((u, i) => (
@@ -108,6 +100,17 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
                   ))}
                 </ul>
               )}
+              <div className={styles.urlRow}>
+                <input
+                  className={styles.input}
+                  placeholder="https://youtube.com/watch?v=..."
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addUrl() }}
+                  autoFocus
+                />
+                <button className={styles.addBtn} onClick={addUrl}>Add</button>
+              </div>
             </div>
 
             {/* Playlist */}
@@ -167,9 +170,9 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
               <button
                 className={styles.downloadBtn}
                 onClick={() => void download()}
-                disabled={urls.length === 0}
+                disabled={urls.length === 0 && !urlInput.trim()}
               >
-                Download {urls.length > 1 ? `${urls.length} videos` : 'video'}
+                {(() => { const n = urls.length + (urlInput.trim() ? 1 : 0); return n > 1 ? `Download ${n} videos` : 'Download video' })()}
               </button>
             </div>
           </>
