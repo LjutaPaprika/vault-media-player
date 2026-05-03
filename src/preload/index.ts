@@ -89,6 +89,13 @@ contextBridge.exposeInMainWorld('api', {
     set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value)
   },
 
+  // YouTube videos
+  youtube: {
+    getPlaylists: (): Promise<string[]> => ipcRenderer.invoke('youtube:getPlaylists'),
+    downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) =>
+      ipcRenderer.invoke('youtube:downloadVideo', args)
+  },
+
   // CBZ reader
   manga: {
     openCbz: (filePath: string) => ipcRenderer.invoke('manga:openCbz', filePath),

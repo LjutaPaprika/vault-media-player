@@ -17,6 +17,7 @@ import MusicPage from './pages/MusicPage'
 import BooksPage from './pages/BooksPage'
 import MangaPage from './pages/MangaPage'
 import GamesPage from './pages/GamesPage'
+import YouTubePage from './pages/YouTubePage'
 import HomePage from './pages/HomePage'
 import StatsPage from './pages/StatsPage'
 import SettingsPage from './pages/SettingsPage'
@@ -26,6 +27,7 @@ const PAGES: Record<string, JSX.Element> = {
   movies:   <MoviesPage />,
   tv:       <TVPage />,
   anime:    <AnimePage />,
+  youtube:  <YouTubePage />,
   music:    <MusicPage />,
   books:    <BooksPage />,
   manga:    <MangaPage />,

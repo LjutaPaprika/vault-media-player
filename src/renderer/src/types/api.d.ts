@@ -194,6 +194,10 @@ interface Window {
       get: (key: string, fallback: string) => Promise<string>
       set: (key: string, value: string) => Promise<void>
     }
+    youtube: {
+      getPlaylists: () => Promise<string[]>
+      downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) => Promise<{ success: boolean }>
+    }
     manga: {
       openCbz: (filePath: string) => Promise<string[]>
       closeCbz: () => Promise<void>

@@ -498,6 +498,74 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
   })
 
+  // ─── YouTube videos ───────────────────────────────────────────────────────
+
+  ipcMain.handle('youtube:getPlaylists', () => {
+    const root = resolveLibraryRoot()
+    const youtubeDir = join(root, 'media', 'youtube')
+    if (!existsSync(youtubeDir)) return []
+    return readdirSync(youtubeDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort()
+  })
+
+  ipcMain.handle('youtube:downloadVideo', async (
+    _event,
+    { urls, playlistName }: { urls: { url: string; title: string }[]; playlistName: string | null }
+  ) => {
+    const root = resolveLibraryRoot()
+    const youtubeDir = join(root, 'media', 'youtube')
+    const targetDir = playlistName ? join(youtubeDir, playlistName) : youtubeDir
+    if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true })
+
+    const ytdlpPath = getToolPath(root, 'yt-dlp')
+    const outTemplate = join(targetDir, '%(title)s.%(ext)s')
+
+    for (let i = 0; i < urls.length; i++) {
+      const { url } = urls[i]
+      win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'downloading', percent: 0 })
+
+      await new Promise<void>((resolve) => {
+        const proc = spawn(ytdlpPath, [
+          '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+          '--merge-output-format', 'mp4',
+          '--write-thumbnail', '--convert-thumbnails', 'jpg',
+          '--newline', '--no-playlist', '--no-update',
+          '-o', outTemplate, url
+        ])
+
+        proc.stdout.on('data', (chunk: Buffer) => {
+          const text = chunk.toString()
+          const m = text.match(/\[download\]\s+([\d.]+)%/)
+          if (m) {
+            win.webContents.send('download:progress', {
+              index: i, total: urls.length, url, status: 'downloading', percent: parseFloat(m[1])
+            })
+          }
+          if (text.includes('[Merger]') || text.includes('[ffmpeg]')) {
+            win.webContents.send('download:progress', {
+              index: i, total: urls.length, url, status: 'converting', percent: 100
+            })
+          }
+        })
+
+        proc.on('error', () => {
+          win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'error', percent: 0 })
+          resolve()
+        })
+        proc.on('close', (code) => {
+          win.webContents.send('download:progress', {
+            index: i, total: urls.length, url, status: code === 0 ? 'done' : 'error', percent: 100
+          })
+          resolve()
+        })
+      })
+    }
+
+    return { success: true }
+  })
+
   ipcMain.handle('manga:openCbz', (_event, filePath: string): string[] => {
     try {
       const zip = new AdmZip(filePath)

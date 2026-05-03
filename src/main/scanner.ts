@@ -733,6 +733,43 @@ function scanRoms(rootDir: string): number {
   return count
 }
 
+// ─── YouTube videos ──────────────────────────────────────────────────────────
+
+function scanYouTube(rootDir: string): number {
+  if (!existsSync(rootDir)) return 0
+  let count = 0
+
+  function scanVideoFile(filePath: string, playlist: string | null): void {
+    const base = basename(filePath, extname(filePath))
+    const dir = dirname(filePath)
+    const sidecarPoster = ['jpg', 'png', 'jpeg', 'webp']
+      .map((e) => join(dir, `${base}.${e}`))
+      .find(existsSync) ?? null
+    checkAndUpsert(filePath, {
+      title: base,
+      category: 'youtube',
+      filePath,
+      posterPath: sidecarPoster,
+      genre: playlist
+    })
+    count++
+  }
+
+  for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      const playlistDir = join(rootDir, entry.name)
+      for (const file of readdirSync(playlistDir, { withFileTypes: true })) {
+        if (file.isFile() && VIDEO_EXTS.has(extname(file.name).toLowerCase())) {
+          scanVideoFile(join(playlistDir, file.name), entry.name)
+        }
+      }
+    } else if (entry.isFile() && VIDEO_EXTS.has(extname(entry.name).toLowerCase())) {
+      scanVideoFile(join(rootDir, entry.name), null)
+    }
+  }
+  return count
+}
+
 // ─── Main entry ─────────────────────────────────────────────────────────────
 
 export function scanLibrary(root: string, ffprobePath = ''): { total: number; updated: number } {
@@ -751,6 +788,7 @@ export function scanLibrary(root: string, ffprobePath = ''): { total: number; up
   total += scanMovies(m('movies'), ffprobePath)
   total += scanEpisodeCategory(m('tv'), 'tv')
   total += scanEpisodeCategory(m('anime'), 'anime')
+  total += scanYouTube(m('youtube'))
   total += scanMusic(m('music'), ffprobePath)
   total += scanBooks(m('books'))
   total += scanManga(m('manga'))
