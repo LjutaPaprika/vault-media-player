@@ -46,17 +46,28 @@ function sectionLabel(seasonNum: number, subLabels: Map<number, string>): string
 }
 
 function parseEpisode(item: MediaItem): ParsedEpisode {
-  // Sub-series: "§Label§Exx" or "§Label§Exx · Title"
-  const subMatch = item.description?.match(/^§([^§]+)§(E\d+)(?:\s*·\s*(.+))?$/i)
+  // Sub-series: "§Label§Exx", "§Label§Exx · Title", or "§Label§Plain Title" (no episode number)
+  const subMatch = item.description?.match(/^§([^§]+)§(?:(E\d+)(?:\s*·\s*(.+))?|(.+))$/i)
   if (subMatch) {
-    const [, subLabel, eCode, rawTitle] = subMatch
-    const ep = parseInt(eCode.slice(1), 10)
+    const [, subLabel, eCode, rawTitle, plainTitle] = subMatch
+    if (eCode) {
+      const ep = parseInt(eCode.slice(1), 10)
+      return {
+        id: item.id,
+        season: stableSeasonHash(subLabel),
+        episode: ep,
+        badge: `E${String(ep).padStart(2, '0')}`,
+        title: rawTitle ?? `Episode ${ep}`,
+        filePath: item.filePath,
+        subLabel
+      }
+    }
     return {
       id: item.id,
       season: stableSeasonHash(subLabel),
-      episode: ep,
-      badge: `E${String(ep).padStart(2, '0')}`,
-      title: rawTitle ?? `Episode ${ep}`,
+      episode: 0,
+      badge: '',
+      title: plainTitle,
       filePath: item.filePath,
       subLabel
     }
@@ -230,6 +241,14 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   const orderedSeasons = useMemo(() => {
     let entries = Array.from(seasons.entries())
 
+    // Default: sort each section by episode number, then file path as tiebreaker
+    entries = entries.map(([seasonNum, eps]) => [
+      seasonNum,
+      [...eps].sort((a, b) =>
+        a.episode !== b.episode ? a.episode - b.episode : a.filePath.localeCompare(b.filePath)
+      ),
+    ] as [number, ParsedEpisode[]])
+
     if (watchOrder) {
       // Order sections
       entries = entries.sort(([a], [b]) => {
@@ -273,7 +292,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
       const key = extrasGroupKey(item.title)
       if (key) keyCount.set(key, (keyCount.get(key) ?? 0) + 1)
     }
-    const validGroups = new Set([...keyCount.entries()].filter(([, c]) => c >= 2).map(([k]) => k))
+    const validGroups = new Set([...keyCount.entries()].filter(([, c]) => c >= 1).map(([k]) => k))
     const sections: ExtrasSection[] = []
     const seenGroups = new Map<string, ExtrasSection & { kind: 'group' }>()
     for (const item of sortedExtras) {
@@ -404,11 +423,23 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
         {watchGuide && watchGuide.length > 0 && (
           <div className={styles.guideSection}>
             <div className={styles.metaLabel}>Watch Order</div>
-            <ol className={styles.guideList}>
-              {watchGuide.map((entry, i) => (
-                <li key={i} className={styles.guideEntry}>{entry}</li>
-              ))}
-            </ol>
+            <div className={styles.guideList}>
+              {(() => {
+                let n = 0
+                return watchGuide.map((entry, i) =>
+                  entry.startsWith('---') ? (
+                    <div key={i} className={styles.guideDivider}>
+                      {entry.replace(/^-+\s*/, '').replace(/\s*-+$/, '')}
+                    </div>
+                  ) : (
+                    <div key={i} className={styles.guideEntry}>
+                      <span className={styles.guideNum}>{++n}</span>
+                      {entry}
+                    </div>
+                  )
+                )
+              })()}
+            </div>
           </div>
         )}
       </div>
