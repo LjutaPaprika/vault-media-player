@@ -160,6 +160,7 @@ interface Window {
       markOpened: (filePath: string) => Promise<void>
       getMusicAlbums: () => Promise<MusicAlbumsResult>
       downloadYouTube: (args: { urls: { url: string; title: string; artist?: string }[]; albumPath: string; artist?: string }) => Promise<{ success: boolean }>
+      downloadYouTubePlaylist: (args: { url: string; albumPath: string; artist?: string }) => Promise<{ success: boolean }>
       onDownloadProgress: (cb: (progress: DownloadProgress) => void) => () => void
     }
     playlist: {

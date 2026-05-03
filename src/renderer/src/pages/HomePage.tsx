@@ -41,10 +41,12 @@ export default function HomePage(): JSX.Element {
             All your media and games in one place. Use the sidebar to browse your library.
           </p>
           <div className={styles.actions}>
-            <button className={styles.primaryBtn} onClick={handleScan} disabled={scanning}>
+            <button className={styles.primaryBtn} onClick={handleScan} disabled={scanning}
+              title="Fast — only re-indexes files that are new or have changed">
               {scanning ? 'Scanning...' : 'Scan Library'}
             </button>
-            <button className={styles.secondaryBtn} onClick={handleForceScan} disabled={scanning}>
+            <button className={styles.secondaryBtn} onClick={handleForceScan} disabled={scanning}
+              title="Rebuilds the full index from scratch — use if items are missing or metadata looks wrong">
               Force Rescan
             </button>
           </div>
@@ -54,7 +56,8 @@ export default function HomePage(): JSX.Element {
           <h3 className={styles.tipsTitle}>Getting Started</h3>
           <ul className={styles.tipsList}>
             <li>Place your media in the correct folders on your drive (<code>media/movies</code>, <code>games/roms/n64</code>, etc.)</li>
-            <li>Click <strong>Scan Library</strong> to index everything. If existing files or folders are modified, click <strong>Force Rescan</strong> to pick up those changes.</li>
+            <li><strong>Scan Library</strong> is fast and incremental — it only processes files that are new or have changed since the last scan. Use it whenever you add new content.</li>
+            <li><strong>Force Rescan</strong> rebuilds the entire index from scratch. Only needed if items are missing or metadata looks wrong.</li>
             <li>Use a controller or keyboard to navigate — arrow keys move between items, Enter selects</li>
             <li>Add <code>movie.json</code> / <code>game.json</code> sidecar files for richer metadata</li>
           </ul>

@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('api', {
     getMusicAlbums: () => ipcRenderer.invoke('library:getMusicAlbums'),
     downloadYouTube: (args: { urls: { url: string; title: string }[]; albumPath: string; artist?: string }) =>
       ipcRenderer.invoke('library:downloadYouTube', args),
+    downloadYouTubePlaylist: (args: { url: string; albumPath: string; artist?: string }) =>
+      ipcRenderer.invoke('library:downloadYouTubePlaylist', args),
     onDownloadProgress: (cb: (progress: DownloadProgress) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, progress: DownloadProgress): void => cb(progress)
       ipcRenderer.on('download:progress', handler)

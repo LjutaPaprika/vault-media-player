@@ -346,6 +346,79 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return { success: true }
   })
 
+  ipcMain.handle('library:downloadYouTubePlaylist', async (
+    _event,
+    { url, albumPath, artist }: { url: string; albumPath: string; artist?: string }
+  ) => {
+    if (!existsSync(albumPath)) mkdirSync(albumPath, { recursive: true })
+    if (artist) {
+      const albumJsonPath = join(albumPath, 'album.json')
+      let existing: Record<string, unknown> = {}
+      try { existing = JSON.parse(readFileSync(albumJsonPath, 'utf8')) } catch { /* new file */ }
+      writeFileSync(albumJsonPath, JSON.stringify({ ...existing, artist }))
+    }
+
+    const ytdlpPath = getToolPath(resolveLibraryRoot(), 'yt-dlp')
+    const outTemplate = join(albumPath, '%(playlist_index)02d - %(title)s.%(ext)s')
+
+    let currentItem = 0
+    let totalItems = 0
+
+    await new Promise<void>((resolve) => {
+      const proc = spawn(ytdlpPath, [
+        '-x', '--audio-format', 'mp3', '--audio-quality', '0',
+        '--yes-playlist', '--newline', '--no-update',
+        '-o', outTemplate, url
+      ])
+
+      proc.stdout.on('data', (chunk: Buffer) => {
+        const text = chunk.toString()
+
+        // "Downloading item 3 of 12"
+        const itemMatch = text.match(/Downloading item (\d+) of (\d+)/)
+        if (itemMatch) {
+          currentItem = parseInt(itemMatch[1], 10) - 1
+          totalItems  = parseInt(itemMatch[2], 10)
+          win.webContents.send('download:progress', {
+            index: currentItem, total: totalItems, url, status: 'downloading', percent: 0
+          })
+        }
+
+        const pctMatch = text.match(/\[download\]\s+([\d.]+)%/)
+        if (pctMatch && totalItems > 0) {
+          win.webContents.send('download:progress', {
+            index: currentItem, total: totalItems, url, status: 'downloading', percent: parseFloat(pctMatch[1])
+          })
+        }
+
+        if (text.includes('[ExtractAudio]') && totalItems > 0) {
+          win.webContents.send('download:progress', {
+            index: currentItem, total: totalItems, url, status: 'converting', percent: 100
+          })
+        }
+      })
+
+      proc.on('error', () => {
+        win.webContents.send('download:progress', {
+          index: currentItem, total: Math.max(totalItems, 1), url, status: 'error', percent: 0
+        })
+        resolve()
+      })
+      proc.on('close', (code) => {
+        win.webContents.send('download:progress', {
+          index: Math.max(currentItem, 0),
+          total: Math.max(totalItems, 1),
+          url,
+          status: code === 0 ? 'done' : 'error',
+          percent: 100
+        })
+        resolve()
+      })
+    })
+
+    return { success: true }
+  })
+
   // ─── Controller bindings ──────────────────────────────────────────────────
   ipcMain.handle('controller:getBindings', () => getBindings())
   ipcMain.handle('controller:setBindings', (_event, bindings: ControllerBinding[]) => setBindings(bindings))
