@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 
 interface Props {
   filePath: string
@@ -12,6 +13,7 @@ function toMediaUrl(filePath: string): string {
 }
 
 export default function PDFReaderPage({ filePath, title, onBack }: Props): JSX.Element {
+  useEscapeKey(onBack)
   const [loaded, setLoaded] = useState(false)
   const src = toMediaUrl(filePath)
 

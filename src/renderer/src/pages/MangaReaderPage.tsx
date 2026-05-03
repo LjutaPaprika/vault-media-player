@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import styles from './MangaReaderPage.module.css'
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX.Element {
+  useEscapeKey(onBack)
   const [pages, setPages] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

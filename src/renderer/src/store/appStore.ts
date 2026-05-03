@@ -16,7 +16,9 @@ interface AppState {
   libraryLabel: string | null
   // Path resolved at runtime (e.g. "E:\") — null means drive not currently connected
   libraryPath: string | null
+  navHistory: Page[]
   setActivePage: (page: Page) => void
+  popNav: () => void
   setFocusZone: (zone: FocusZone) => void
   setLibrary: (label: string, path: string | null) => void
 }
@@ -27,7 +29,19 @@ export const useAppStore = create<AppState>((set) => ({
   contentResetKey: 0,
   libraryLabel: null,
   libraryPath: null,
-  setActivePage: (page) => set((s) => ({ activePage: page, contentResetKey: s.contentResetKey + 1 })),
+  navHistory: [],
+  setActivePage: (page) => set((s) => ({
+    activePage: page,
+    contentResetKey: s.contentResetKey + 1,
+    navHistory: s.activePage !== page
+      ? [...s.navHistory.slice(-9), s.activePage]
+      : s.navHistory
+  })),
+  popNav: () => set((s) => {
+    if (s.navHistory.length === 0) return {}
+    const prev = s.navHistory[s.navHistory.length - 1]
+    return { activePage: prev, contentResetKey: s.contentResetKey + 1, navHistory: s.navHistory.slice(0, -1) }
+  }),
   setFocusZone: (zone) => set({ focusZone: zone }),
   setLibrary: (label, path) => set({ libraryLabel: label, libraryPath: path })
 }))

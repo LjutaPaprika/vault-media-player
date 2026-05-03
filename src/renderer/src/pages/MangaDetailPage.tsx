@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import PosterImage from '../components/PosterImage'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import styles from './ShowDetailPage.module.css'
 
 interface Props {
@@ -35,6 +36,7 @@ function isExtra(title: string): boolean {
 }
 
 export default function MangaDetailPage({ seriesName, volumes, onBack, onSelect }: Props): JSX.Element {
+  useEscapeKey(onBack)
   const lastReadId = useMemo(() =>
     volumes.reduce<MediaItem | null>(
       (best, vol) => ((vol.lastOpenedAt ?? 0) > (best?.lastOpenedAt ?? 0) ? vol : best),

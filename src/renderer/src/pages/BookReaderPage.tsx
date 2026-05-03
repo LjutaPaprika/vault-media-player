@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import styles from './BookReaderPage.module.css'
 
 interface Chapter {
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function BookReaderPage({ filePath, onBack, title: titleProp, isManga }: Props): JSX.Element {
+  useEscapeKey(onBack)
   const contentRef                      = useRef<HTMLDivElement>(null)
   const [title,        setTitle]        = useState('')
   const [author,       setAuthor]       = useState('')

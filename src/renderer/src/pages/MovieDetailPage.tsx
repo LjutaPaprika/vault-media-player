@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import PosterImage from '../components/PosterImage'
 import { useController } from '../hooks/useController'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useAppStore } from '../store/appStore'
 import styles from './MovieDetailPage.module.css'
 
@@ -70,6 +71,7 @@ function formatAudioCodec(codec: string): string {
 
 export default function MovieDetailPage({ title, year, posterPath, filePath, onBack }: Props): JSX.Element {
   const { setFocusZone } = useAppStore()
+  useEscapeKey(onBack)
   const [extras, setExtras] = useState<MediaItem[]>([])
   const [techInfo, setTechInfo] = useState<MediaTechInfo | null>(null)
   const [focusedIdx, setFocusedIdx] = useState(0)

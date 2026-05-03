@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMusicPlayer, Track, AlbumMeta } from '../context/MusicPlayerContext'
 import { useController } from '../hooks/useController'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useAppStore } from '../store/appStore'
 import styles from './AlbumDetailPage.module.css'
 
@@ -24,6 +25,7 @@ function formatTime(s: number): string {
 
 export default function AlbumDetailPage({ albumTitle, artist, year, artPath, firstTrackPath, onBack }: Props): JSX.Element {
   const { setFocusZone } = useAppStore()
+  useEscapeKey(onBack)
   const { play, playTrack, togglePlay, playing, currentIndex, albumMeta, queue, seek, currentTime, shuffleEnabled, setShuffle, toggleShuffle } = useMusicPlayer()
   const currentTimeRef = useRef(0)
   useEffect(() => { currentTimeRef.current = currentTime }, [currentTime])

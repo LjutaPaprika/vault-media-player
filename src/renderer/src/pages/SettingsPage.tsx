@@ -119,7 +119,7 @@ function KeyboardBindings(): JSX.Element {
     function onKey(e: KeyboardEvent): void {
       if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return
       e.preventDefault()
-      if (e.key === 'Escape') { setListening(null); return }
+      if (e.key === 'Escape') { e.stopPropagation(); setListening(null); return }
       const binding = bindings?.find((b) => b.action === listening)
       if (!binding) { setListening(null); return }
       const newKey = binding.context === 'mpv' ? webEventToMpvKey(e) : e.key

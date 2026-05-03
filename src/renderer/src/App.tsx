@@ -35,8 +35,17 @@ const PAGES: Record<string, JSX.Element> = {
 }
 
 export default function App(): JSX.Element {
-  const { activePage, libraryLabel, setLibrary } = useAppStore()
+  const { activePage, libraryLabel, setLibrary, popNav } = useAppStore()
   const [configLoading, setConfigLoading] = useState(true)
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      if (e.key === 'Escape') popNav()
+    }
+    // Bubbling phase — detail pages use capture phase with stopImmediatePropagation to take priority
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [popNav])
 
   useEffect(() => {
     const minDelay = new Promise((r) => setTimeout(r, 1000))
