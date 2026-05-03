@@ -151,7 +151,9 @@ export default function ImportModal({ onClose }: Props): JSX.Element {
       await window.api.library.downloadYouTube({ urls: validRows, albumPath, artist })
       importedRef.current = true
     } catch (e) {
-      // errors are shown per-track via progress events; this catches IPC-level failures
+      setStep('setup')
+      setError(e instanceof Error ? e.message : 'Import failed. Please try again.')
+      return
     }
 
     setStep('done')

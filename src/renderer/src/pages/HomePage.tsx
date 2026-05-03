@@ -54,7 +54,7 @@ export default function HomePage(): JSX.Element {
           <h3 className={styles.tipsTitle}>Getting Started</h3>
           <ul className={styles.tipsList}>
             <li>Place your media in the correct folders on your drive (<code>media/movies</code>, <code>games/roms/n64</code>, etc.)</li>
-            <li>Click <strong>Scan Library</strong> to index everything</li>
+            <li>Click <strong>Scan Library</strong> to index everything. If existing files or folders are modified, click <strong>Force Rescan</strong> to pick up those changes.</li>
             <li>Use a controller or keyboard to navigate — arrow keys move between items, Enter selects</li>
             <li>Add <code>movie.json</code> / <code>game.json</code> sidecar files for richer metadata</li>
           </ul>
