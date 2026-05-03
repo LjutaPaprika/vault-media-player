@@ -281,14 +281,16 @@ export default function YouTubePage(): JSX.Element {
         return (
           <div key={playlist}>
             <button className={styles.playlistHeader} onClick={() => togglePlaylist(playlist)}>
-              <span className={styles.playlistName}>{playlist}</span>
+              <span className={styles.playlistPill}>
+                <svg
+                  viewBox="0 0 24 24" fill="currentColor"
+                  className={`${styles.playlistPillIcon} ${isCollapsed ? styles.playlistPillIconCollapsed : ''}`}
+                >
+                  <path d="M7 10l5 5 5-5z"/>
+                </svg>
+                {playlist}
+              </span>
               <span className={styles.playlistCount}>{videos.length} video{videos.length !== 1 ? 's' : ''}</span>
-              <svg
-                viewBox="0 0 24 24" fill="currentColor"
-                className={`${styles.chevron} ${isCollapsed ? styles.chevronCollapsed : ''}`}
-              >
-                <path d="M7 10l5 5 5-5z"/>
-              </svg>
             </button>
             {!isCollapsed && (
               <div className={styles.grid}>

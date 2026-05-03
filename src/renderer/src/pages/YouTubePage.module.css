@@ -130,42 +130,57 @@
 .playlistHeader {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  padding: 14px 24px;
+  padding: 10px 20px 10px 24px;
   background: none;
   border: none;
+  border-top: 1px solid var(--border);
   cursor: pointer;
   text-align: left;
-  border-top: 1px solid var(--border);
   transition: background 0.15s;
+  margin-top: 8px;
 }
 
-.playlistHeader:hover { background: var(--bg-elevated); }
+.playlistHeader:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
 
-.playlistName {
+.playlistPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent);
+  border-radius: 100px;
+  padding: 5px 14px 5px 10px;
   font-size: 13px;
   font-weight: 700;
-  color: var(--text-primary);
-  flex: 1;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.playlistHeader:hover .playlistPill {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+.playlistPillIcon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.playlistPillIconCollapsed {
+  transform: rotate(-90deg);
 }
 
 .playlistCount {
   font-size: 12px;
   color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.chevron {
-  width: 20px;
-  height: 20px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  transition: transform 0.2s;
-}
-
-.chevronCollapsed {
-  transform: rotate(-90deg);
+  flex: 1;
 }
 
 /* ── Download modal ──────────────────────────────────────────────────────── */
