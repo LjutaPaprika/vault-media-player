@@ -91,6 +91,12 @@ function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_media_category ON media_items(category);
   `)
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS favourites (
+      album_path TEXT PRIMARY KEY
+    );
+  `)
+
   // Migrations
   try { db.exec('ALTER TABLE media_items ADD COLUMN file_modified INTEGER DEFAULT 0') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE media_items ADD COLUMN tech_info TEXT') } catch { /* already exists */ }
@@ -252,6 +258,19 @@ export function getExtras(seriesTitle: string): object[] {
        FROM media_items WHERE category = 'extras' AND genre = ? ORDER BY title ASC`
     )
     .all(seriesTitle)
+}
+
+export function getFavourites(): string[] {
+  return (getDb().prepare('SELECT album_path FROM favourites').all() as { album_path: string }[])
+    .map((r) => r.album_path)
+}
+
+export function setFavourite(albumPath: string, isFav: boolean): void {
+  if (isFav) {
+    getDb().prepare('INSERT OR IGNORE INTO favourites (album_path) VALUES (?)').run(albumPath)
+  } else {
+    getDb().prepare('DELETE FROM favourites WHERE album_path = ?').run(albumPath)
+  }
 }
 
 export interface LibraryStats {

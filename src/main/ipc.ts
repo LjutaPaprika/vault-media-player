@@ -10,7 +10,7 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened, getStats, getDbPath, rerootPaths } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -156,6 +156,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // ─── Last opened tracking ─────────────────────────────────────────────────
   ipcMain.handle('library:markOpened', (_event, filePath: string) => setLastOpened(filePath))
+
+  // ─── Favourites ───────────────────────────────────────────────────────────
+  ipcMain.handle('playlist:getFavourites', () => getFavourites())
+  ipcMain.handle('playlist:setFavourite', (_event, albumPath: string, isFav: boolean) => setFavourite(albumPath, isFav))
 
   // ─── Watch order ──────────────────────────────────────────────────────────
 

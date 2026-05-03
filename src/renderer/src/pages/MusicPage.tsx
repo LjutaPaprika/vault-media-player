@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import PageShell from '../components/PageShell'
 import PosterImage from '../components/PosterImage'
 import AlbumDetailPage from './AlbumDetailPage'
@@ -27,6 +27,7 @@ export default function MusicPage(): JSX.Element {
   const [shuffleMode, setShuffleMode] = useState(false)
   const [checkedIndices, setCheckedIndices] = useState<Set<number>>(new Set())
   const [focusedIdx, setFocusedIdx] = useState(0)
+  const [favourites, setFavourites] = useState<Set<string>>(new Set())
 
   const focusedIdxRef = useRef(0)
   const filteredRef = useRef<MediaItem[]>([])
@@ -35,12 +36,28 @@ export default function MusicPage(): JSX.Element {
 
   useEffect(() => { setOpenedAlbum(null) }, [contentResetKey])
 
+  useEffect(() => {
+    window.api.playlist.getFavourites().then((paths) => setFavourites(new Set(paths)))
+  }, [])
+
   const filtered = items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase()))
-  filteredRef.current = filtered
+  const favAlbums  = filtered.filter((i) => i.filePath && favourites.has(i.filePath))
+  const restAlbums = filtered.filter((i) => !i.filePath || !favourites.has(i.filePath))
+  const displayItems = [...favAlbums, ...restAlbums]
+  filteredRef.current = displayItems
+
+  async function toggleFavourite(e: React.MouseEvent, filePath: string): Promise<void> {
+    e.stopPropagation()
+    const isFav = favourites.has(filePath)
+    const next = new Set(favourites)
+    if (isFav) next.delete(filePath); else next.add(filePath)
+    setFavourites(next)
+    await window.api.playlist.setFavourite(filePath, !isFav)
+  }
 
   // In shuffle mode nav[0] = play button, nav[1..n] = albums.
   // In normal mode  nav[0..n-1] = albums.
-  function navTotal(): number { return shuffleMode ? filtered.length + 1 : filtered.length }
+  function navTotal(): number { return shuffleMode ? displayItems.length + 1 : displayItems.length }
 
   function focusItem(idx: number): void {
     const clamped = Math.max(0, Math.min(navTotal() - 1, idx))
@@ -88,7 +105,7 @@ export default function MusicPage(): JSX.Element {
   function enterShuffleMode(): void {
     setShuffleMode(true)
     setCheckedIndices(new Set())
-    const startIdx = filtered.length > 0 ? 1 : 0
+    const startIdx = displayItems.length > 0 ? 1 : 0
     focusedIdxRef.current = startIdx
     setFocusedIdx(startIdx)
   }
@@ -147,13 +164,70 @@ export default function MusicPage(): JSX.Element {
     )
   }
 
-  const allIndices = new Set(filtered.map((_, i) => i))
+  const allIndices = new Set(displayItems.map((_, i) => i))
+
+  function renderCard(item: MediaItem, displayIdx: number): JSX.Element {
+    const navIdx = shuffleMode ? displayIdx + 1 : displayIdx
+    const isChecked = shuffleMode && checkedIndices.has(displayIdx)
+    const isFav = item.filePath ? favourites.has(item.filePath) : false
+    return (
+      <button
+        key={item.id}
+        ref={(el) => (cardRefs.current[displayIdx] = el)}
+        className={`${styles.card} ${isChecked ? styles.cardChecked : ''} ${navIdx === focusedIdx ? styles.controllerFocus : ''}`}
+        onClick={() => {
+          if (shuffleMode) {
+            toggleCheck(displayIdx)
+          } else {
+            setOpenedAlbum({
+              title:          item.title,
+              artist:         item.genre ?? '',
+              year:           item.year ?? null,
+              artPath:        item.posterPath ?? null,
+              firstTrackPath: item.filePath ?? ''
+            })
+          }
+        }}
+      >
+        {shuffleMode && (
+          <div className={`${styles.checkOverlay} ${isChecked ? styles.checkOverlayActive : ''}`}>
+            {isChecked && <span className={styles.checkmark}>✓</span>}
+          </div>
+        )}
+        <div className={styles.art}>
+          {item.posterPath
+            ? <PosterImage filePath={item.posterPath} title={item.title} />
+            : <div className={styles.artPlaceholder}>{item.title.charAt(0)}</div>
+          }
+          {!shuffleMode && (
+            <div className={styles.playOverlay}>
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+          )}
+        </div>
+        <div className={styles.info}>
+          <span className={styles.albumTitle}>{item.title}</span>
+          {!shuffleMode && item.filePath && (
+            <button
+              className={`${styles.starBtn} ${isFav ? styles.starBtnActive : ''}`}
+              onClick={(e) => void toggleFavourite(e, item.filePath!)}
+              title={isFav ? 'Remove from favourites' : 'Add to favourites'}
+            >
+              <svg viewBox="0 0 24 24" fill={isFav ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+            </button>
+          )}
+        </div>
+      </button>
+    )
+  }
 
   return (
     <>
     <PageShell title="Music" searchValue={query} onSearch={setQuery}>
       {/* Shuffle action bar */}
-      {!loading && !error && filtered.length > 0 && (
+      {!loading && !error && displayItems.length > 0 && (
         <div className={styles.actionBar}>
           {shuffleMode ? (
             <>
@@ -169,13 +243,13 @@ export default function MusicPage(): JSX.Element {
                 className={styles.actionBtn}
                 onClick={() =>
                   setCheckedIndices(
-                    checkedIndices.size === filtered.length
+                    checkedIndices.size === displayItems.length
                       ? new Set()
-                      : new Set(filtered.map((_, i) => i))
+                      : new Set(displayItems.map((_, i) => i))
                   )
                 }
               >
-                {checkedIndices.size === filtered.length ? 'Deselect All' : 'Select All'}
+                {checkedIndices.size === displayItems.length ? 'Deselect All' : 'Select All'}
               </button>
               <button className={styles.actionBtn} onClick={cancelShuffleMode}>
                 Cancel
@@ -205,60 +279,30 @@ export default function MusicPage(): JSX.Element {
 
       {loading && <p style={{ color: 'var(--text-muted)', padding: '24px' }}>Loading...</p>}
       {error   && <p style={{ color: 'var(--danger)',     padding: '24px' }}>{error}</p>}
-      {!loading && !error && filtered.length === 0 && (
+      {!loading && !error && displayItems.length === 0 && (
         <p style={{ color: 'var(--text-muted)', padding: '24px' }}>
           {items.length === 0
             ? 'No music found. Add folders to media/music/ and scan your library.'
             : 'No results.'}
         </p>
       )}
-      {!loading && !error && filtered.length > 0 && (
-        <div className={styles.grid}>
-          {filtered.map((item, i) => {
-            const navIdx = shuffleMode ? i + 1 : i
-            const isChecked = shuffleMode && checkedIndices.has(i)
-            return (
-              <button
-                key={item.id}
-                ref={(el) => (cardRefs.current[i] = el)}
-                className={`${styles.card} ${isChecked ? styles.cardChecked : ''} ${navIdx === focusedIdx ? styles.controllerFocus : ''}`}
-                onClick={() => {
-                  if (shuffleMode) {
-                    toggleCheck(i)
-                  } else {
-                    setOpenedAlbum({
-                      title:          item.title,
-                      artist:         item.genre ?? '',
-                      year:           item.year ?? null,
-                      artPath:        item.posterPath ?? null,
-                      firstTrackPath: item.filePath ?? ''
-                    })
-                  }
-                }}
-              >
-                {shuffleMode && (
-                  <div className={`${styles.checkOverlay} ${isChecked ? styles.checkOverlayActive : ''}`}>
-                    {isChecked && <span className={styles.checkmark}>✓</span>}
-                  </div>
-                )}
-                <div className={styles.art}>
-                  {item.posterPath
-                    ? <PosterImage filePath={item.posterPath} title={item.title} />
-                    : <div className={styles.artPlaceholder}>{item.title.charAt(0)}</div>
-                  }
-                  {!shuffleMode && (
-                    <div className={styles.playOverlay}>
-                      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                    </div>
-                  )}
-                </div>
-                <div className={styles.info}>
-                  <span className={styles.albumTitle}>{item.title}</span>
-                </div>
-              </button>
-            )
-          })}
-        </div>
+      {!loading && !error && displayItems.length > 0 && (
+        <>
+          {favAlbums.length > 0 && (
+            <>
+              <p className={styles.sectionLabel}>Favourites</p>
+              <div className={styles.grid}>
+                {favAlbums.map((item, i) => renderCard(item, i))}
+              </div>
+              {restAlbums.length > 0 && <div className={styles.sectionDivider} />}
+            </>
+          )}
+          {restAlbums.length > 0 && (
+            <div className={styles.grid}>
+              {restAlbums.map((item, i) => renderCard(item, favAlbums.length + i))}
+            </div>
+          )}
+        </>
       )}
     </PageShell>
     {showImport && (

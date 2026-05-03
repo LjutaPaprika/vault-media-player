@@ -162,6 +162,10 @@ interface Window {
       downloadYouTube: (args: { urls: { url: string; title: string; artist?: string }[]; albumPath: string; artist?: string }) => Promise<{ success: boolean }>
       onDownloadProgress: (cb: (progress: DownloadProgress) => void) => () => void
     }
+    playlist: {
+      getFavourites: () => Promise<string[]>
+      setFavourite: (albumPath: string, isFav: boolean) => Promise<void>
+    }
     controller: {
       getBindings: () => Promise<ControllerBinding[]>
       setBindings: (bindings: ControllerBinding[]) => Promise<void>

@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld('api', {
     }
   },
 
+  // Favourites
+  playlist: {
+    getFavourites: (): Promise<string[]> => ipcRenderer.invoke('playlist:getFavourites'),
+    setFavourite: (albumPath: string, isFav: boolean): Promise<void> => ipcRenderer.invoke('playlist:setFavourite', albumPath, isFav)
+  },
+
   // Playback
   playback: {
     openFile:  (filePath: string) => ipcRenderer.invoke('playback:openFile', filePath),
