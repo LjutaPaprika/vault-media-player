@@ -20,6 +20,7 @@ import MangaPage from './pages/MangaPage'
 import GamesPage from './pages/GamesPage'
 import YouTubePage from './pages/YouTubePage'
 import HomePage from './pages/HomePage'
+import ArcadePage from './pages/ArcadePage'
 import StatsPage from './pages/StatsPage'
 import SettingsPage from './pages/SettingsPage'
 
@@ -33,6 +34,7 @@ const PAGES: Record<string, JSX.Element> = {
   books:    <BooksPage />,
   manga:    <MangaPage />,
   games:    <GamesPage />,
+  arcade:   <ArcadePage />,
   stats:    <StatsPage />,
   settings: <SettingsPage />
 }

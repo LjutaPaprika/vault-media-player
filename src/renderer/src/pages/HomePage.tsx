@@ -1,7 +1,5 @@
 import { useState } from 'react'
 import PageShell from '../components/PageShell'
-import IdleGame from '../components/IdleGame'
-import Snake from '../components/Snake'
 import styles from './HomePage.module.css'
 
 export default function HomePage(): JSX.Element {
@@ -54,8 +52,6 @@ export default function HomePage(): JSX.Element {
           </div>
           {scanResult && <p className={styles.scanResult}>{scanResult}</p>}
         </div>
-        <IdleGame />
-        <Snake />
         <div className={styles.tips}>
           <h3 className={styles.tipsTitle}>Getting Started</h3>
           <ul className={styles.tipsList}>

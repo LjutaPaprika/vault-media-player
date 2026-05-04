@@ -4,7 +4,7 @@ import { useController, type ControllerButton } from '../hooks/useController'
 import styles from './Sidebar.module.css'
 
 // Pages that render a navigable media grid in the content zone
-const CONTENT_PAGES = new Set<Page>(['movies', 'tv', 'anime', 'youtube', 'music', 'books', 'manga', 'games'])
+const CONTENT_PAGES = new Set<Page>(['movies', 'tv', 'anime', 'youtube', 'music', 'books', 'manga', 'games', 'arcade'])
 
 const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'home',     label: 'Home',     icon: '🏠' },
@@ -16,6 +16,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'books',    label: 'Books',    icon: '📖' },
   { id: 'manga',    label: 'Manga',    icon: '📚' },
   { id: 'games',    label: 'Games',    icon: '🎮' },
+  { id: 'arcade',   label: 'Arcade',   icon: '🕹️' },
   { id: 'stats',    label: 'Stats',    icon: '📊' },
   { id: 'settings', label: 'Settings', icon: '⚙️' }
 ]

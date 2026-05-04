@@ -47,8 +47,11 @@ function pickEmpty(occupied: Set<string>): Pt | null {
   return t < 400 ? p : null
 }
 
-export default function Snake(): JSX.Element {
-  const [open, setOpen]           = useState(false)
+interface SnakeProps {
+  onNewBest?: (score: number) => void
+}
+
+export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
   const [phase, setPhase]         = useState<Phase>('idle')
   const [score, setScore]         = useState(0)
   const [highScore, setHighScore] = useState(0)
@@ -72,7 +75,6 @@ export default function Snake(): JSX.Element {
   const lastBombCenter   = useRef<Pt | null>(null)
   const rafRef           = useRef<number | null>(null)
   const phaseRef         = useRef<Phase>('idle')
-  const openRef          = useRef(false)
 
   useEffect(() => {
     window.api.settings.get(SAVE_KEY, '0').then(v => {
@@ -80,22 +82,12 @@ export default function Snake(): JSX.Element {
       hiRef.current = n
       setHighScore(n)
     })
+    requestAnimationFrame(draw)
     return () => stopAll()
   }, [])
 
   useEffect(() => {
-    openRef.current = open
-    if (open) {
-      if (phaseRef.current === 'playing') startRaf()
-      else requestAnimationFrame(draw)
-    } else {
-      stopRaf()
-    }
-  }, [open])
-
-  useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (!openRef.current) return
       if (phaseRef.current !== 'playing') {
         if (e.key === 'Enter' || e.key === ' ') startGame()
         return
@@ -108,7 +100,6 @@ export default function Snake(): JSX.Element {
       }
       const d = map[e.key]
       if (!d) return
-      // Check against last queued direction (or current if queue empty) to prevent 180s
       const q = inputQueue.current
       const last = q.length > 0 ? q[q.length - 1] : dirRef.current
       if (d !== OPPOSITE[last] && d !== last && q.length < 3) q.push(d)
@@ -256,11 +247,10 @@ export default function Snake(): JSX.Element {
   function triggerBomb(): void {
     if (phaseRef.current !== 'playing') return
 
-    // Retry until we land far enough from the previous zone
     let bw = 0, bh = 0, bx = 0, by = 0
     for (let attempt = 0; attempt < 12; attempt++) {
-      bw = 6 + rand(7)    // 6–12 wide
-      bh = 5 + rand(5)    // 5–9 tall
+      bw = 6 + rand(7)
+      bh = 5 + rand(5)
       bx = 2 + rand(COLS - bw - 4)
       by = 2 + rand(ROWS - bh - 4)
       const cx = bx + bw / 2, cy = by + bh / 2
@@ -269,7 +259,6 @@ export default function Snake(): JSX.Element {
     }
     lastBombCenter.current = { x: bx + bw / 2, y: by + bh / 2 }
 
-    // Elliptical shape — include only cells whose centre falls inside the ellipse
     const ecx = bx + bw / 2, ecy = by + bh / 2
     const rx  = bw / 2,      ry  = bh / 2
     const cells: Pt[] = []
@@ -321,7 +310,6 @@ export default function Snake(): JSX.Element {
         ctx.strokeStyle = `rgba(234,179,8,${edgePulse})`
         ctx.lineWidth = 1
         bomb.cells.forEach(c => ctx.strokeRect(c.x*CELL+0.5, c.y*CELL+0.5, CELL-1, CELL-1))
-        // "!" in every other cell for clarity
         ctx.fillStyle = `rgba(234,179,8,${edgePulse})`
         ctx.font = `bold ${CELL - 6}px monospace`
         ctx.textAlign = 'center'
@@ -449,6 +437,7 @@ export default function Snake(): JSX.Element {
       if (s > hiRef.current) {
         hiRef.current = s; setHighScore(s)
         window.api.settings.set(SAVE_KEY, String(s)).catch(() => {})
+        onNewBest?.(s)
       }
       requestAnimationFrame(draw)
       return
@@ -510,53 +499,40 @@ export default function Snake(): JSX.Element {
   const isNewBest = phase === 'dead' && score > 0 && score >= hiRef.current
 
   return (
-    <div className={styles.panel}>
-      <button className={styles.toggleBar} onClick={() => setOpen(o => !o)}>
-        <span className={styles.toggleTitle}>🐍 Snake</span>
-        <span className={styles.toggleMeta}>
-          {score > 0 && <span>{score} pts</span>}
-          {highScore > 0 && <span className={styles.metaHi}> · best {highScore}</span>}
-        </span>
-        <span className={styles.toggleChevron}>{open ? '▲' : '▼'}</span>
-      </button>
-
-      {open && (
-        <div className={styles.body}>
-          <div className={styles.gameWrap}>
-            <canvas ref={canvasRef} width={W} height={H} className={styles.canvas} />
-            {phase !== 'playing' && (
-              <div className={styles.overlay}>
-                {phase === 'dead' ? (
-                  <>
-                    <span className={styles.overlayTitle}>Game Over</span>
-                    <span className={styles.overlayScore}>{score} pts</span>
-                    {isNewBest && <span className={styles.overlayNew}>✨ New Best!</span>}
-                  </>
-                ) : (
-                  <>
-                    <span className={styles.overlayTitle}>🐍 Snake</span>
-                    <div className={styles.legend}>
-                      <span className={styles.legendItem}><span className={styles.dotGold} />food · 1 pt</span>
-                      <span className={styles.legendItem}><span className={styles.dotOrange} />bonus · {BONUS_POINTS} pts</span>
-                      <span className={styles.legendItem}><span className={styles.dotRock} />rocks</span>
-                      <span className={styles.legendItem}><span className={styles.dotEnemy} />enemies</span>
-                      <span className={styles.legendItem}><span className={styles.dotBomb} />meteor zone</span>
-                    </div>
-                  </>
-                )}
-                <button className={styles.startBtn} onClick={startGame}>
-                  {phase === 'dead' ? 'Play Again' : 'Start'}
-                </button>
-                <span className={styles.overlayHint}>Arrow keys · WASD</span>
-              </div>
+    <div className={styles.body}>
+      <div className={styles.gameWrap}>
+        <canvas ref={canvasRef} width={W} height={H} className={styles.canvas} />
+        {phase !== 'playing' && (
+          <div className={styles.overlay}>
+            {phase === 'dead' ? (
+              <>
+                <span className={styles.overlayTitle}>Game Over</span>
+                <span className={styles.overlayScore}>{score} pts</span>
+                {isNewBest && <span className={styles.overlayNew}>✨ New Best!</span>}
+              </>
+            ) : (
+              <>
+                <span className={styles.overlayTitle}>🐍 Snake</span>
+                <div className={styles.legend}>
+                  <span className={styles.legendItem}><span className={styles.dotGold} />food · 1 pt</span>
+                  <span className={styles.legendItem}><span className={styles.dotOrange} />bonus · {BONUS_POINTS} pts</span>
+                  <span className={styles.legendItem}><span className={styles.dotRock} />rocks</span>
+                  <span className={styles.legendItem}><span className={styles.dotEnemy} />enemies</span>
+                  <span className={styles.legendItem}><span className={styles.dotBomb} />meteor zone</span>
+                </div>
+              </>
             )}
+            <button className={styles.startBtn} onClick={startGame}>
+              {phase === 'dead' ? 'Play Again' : 'Start'}
+            </button>
+            <span className={styles.overlayHint}>Arrow keys · WASD</span>
           </div>
-          {phase === 'playing' && (
-            <div className={styles.hud}>
-              <span>Score: <strong>{score}</strong></span>
-              {highScore > 0 && <span className={styles.hudBest}>Best: {highScore}</span>}
-            </div>
-          )}
+        )}
+      </div>
+      {phase === 'playing' && (
+        <div className={styles.hud}>
+          <span>Score: <strong>{score}</strong></span>
+          {highScore > 0 && <span className={styles.hudBest}>Best: {highScore}</span>}
         </div>
       )}
     </div>
