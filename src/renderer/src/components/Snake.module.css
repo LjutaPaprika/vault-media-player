@@ -143,6 +143,24 @@
   flex-shrink: 0;
 }
 
+.dotEnemy {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: #ef4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+  flex-shrink: 0;
+}
+
+.dotBomb {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(234, 179, 8, 0.3);
+  border: 1px solid rgba(234, 179, 8, 0.6);
+  flex-shrink: 0;
+}
+
 .startBtn {
   margin-top: 4px;
   padding: 8px 28px;
