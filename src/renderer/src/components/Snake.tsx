@@ -56,7 +56,7 @@ export default function Snake(): JSX.Element {
   const canvasRef        = useRef<HTMLCanvasElement>(null)
   const snakeRef         = useRef<Pt[]>([])
   const dirRef           = useRef<Dir>('R')
-  const nextDir          = useRef<Dir>('R')
+  const inputQueue       = useRef<Dir[]>([])
   const foodRef          = useRef<Pt>({ x: 0, y: 0 })
   const bonusRef         = useRef<Bonus | null>(null)
   const rocksRef         = useRef<Pt[]>([])
@@ -108,7 +108,10 @@ export default function Snake(): JSX.Element {
       }
       const d = map[e.key]
       if (!d) return
-      if (d !== OPPOSITE[dirRef.current]) nextDir.current = d
+      // Check against last queued direction (or current if queue empty) to prevent 180s
+      const q = inputQueue.current
+      const last = q.length > 0 ? q[q.length - 1] : dirRef.current
+      if (d !== OPPOSITE[last] && d !== last && q.length < 3) q.push(d)
       if (e.key.startsWith('Arrow')) {
         e.preventDefault()
         e.stopImmediatePropagation()
@@ -426,7 +429,7 @@ export default function Snake(): JSX.Element {
     tickCountRef.current++
     if (tickCountRef.current % ENEMY_TICK_EVERY === 0) tickEnemies()
 
-    dirRef.current = nextDir.current
+    if (inputQueue.current.length > 0) dirRef.current = inputQueue.current.shift()!
     const head = snakeRef.current[0]
     const next: Pt = { x: head.x + DX[dirRef.current], y: head.y + DY[dirRef.current] }
 
@@ -484,7 +487,7 @@ export default function Snake(): JSX.Element {
     const s: Pt[] = [{ x: 27, y: 14 }, { x: 26, y: 14 }, { x: 25, y: 14 }]
     snakeRef.current        = s
     dirRef.current          = 'R'
-    nextDir.current         = 'R'
+    inputQueue.current      = []
     rocksRef.current        = []
     enemiesRef.current      = []
     bonusRef.current        = null
