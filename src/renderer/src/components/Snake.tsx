@@ -38,7 +38,7 @@ const ALL_DIRS: Dir[]            = ['U', 'D', 'L', 'R']
 
 function rand(n: number): number { return Math.floor(Math.random() * n) }
 function shuffle<T>(a: T[]): T[] { return [...a].sort(() => Math.random() - 0.5) }
-function tickMs(score: number): number { return Math.max(65, 150 - score * 3) }
+function tickMs(score: number): number { return Math.max(80, 150 - score * 1.5) }
 function perps(dir: Dir): Dir[] { return (dir === 'U' || dir === 'D') ? ['L', 'R'] : ['U', 'D'] }
 
 function pickEmpty(occupied: Set<string>): Pt | null {
@@ -69,6 +69,7 @@ export default function Snake(): JSX.Element {
   const timerRef         = useRef<ReturnType<typeof setInterval> | null>(null)
   const bonusTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bombTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastBombCenter   = useRef<Pt | null>(null)
   const rafRef           = useRef<number | null>(null)
   const phaseRef         = useRef<Phase>('idle')
   const openRef          = useRef(false)
@@ -251,15 +252,30 @@ export default function Snake(): JSX.Element {
 
   function triggerBomb(): void {
     if (phaseRef.current !== 'playing') return
-    const bw = 5 + rand(6)
-    const bh = 3 + rand(5)
-    const bx = 2 + rand(COLS - bw - 4)
-    const by = 2 + rand(ROWS - bh - 4)
+
+    // Retry until we land far enough from the previous zone
+    let bw = 0, bh = 0, bx = 0, by = 0
+    for (let attempt = 0; attempt < 12; attempt++) {
+      bw = 6 + rand(7)    // 6–12 wide
+      bh = 5 + rand(5)    // 5–9 tall
+      bx = 2 + rand(COLS - bw - 4)
+      by = 2 + rand(ROWS - bh - 4)
+      const cx = bx + bw / 2, cy = by + bh / 2
+      const prev = lastBombCenter.current
+      if (!prev || Math.abs(cx - prev.x) + Math.abs(cy - prev.y) > 14) break
+    }
+    lastBombCenter.current = { x: bx + bw / 2, y: by + bh / 2 }
+
+    // Elliptical shape — include only cells whose centre falls inside the ellipse
+    const ecx = bx + bw / 2, ecy = by + bh / 2
+    const rx  = bw / 2,      ry  = bh / 2
     const cells: Pt[] = []
     const lookup = new Set<string>()
     for (let x = bx; x < bx + bw; x++) {
       for (let y = by; y < by + bh; y++) {
-        cells.push({ x, y }); lookup.add(`${x},${y}`)
+        const dx = (x + 0.5 - ecx) / rx
+        const dy = (y + 0.5 - ecy) / ry
+        if (dx*dx + dy*dy <= 1) { cells.push({ x, y }); lookup.add(`${x},${y}`) }
       }
     }
     bombRef.current = { cells, lookup, phase: 'warning', phaseEnd: Date.now() + BOMB_WARNING_MS }
@@ -307,7 +323,7 @@ export default function Snake(): JSX.Element {
         ctx.font = `bold ${CELL - 6}px monospace`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        bomb.cells.filter((_, i) => i % 2 === 0).forEach(c => {
+        bomb.cells.forEach(c => {
           ctx.fillText('!', c.x*CELL + CELL/2, c.y*CELL + CELL/2)
         })
       } else {
@@ -476,6 +492,7 @@ export default function Snake(): JSX.Element {
     scoreRef.current        = 0
     tickCountRef.current    = 0
     enemySpawnedRef.current = 0
+    lastBombCenter.current  = null
     foodRef.current = pickEmpty(new Set(s.map(p => `${p.x},${p.y}`))) ?? { x: 35, y: 14 }
     setScore(0)
     phaseRef.current = 'playing'
