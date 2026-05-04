@@ -24,6 +24,7 @@ interface IdleGameState {
   shows: Show[]
   clickUpgrades: ClickUpgrade[]
   open: boolean
+  paused: boolean
 
   tick: () => void
   click: () => void
@@ -31,6 +32,7 @@ interface IdleGameState {
   buyUpgrade: (id: string) => void
   prestige: () => void
   toggleOpen: () => void
+  togglePause: () => void
 }
 
 const BASE_SHOWS: Omit<Show, 'count'>[] = [
@@ -79,9 +81,11 @@ export const useIdleGameStore = create<IdleGameState>((set) => ({
   shows: BASE_SHOWS.map((s) => ({ ...s, count: 0 })),
   clickUpgrades: BASE_UPGRADES.map((u) => ({ ...u, purchased: false })),
   open: false,
+  paused: false,
 
   tick: () =>
     set((s) => {
+      if (s.paused) return {}
       const mult = prestigeMultiplier(s.prestigeCount)
       const rate = s.shows.reduce((sum, sh) => sum + sh.count * sh.baseRate, 0)
       const earned = rate * mult
@@ -130,6 +134,7 @@ export const useIdleGameStore = create<IdleGameState>((set) => ({
     }),
 
   toggleOpen: () => set((s) => ({ open: !s.open })),
+  togglePause: () => set((s) => ({ paused: !s.paused })),
 }))
 
 // ── Persistence ────────────────────────────────────────────────────────────────
@@ -150,6 +155,7 @@ function buildSaveData(): string {
     shows: Object.fromEntries(s.shows.map((sh) => [sh.id, sh.count])),
     upgrades: s.clickUpgrades.filter((u) => u.purchased).map((u) => u.id),
     open: s.open,
+    paused: s.paused,
   })
 }
 
@@ -182,6 +188,7 @@ export async function initGameSave(): Promise<void> {
         shows?: Record<string, number>
         upgrades?: string[]
         open?: boolean
+        paused?: boolean
       }
       if (data.v === 1) {
         useIdleGameStore.setState({
@@ -191,6 +198,7 @@ export async function initGameSave(): Promise<void> {
           shows:          BASE_SHOWS.map((sh) => ({ ...sh, count: data.shows?.[sh.id] ?? 0 })),
           clickUpgrades:  BASE_UPGRADES.map((u)  => ({ ...u, purchased: (data.upgrades ?? []).includes(u.id) })),
           open:           data.open          ?? false,
+          paused:         data.paused        ?? false,
         })
       }
     }

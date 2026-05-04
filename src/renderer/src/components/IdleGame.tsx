@@ -19,8 +19,8 @@ function fmtRate(n: number): string {
 }
 
 export default function IdleGame(): JSX.Element {
-  const { files, lifetimeFiles, prestigeCount, shows, clickUpgrades, open,
-          click, buyShow, buyUpgrade, prestige, toggleOpen } = useIdleGameStore()
+  const { files, lifetimeFiles, prestigeCount, shows, clickUpgrades, open, paused,
+          click, buyShow, buyUpgrade, prestige, toggleOpen, togglePause } = useIdleGameStore()
 
   const mult = prestigeMultiplier(prestigeCount)
   const passiveRate = shows.reduce((sum, sh) => sum + sh.count * sh.baseRate, 0) * mult
@@ -35,9 +35,16 @@ export default function IdleGame(): JSX.Element {
         <span className={styles.toggleTitle}>🎮 Vault Clicker</span>
         <span className={styles.toggleMeta}>
           {fmt(files)} files
-          {passiveRate > 0 && <span className={styles.metaRate}> · +{fmtRate(passiveRate)}/s</span>}
+          {paused ? <span className={styles.metaPaused}> · paused</span> : passiveRate > 0 && <span className={styles.metaRate}> · +{fmtRate(passiveRate)}/s</span>}
           {prestigeCount > 0 && <span className={styles.metaPrestige}> · ×{mult}</span>}
         </span>
+        <button
+          className={styles.pauseBtn}
+          onClick={(e) => { e.stopPropagation(); togglePause() }}
+          title={paused ? 'Resume' : 'Pause'}
+        >
+          {paused ? '▶' : '⏸'}
+        </button>
         <span className={styles.toggleChevron}>{open ? '▲' : '▼'}</span>
       </button>
 
