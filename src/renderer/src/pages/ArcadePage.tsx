@@ -3,6 +3,7 @@ import { useIdleGameStore, prestigeMultiplier } from '../store/idleGameStore'
 import PageShell from '../components/PageShell'
 import IdleGame from '../components/IdleGame'
 import Snake from '../components/Snake'
+import Miner from '../components/Miner'
 import styles from './ArcadePage.module.css'
 
 function fmt(n: number): string {
@@ -25,6 +26,7 @@ function fmtRate(n: number): string {
 export default function ArcadePage(): JSX.Element {
   const [openCard, setOpenCard] = useState<string | null>(null)
   const [snakeBest, setSnakeBest] = useState(0)
+  const [minerBest, setMinerBest] = useState<{ score: number; depth: number } | null>(null)
 
   const { files, prestigeCount, shows, paused, togglePause } = useIdleGameStore()
   const mult = prestigeMultiplier(prestigeCount)
@@ -33,6 +35,10 @@ export default function ArcadePage(): JSX.Element {
   useEffect(() => {
     window.api.settings.get('snakeHighScore', '0').then(v => {
       setSnakeBest(parseInt(v, 10) || 0)
+    })
+    window.api.settings.get('vaultDelverBest', '').then(v => {
+      if (!v) return
+      try { setMinerBest(JSON.parse(v) as { score: number; depth: number }) } catch { /* ignore */ }
     })
   }, [])
 
@@ -83,13 +89,21 @@ export default function ArcadePage(): JSX.Element {
           {openCard === 'snake' && <Snake onNewBest={n => setSnakeBest(n)} />}
         </div>
 
-        {/* ── Vault Delver (placeholder) ── */}
+        {/* ── Vault Delver ── */}
         <div className={styles.card}>
-          <div className={`${styles.cardHeader} ${styles.cardBlue} ${styles.cardHeaderStatic}`}>
+          <button className={`${styles.cardHeader} ${styles.cardBlue}`} onClick={() => toggleCard('miner')}>
             <span className={`${styles.cardTitle} ${styles.titleBlue}`}>⛏️ Vault Delver</span>
-            <span className={styles.cardMeta}>Roguelike mining game</span>
-            <span className={styles.comingSoon}>Coming Soon</span>
-          </div>
+            <span className={styles.cardMeta}>
+              {minerBest
+                ? <span className={styles.metaRateBlue}>best {minerBest.score} pts · floor {minerBest.depth}</span>
+                : 'Roguelike dungeon crawler'
+              }
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'miner' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'miner' && (
+            <Miner onNewBest={(s, d) => setMinerBest({ score: s, depth: d })} />
+          )}
         </div>
 
       </div>

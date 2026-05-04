@@ -78,6 +78,7 @@
 
 .metaRateGold   { color: rgba(232, 180, 75, 0.65); }
 .metaRateGreen  { color: rgba(74, 222, 128, 0.65); }
+.metaRateBlue   { color: rgba(96, 165, 250, 0.65); }
 .metaPaused     { color: rgba(232, 180, 75, 0.55); font-style: italic; }
 .metaPrestige   { color: rgba(192, 132, 252, 0.7); }
 

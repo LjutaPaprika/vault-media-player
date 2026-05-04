@@ -1,0 +1,215 @@
+.body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.gameWrap {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(232, 180, 75, 0.12);
+  max-width: 100%;
+}
+
+.canvas {
+  display: block;
+  max-width: 100%;
+  image-rendering: pixelated;
+}
+
+/* ── Overlay ── */
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 15, 0.91);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  backdrop-filter: blur(2px);
+}
+
+.overlayTitle {
+  font-size: 24px;
+  font-weight: 800;
+  color: #e8b44b;
+  letter-spacing: 0.04em;
+}
+
+.overlayScore {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.overlayBest {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(232, 180, 75, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Legend ── */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  justify-content: center;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.dotGem {
+  width: 10px; height: 10px; border-radius: 2px;
+  background: #22d3ee;
+  box-shadow: 0 0 6px rgba(34, 211, 238, 0.7);
+  flex-shrink: 0;
+}
+
+.dotGold {
+  width: 10px; height: 10px; border-radius: 2px;
+  background: #e8b44b;
+  box-shadow: 0 0 6px rgba(232, 180, 75, 0.7);
+  flex-shrink: 0;
+}
+
+.dotStairs {
+  width: 10px; height: 10px; border-radius: 2px;
+  background: rgba(74, 222, 128, 0.25);
+  border: 1px solid rgba(74, 222, 128, 0.5);
+  flex-shrink: 0;
+}
+
+.dotVault {
+  width: 10px; height: 10px; border-radius: 2px;
+  background: rgba(232, 180, 75, 0.2);
+  border: 1px solid rgba(232, 180, 75, 0.5);
+  flex-shrink: 0;
+}
+
+.dotStone {
+  width: 10px; height: 10px; border-radius: 2px;
+  background: #191926;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
+}
+
+/* ── Start button ── */
+.startBtn {
+  margin-top: 4px;
+  padding: 8px 28px;
+  background: linear-gradient(160deg, #92650a 0%, #e8b44b 100%);
+  color: #000;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 6px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: transform 0.08s, box-shadow 0.08s;
+  box-shadow: 0 2px 0 #5c3d06, 0 4px 12px rgba(232, 180, 75, 0.25);
+}
+
+.startBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 #5c3d06, 0 6px 20px rgba(232, 180, 75, 0.4);
+}
+
+.startBtn:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 0 #5c3d06;
+}
+
+.overlayHint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.22);
+  letter-spacing: 0.05em;
+}
+
+/* ── HUD ── */
+.hud {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
+}
+
+.hudHp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hudLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.hpTrack {
+  width: 80px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hpFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.12s ease, background 0.3s ease;
+}
+
+.hudVal {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.3s ease;
+}
+
+.hudStat {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hudStat strong {
+  color: #e8b44b;
+  font-weight: 700;
+}
+
+.hudKey {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e8b44b;
+  background: rgba(232, 180, 75, 0.1);
+  border: 1px solid rgba(232, 180, 75, 0.3);
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+
+.hudMsg {
+  font-size: 11px;
+  font-weight: 600;
+  color: #4ade80;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
