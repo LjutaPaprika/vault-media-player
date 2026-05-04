@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAppStore } from './store/appStore'
+import { useIdleGameStore, initGameSave } from './store/idleGameStore'
 import {
   applyAccentColor, applyColor,
   DEFAULT_ACCENT, DEFAULT_PILL_LAST_WATCHED, DEFAULT_PILL_EXTRA,
@@ -39,6 +40,10 @@ const PAGES: Record<string, JSX.Element> = {
 export default function App(): JSX.Element {
   const { activePage, libraryLabel, setLibrary, popNav } = useAppStore()
   const [configLoading, setConfigLoading] = useState(true)
+  useEffect(() => {
+    const id = setInterval(() => useIdleGameStore.getState().tick(), 1000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent): void {
@@ -62,7 +67,7 @@ export default function App(): JSX.Element {
       window.api.settings.get('episodeBadge',     DEFAULT_EPISODE_BADGE).then((h) => applyColor('--episode-badge', h)),
       window.api.settings.get('musicProgress',    DEFAULT_MUSIC_PROGRESS).then((h) => applyColor('--music-progress', h)),
     ])
-    Promise.all([minDelay, configFetch, colorFetches]).then(() => setConfigLoading(false))
+    Promise.all([minDelay, configFetch, colorFetches, initGameSave()]).then(() => setConfigLoading(false))
   }, [])
 
   if (configLoading) {

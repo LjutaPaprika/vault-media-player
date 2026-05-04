@@ -194,6 +194,7 @@ interface Window {
     settings: {
       get: (key: string, fallback: string) => Promise<string>
       set: (key: string, value: string) => Promise<void>
+      setSync: (key: string, value: string) => void
     }
     youtube: {
       getPlaylists: () => Promise<string[]>

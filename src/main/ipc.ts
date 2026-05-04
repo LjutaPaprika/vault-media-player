@@ -296,6 +296,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('settings:get', (_event, key: string, fallback: string) => getConfig(key) ?? fallback)
   ipcMain.handle('settings:set', (_event, key: string, value: string) => { setConfig(key, value) })
+  ipcMain.on('settings:set-sync', (event, key: string, value: string) => { setConfig(key, value); event.returnValue = null })
   ipcMain.handle('playback:openAudio', (_event, filePath: string) => {
     openAudio(filePath, resolveLibraryRoot())
     win.webContents.send('music:pause')

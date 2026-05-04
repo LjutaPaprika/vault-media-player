@@ -1,0 +1,451 @@
+/* Game container — visually distinct from surrounding app UI */
+.panel {
+  background: #0c0c12;
+  border: 1px solid rgba(232, 180, 75, 0.28);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(232, 180, 75, 0.06), 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Toggle bar ── */
+.toggleBar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  background: rgba(232, 180, 75, 0.06);
+  border-bottom: 1px solid rgba(232, 180, 75, 0.12);
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+
+.toggleBar:hover {
+  background: rgba(232, 180, 75, 0.1);
+}
+
+.toggleTitle {
+  font-size: 11px;
+  font-weight: 800;
+  color: #e8b44b;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.toggleMeta {
+  flex: 1;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+
+.metaRate {
+  color: rgba(232, 180, 75, 0.6);
+}
+
+.metaPrestige {
+  color: rgba(192, 132, 252, 0.7);
+}
+
+.toggleChevron {
+  font-size: 8px;
+  color: rgba(232, 180, 75, 0.4);
+  flex-shrink: 0;
+}
+
+/* ── Body ── */
+.body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Resource counter ── */
+.counter {
+  background: rgba(232, 180, 75, 0.04);
+  border: 1px solid rgba(232, 180, 75, 0.12);
+  border-radius: 8px;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.counterMain {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.counterFiles {
+  font-size: 36px;
+  font-weight: 800;
+  color: #e8b44b;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  text-shadow: 0 0 20px rgba(232, 180, 75, 0.35);
+}
+
+.counterLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.3);
+  text-transform: lowercase;
+}
+
+.counterStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.statPill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.statPillDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.statPillUpgrade {
+  color: #e8b44b;
+  font-weight: 700;
+}
+
+.statPillPrestige {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #c084fc;
+  background: rgba(192, 132, 252, 0.1);
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+
+/* ── Click area ── */
+.clickArea {
+  display: flex;
+  gap: 8px;
+}
+
+.clickBtn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 18px 16px;
+  background: linear-gradient(160deg, #c49030 0%, #e8b44b 60%, #f0c060 100%);
+  color: #000;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.08s, box-shadow 0.08s;
+  box-shadow: 0 2px 0 #8a6020, 0 4px 12px rgba(232, 180, 75, 0.25);
+  position: relative;
+  overflow: hidden;
+}
+
+.clickBtn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, rgba(255,255,255,0.18) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.clickBtn:hover {
+  box-shadow: 0 2px 0 #8a6020, 0 6px 20px rgba(232, 180, 75, 0.4);
+  transform: translateY(-1px);
+}
+
+.clickBtn:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #8a6020, 0 2px 8px rgba(232, 180, 75, 0.2);
+}
+
+.clickIcon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.clickLabel {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.clickGain {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.prestigeBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 18px 16px;
+  background: linear-gradient(160deg, #6d28d9, #7c3aed 60%, #a855f7 100%);
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.08s, box-shadow 0.08s;
+  box-shadow: 0 2px 0 #4c1d95, 0 4px 16px rgba(139, 92, 246, 0.35);
+  white-space: nowrap;
+}
+
+.prestigeBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 #4c1d95, 0 6px 24px rgba(139, 92, 246, 0.5);
+}
+
+.prestigeBtn:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #4c1d95;
+}
+
+.prestigeIcon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.prestigeLabel {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.prestigeGain {
+  font-size: 10px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+/* ── Prestige progress bar ── */
+.prestigeBar {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.prestigeBarLabel {
+  font-size: 10px;
+  color: rgba(192, 132, 252, 0.6);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.prestigeBarTrack {
+  height: 3px;
+  background: rgba(192, 132, 252, 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.prestigeBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c3aed, #c084fc);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+/* ── Shop ── */
+.shop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shopSection {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shopHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 2px;
+}
+
+.shopCount {
+  font-weight: 600;
+  color: rgba(232, 180, 75, 0.45);
+}
+
+.shopRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.shopRow:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(232, 180, 75, 0.15);
+}
+
+.shopRowDim {
+  opacity: 0.5;
+}
+
+.shopRowOwned {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: rgba(34, 197, 94, 0.06);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.shopEmoji {
+  font-size: 16px;
+  width: 22px;
+  flex-shrink: 0;
+  line-height: 1;
+  text-align: center;
+}
+
+.shopInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.shopName {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shopRate {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.3);
+  font-variant-numeric: tabular-nums;
+}
+
+.shopBadge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e8b44b;
+  background: rgba(232, 180, 75, 0.12);
+  border: 1px solid rgba(232, 180, 75, 0.25);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.shopBuyBtn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 10px;
+  background: rgba(232, 180, 75, 0.15);
+  color: #e8b44b;
+  border: 1px solid rgba(232, 180, 75, 0.3);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.shopBuyBtn:hover {
+  background: rgba(232, 180, 75, 0.28);
+  border-color: rgba(232, 180, 75, 0.5);
+  transform: translateY(-1px);
+}
+
+.shopBuyBtn:active {
+  transform: translateY(0);
+}
+
+.shopBuyBtnDisabled {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 5px;
+  cursor: not-allowed;
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.shopBuyIcon {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.ownedBadge {
+  font-size: 9px;
+  font-weight: 800;
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  padding: 3px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+}

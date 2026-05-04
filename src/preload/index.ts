@@ -88,7 +88,8 @@ contextBridge.exposeInMainWorld('api', {
   // App settings
   settings: {
     get: (key: string, fallback: string) => ipcRenderer.invoke('settings:get', key, fallback),
-    set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value)
+    set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
+    setSync: (key: string, value: string) => ipcRenderer.sendSync('settings:set-sync', key, value)
   },
 
   // YouTube videos
