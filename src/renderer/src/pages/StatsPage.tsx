@@ -26,12 +26,14 @@ function epochAgo(epoch: number): string {
 
 const CATEGORY_LABEL: Record<string, string> = {
   movies: 'Movies', tv: 'TV Shows', anime: 'Anime',
-  music: 'Playlists', books: 'Books', manga: 'Manga', games: 'Games'
+  music: 'Playlists', books: 'Books', manga: 'Manga', games: 'Games',
+  youtube: 'YouTube', arcade: 'Arcade'
 }
 
 const CATEGORY_ICON: Record<string, string> = {
   movies: '🎬', tv: '📺', anime: '⛩️',
-  music: '🎵', books: '📖', manga: '📚', games: '🎮'
+  music: '🎵', books: '📖', manga: '📚', games: '🎮',
+  youtube: '▶️', arcade: '🕹️'
 }
 
 const PLATFORM_LABEL: Record<string, string> = {
@@ -42,9 +44,9 @@ const PLATFORM_LABEL: Record<string, string> = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const CARD_ORDER = ['movies', 'tv', 'anime', 'music', 'manga', 'books', 'games']
+const CARD_ORDER = ['movies', 'tv', 'anime', 'music', 'manga', 'books', 'games', 'youtube', 'arcade']
 
-function LibraryOverview({ stats }: { stats: LibraryStats }): JSX.Element {
+function LibraryOverview({ stats, arcadeStats }: { stats: LibraryStats; arcadeStats: { snakeBest: number; minerBest: { score: number; depth: number } | null } | null }): JSX.Element {
   return (
     <section className={`${styles.section} ${styles.sectionFull}`}>
       <h2 className={styles.sectionTitle}>Library Overview</h2>
@@ -61,6 +63,20 @@ function LibraryOverview({ stats }: { stats: LibraryStats }): JSX.Element {
             count = stats.counts[cat] ?? 0
             const tracks = stats.storage?.musicTrackCount
             if (tracks != null && tracks > 0) sub = `${tracks.toLocaleString()} songs`
+          } else if (cat === 'arcade') {
+            if (!arcadeStats) {
+              count = 0
+            } else {
+              const hasSnake = arcadeStats.snakeBest > 0
+              const hasMiner = arcadeStats.minerBest != null
+              count = (hasSnake ? 1 : 0) + (hasMiner ? 1 : 0)
+              if (count > 0) {
+                const parts = []
+                if (hasSnake) parts.push(`Snake: ${arcadeStats.snakeBest}`)
+                if (hasMiner) parts.push(`Miner: ${arcadeStats.minerBest!.score} pts`)
+                sub = parts.join(' · ')
+              }
+            }
           } else {
             count = stats.counts[cat] ?? 0
           }
@@ -96,7 +112,7 @@ function StorageSection({ storage, driveInfo }: {
 
   const { total, byCategory, computedAt } = storage
   const sorted = Object.entries(byCategory)
-    .filter(([, b]) => b > 0)
+    .filter(([cat, b]) => b > 0 && cat !== 'extras')
     .sort(([, a], [, b]) => b - a)
 
   const driveFree = driveInfo?.freeBytes ?? null
@@ -155,7 +171,8 @@ function PlatformsSection({ platforms }: { platforms: LibraryStats['platforms'] 
 }
 
 function RecentlyOpened({ items }: { items: LibraryStats['recentlyOpened'] }): JSX.Element {
-  if (items.length === 0) {
+  const filtered = items.filter(item => item.category !== 'arcade')
+  if (filtered.length === 0) {
     return (
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Recently Opened</h2>
@@ -167,7 +184,7 @@ function RecentlyOpened({ items }: { items: LibraryStats['recentlyOpened'] }): J
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>Recently Opened</h2>
       <div className={styles.recentList}>
-        {items.map((item, i) => (
+        {filtered.map((item, i) => (
           <div key={i} className={styles.recentRow}>
             <span className={styles.recentIcon}>{CATEGORY_ICON[item.category] ?? '📁'}</span>
             <span className={styles.recentTitle}>{item.title}</span>
@@ -259,11 +276,26 @@ export default function StatsPage(): JSX.Element {
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
+  const [arcadeStats, setArcadeStats] = useState<{ snakeBest: number; minerBest: { score: number; depth: number } | null } | null>(null)
 
   useEffect(() => {
     window.api.library.getStats().then(setStats)
     window.api.system.getInfo().then(setSysInfo)
     window.api.system.getAppInfo().then(setAppInfo)
+
+    Promise.all([
+      window.api.settings.get('snakeHighScore', '0'),
+      window.api.settings.get('vaultDelverBest', '')
+    ]).then(([snakeStr, minerStr]) => {
+      const snakeBest = parseInt(snakeStr, 10) || 0
+      let minerBest = null
+      if (minerStr) {
+        try {
+          minerBest = JSON.parse(minerStr) as { score: number; depth: number }
+        } catch { /* ignore */ }
+      }
+      setArcadeStats({ snakeBest, minerBest })
+    })
   }, [])
 
   if (!stats) {
@@ -277,7 +309,7 @@ export default function StatsPage(): JSX.Element {
   return (
     <PageShell title="Stats">
       <div className={styles.layout}>
-        <LibraryOverview stats={stats} />
+        <LibraryOverview stats={stats} arcadeStats={arcadeStats} />
         <StorageSection storage={stats.storage} driveInfo={appInfo?.driveInfo ?? null} />
         <RecentlyOpened items={stats.recentlyOpened} />
         <PlatformsSection platforms={stats.platforms} />
