@@ -1,5 +1,5 @@
-export const MAP_W = 44
-export const MAP_H = 24
+export const MAP_W = 32
+export const MAP_H = 18
 
 export type TileKind =
   | 'wall' | 'dirt' | 'stone' | 'gemDirt' | 'goldDirt'
@@ -44,10 +44,10 @@ export function generateLevel(floor: number): Level {
   for (let y = 0; y < MAP_H; y++) { grid[y][0] = 'wall'; grid[y][MAP_W - 1] = 'wall' }
 
   // Rooms
-  const NUM_ROOMS = 5 + ri(4)
+  const NUM_ROOMS = 4 + ri(3)
   const rooms: Rect[] = []
   for (let a = 0; a < 80 && rooms.length < NUM_ROOMS; a++) {
-    const w = 4 + ri(5), h = 3 + ri(4)
+    const w = 3 + ri(4), h = 3 + ri(3)
     const x1 = 2 + ri(MAP_W - w - 4), y1 = 2 + ri(MAP_H - h - 4)
     const x2 = x1 + w, y2 = y1 + h
     if (rooms.some(r => x1 <= r.x2 + 1 && x2 >= r.x1 - 1 && y1 <= r.y2 + 1 && y2 >= r.y1 - 1)) continue

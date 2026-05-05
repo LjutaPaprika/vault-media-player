@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { generateLevel, MAP_W, MAP_H, type TileKind, type EnemyType } from '../utils/minerGen'
+import { CELL, drawSprite, variantFor, getWallVariant, SPRITE_FLOOR_A, SPRITE_FLOOR_B, SPRITE_FLOOR_C, SPRITE_DIRT_A, SPRITE_DIRT_B, SPRITE_DIRT_C, SPRITE_STONE, SPRITE_GEM_DIRT, SPRITE_GOLD_DIRT, SPRITE_STAIRS, SPRITE_VAULT_DOOR, SPRITE_VAULT_FLOOR, SPRITE_WALL, SPRITE_PLAYER_0, SPRITE_PLAYER_1, SPRITE_CRAWLER_0, SPRITE_CRAWLER_1, SPRITE_GUARD_0, SPRITE_GUARD_1, SPRITE_BRUTE_0, SPRITE_BRUTE_1, SPRITE_SHOOTER_0, SPRITE_SHOOTER_1, SPRITE_PROJECTILE, PAL, type Sprite } from '../utils/minerSprites'
 import styles from './Miner.module.css'
 
-const CELL = 20
-const W = MAP_W * CELL  // 880
-const H = MAP_H * CELL  // 480
+const W = MAP_W * CELL
+const H = MAP_H * CELL
 
 const KEY_CHANCE = 0.03
 const LOS_RADIUS = 7
@@ -81,6 +81,8 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
   const msgTimer     = useRef<ReturnType<typeof setTimeout> | null>(null)
   const visitedRef   = useRef<boolean[][]>([])
   const visibleRef   = useRef<Set<string>>(new Set())
+  const playerFacingRef = useRef<'L' | 'R'>('R')
+  const animTickRef  = useRef(0)
 
   useEffect(() => {
     window.api.settings.get('vaultDelverBest', '').then(v => {
@@ -237,6 +239,10 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
     const p = playerRef.current
     const grid = gridRef.current
     const tx = p.x + dx, ty = p.y + dy
+
+    // Track facing and animation
+    if (dx !== 0) playerFacingRef.current = dx > 0 ? 'R' : 'L'
+    animTickRef.current++
 
     if (tx < 0 || tx >= MAP_W || ty < 0 || ty >= MAP_H) return
 
@@ -470,21 +476,38 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
 
   // ── Rendering ─────────────────────────────────────────────────────────────
 
+  function getTileSprite(x: number, y: number, tile: TileKind): Sprite {
+    switch (tile) {
+      case 'wall': return SPRITE_WALL[getWallVariant(x, y, gridRef.current)]
+      case 'floor': return [SPRITE_FLOOR_A, SPRITE_FLOOR_B, SPRITE_FLOOR_C][variantFor(x, y, 3)]
+      case 'dirt': return [SPRITE_DIRT_A, SPRITE_DIRT_B, SPRITE_DIRT_C][variantFor(x, y, 3)]
+      case 'stone': return SPRITE_STONE
+      case 'gemDirt': return SPRITE_GEM_DIRT
+      case 'goldDirt': return SPRITE_GOLD_DIRT
+      case 'stairs': return SPRITE_STAIRS
+      case 'vaultDoor': return SPRITE_VAULT_DOOR
+      case 'vaultFloor': return SPRITE_VAULT_FLOOR
+    }
+  }
+
   function draw(): void {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    ctx.fillStyle = '#08080f'
+    ctx.imageSmoothingEnabled = false
+
+    // Clear background
+    ctx.fillStyle = PAL.black
     ctx.fillRect(0, 0, W, H)
 
-    // Tiles with fog of war
     const grid = gridRef.current
     const p = playerRef.current
     const vis = visibleRef.current
     const visited = visitedRef.current
 
+    // ── Tiles with fog of war ──
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
         if (!grid[y]?.[x]) continue
@@ -492,222 +515,78 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
         const isVisible = vis.has(key)
         const isVisited = visited[y]?.[x] ?? false
 
-        drawTile(ctx, x, y, grid[y][x])
+        drawSprite(ctx, getTileSprite(x, y, grid[y][x]), x, y)
 
-        // Fog of war overlay
-        if (!isVisible) {
-          const alpha = isVisited ? 0.7 : 1
-          ctx.fillStyle = `rgba(0,0,0,${alpha})`
+        // Fog overlay for visited-but-not-visible
+        if (!isVisible && isVisited) {
+          ctx.fillStyle = PAL.fogVisited
+          ctx.fillRect(x * CELL, y * CELL, CELL, CELL)
+        }
+        // Black for unvisited
+        else if (!isVisible && !isVisited) {
+          ctx.fillStyle = PAL.black
           ctx.fillRect(x * CELL, y * CELL, CELL, CELL)
         }
       }
     }
 
-    // Lighting gradient around player
-    if (phaseRef.current === 'playing') {
-      const grad = ctx.createRadialGradient(p.x * CELL + CELL / 2, p.y * CELL + CELL / 2, CELL, p.x * CELL + CELL / 2, p.y * CELL + CELL / 2, LOS_RADIUS * CELL)
-      grad.addColorStop(0, 'rgba(255,255,255,0)')
-      grad.addColorStop(1, 'rgba(0,0,0,0.2)')
-      ctx.fillStyle = grad
-      ctx.fillRect(0, 0, W, H)
-    }
-
-    // Cracked stone overlay
+    // ── Stone crack overlay ──
     stoneHits.current.forEach((_hits, key) => {
       const [sx, sy] = key.split(',').map(Number)
       if (gridRef.current[sy]?.[sx] === 'stone') {
         const k = `${sx},${sy}`
-        const alpha = vis.has(k) ? 0.22 : visited[sy]?.[sx] ? 0.08 : 0
-        ctx.fillStyle = `rgba(255,190,90,${alpha})`
-        ctx.fillRect(sx * CELL + 1, sy * CELL + 1, CELL - 2, CELL - 2)
+        if (vis.has(k)) {
+          ctx.fillStyle = 'rgba(255,190,90,0.22)'
+          ctx.fillRect(sx * CELL + 2, sy * CELL + 2, CELL - 4, CELL - 4)
+        }
       }
     })
 
-    // Projectiles
+    // ── Projectiles ──
     for (const proj of projectilesRef.current) {
-      ctx.fillStyle = '#fbbf24'
-      ctx.shadowColor = 'rgba(251,191,36,0.8)'; ctx.shadowBlur = 6
-      ctx.fillRect(proj.x * CELL + CELL / 2 - 2, proj.y * CELL + CELL / 2 - 2, 4, 4)
-      ctx.shadowBlur = 0
+      drawSprite(ctx, SPRITE_PROJECTILE, Math.round(proj.x), Math.round(proj.y))
     }
 
-    // Enemies
+    // ── Enemies ──
     for (const e of enemiesRef.current) {
       const k = `${e.x},${e.y}`
       const isVisible = vis.has(k)
       if (!isVisible && !visited[e.y]?.[e.x]) continue
+
       const alpha = isVisible ? 1 : 0.3
       ctx.globalAlpha = alpha
-      drawEntity(ctx, e.x, e.y, e.type)
+
+      let sprite: Sprite
+      const frame = e.animFrame
+      switch (e.type) {
+        case 'crawler': sprite = frame === 0 ? SPRITE_CRAWLER_0 : SPRITE_CRAWLER_1; break
+        case 'guard': sprite = frame === 0 ? SPRITE_GUARD_0 : SPRITE_GUARD_1; break
+        case 'brute': sprite = frame === 0 ? SPRITE_BRUTE_0 : SPRITE_BRUTE_1; break
+        case 'shooter': sprite = frame === 0 ? SPRITE_SHOOTER_0 : SPRITE_SHOOTER_1; break
+      }
+
+      drawSprite(ctx, sprite, e.x, e.y, { flipX: e.facing === 'L' })
+
+      // HP bar
       if (e.hp < e.maxHp && isVisible) {
         const bx = e.x * CELL + 2, by = e.y * CELL + 1, bw = CELL - 4
         ctx.globalAlpha = 1
-        ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(bx, by, bw, 2)
-        ctx.fillStyle = '#4ade80'; ctx.fillRect(bx, by, Math.round(bw * e.hp / e.maxHp), 2)
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'
+        ctx.fillRect(bx, by, bw, 2)
+        ctx.fillStyle = '#4ade80'
+        ctx.fillRect(bx, by, Math.round(bw * e.hp / e.maxHp), 2)
       }
       ctx.globalAlpha = 1
     }
 
-    // Player
+    // ── Player ──
     if (phaseRef.current === 'playing') {
-      drawEntity(ctx, p.x, p.y, 'player')
+      const playerFrame = animTickRef.current % 2
+      const playerSprite = playerFrame === 0 ? SPRITE_PLAYER_0 : SPRITE_PLAYER_1
+      drawSprite(ctx, playerSprite, p.x, p.y, { flipX: playerFacingRef.current === 'L' })
     }
   }
 
-  function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, tile: TileKind): void {
-    const px = x * CELL, py = y * CELL
-
-    switch (tile) {
-      case 'wall':
-        ctx.fillStyle = '#0a0a10'
-        ctx.fillRect(px, py, CELL, CELL)
-        ctx.fillStyle = 'rgba(255,255,255,0.08)'
-        ctx.fillRect(px, py, CELL, 1); ctx.fillRect(px, py, 1, CELL)
-        ctx.fillRect(px + CELL - 1, py, 1, CELL); ctx.fillRect(px, py + CELL - 1, CELL, 1)
-        break
-
-      case 'floor':
-        ctx.fillStyle = '#0c0c18'
-        ctx.fillRect(px, py, CELL, CELL)
-        ctx.fillStyle = 'rgba(255,255,255,0.02)'
-        for (let i = 0; i < 2; i++) ctx.fillRect(px + i * 10, py + i * 10, 1, 1)
-        break
-
-      case 'vaultFloor':
-        ctx.fillStyle = '#0c0c18'
-        ctx.fillRect(px, py, CELL, CELL)
-        ctx.fillStyle = 'rgba(232,180,75,0.1)'
-        ctx.fillRect(px, py, CELL, CELL)
-        break
-
-      case 'dirt':
-        ctx.fillStyle = '#2c1e0d'
-        ctx.fillRect(px, py, CELL, CELL)
-        ctx.fillStyle = 'rgba(0,0,0,0.3)'
-        ctx.fillRect(px + 3, py + 5, 2, 2)
-        ctx.fillRect(px + 13, py + 10, 3, 2)
-        ctx.fillRect(px + 7, py + 14, 2, 2)
-        break
-
-      case 'stone':
-        ctx.fillStyle = '#1c1c2e'
-        ctx.fillRect(px, py, CELL, CELL)
-        ctx.strokeStyle = 'rgba(255,255,255,0.1)'
-        ctx.lineWidth = 1
-        ctx.strokeRect(px + 1, py + 1, CELL - 2, CELL - 2)
-        ctx.strokeStyle = 'rgba(255,255,255,0.04)'
-        ctx.beginPath()
-        ctx.moveTo(px + 4, py + 3); ctx.lineTo(px + 10, py + 12)
-        ctx.moveTo(px + 14, py + 6); ctx.lineTo(px + 10, py + 16)
-        ctx.stroke()
-        break
-
-      case 'gemDirt':
-        ctx.fillStyle = '#2c1e0d'
-        ctx.fillRect(px, py, CELL, CELL)
-        ctx.shadowColor = 'rgba(34,211,238,0.8)'; ctx.shadowBlur = 10
-        ctx.fillStyle = '#22d3ee'
-        ctx.fillRect(px + CELL / 2 - 3, py + CELL / 2 - 3, 6, 6)
-        ctx.shadowBlur = 0
-        break
-
-      case 'goldDirt':
-        ctx.fillStyle = '#2c1e0d'
-        ctx.fillRect(px, py, CELL, CELL)
-        ctx.shadowColor = 'rgba(232,180,75,0.8)'; ctx.shadowBlur = 8
-        ctx.fillStyle = '#e8b44b'
-        ctx.fillRect(px + CELL / 2 - 2, py + CELL / 2 - 2, 5, 5)
-        ctx.shadowBlur = 0
-        break
-
-      case 'stairs':
-        ctx.fillStyle = '#0c0c18'
-        ctx.fillRect(px, py, CELL, CELL)
-        ctx.fillStyle = '#4ade80'
-        ctx.shadowColor = 'rgba(74,222,128,0.6)'; ctx.shadowBlur = 8
-        ctx.font = `bold ${CELL - 2}px monospace`
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        ctx.fillText('↓', px + CELL / 2, py + CELL / 2)
-        ctx.shadowBlur = 0
-        break
-
-      case 'vaultDoor':
-        ctx.fillStyle = '#1a1200'
-        ctx.fillRect(px, py, CELL, CELL)
-        ctx.strokeStyle = 'rgba(232,180,75,0.6)'
-        ctx.lineWidth = 1.5
-        ctx.strokeRect(px + 2, py + 2, CELL - 4, CELL - 4)
-        ctx.fillStyle = '#e8b44b'
-        ctx.shadowColor = 'rgba(232,180,75,0.7)'; ctx.shadowBlur = 6
-        ctx.font = `bold ${CELL - 6}px monospace`
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        ctx.fillText('V', px + CELL / 2, py + CELL / 2)
-        ctx.shadowBlur = 0
-        break
-    }
-  }
-
-  function drawEntity(ctx: CanvasRenderingContext2D, x: number, y: number, type: EnemyType | 'player'): void {
-    const px = x * CELL + CELL / 2, py = y * CELL + CELL / 2
-    const s = CELL / 2
-
-    switch (type) {
-      case 'player':
-        ctx.fillStyle = '#4ade80'
-        ctx.shadowColor = 'rgba(74,222,128,0.6)'; ctx.shadowBlur = 8
-        ctx.fillText('@', px, py + 2)
-        ctx.font = `bold ${s}px monospace`
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-        ctx.shadowBlur = 0
-        break
-
-      case 'crawler':
-        ctx.fillStyle = '#ef4444'
-        ctx.shadowColor = 'rgba(239,68,68,0.6)'; ctx.shadowBlur = 6
-        // Arrowhead pointing right
-        ctx.beginPath()
-        ctx.moveTo(px + s - 2, py - 4)
-        ctx.lineTo(px + s + 4, py)
-        ctx.lineTo(px + s - 2, py + 4)
-        ctx.closePath()
-        ctx.fill()
-        ctx.shadowBlur = 0
-        break
-
-      case 'guard':
-        ctx.fillStyle = '#f97316'
-        ctx.shadowColor = 'rgba(249,115,22,0.6)'; ctx.shadowBlur = 6
-        // Humanoid
-        ctx.fillRect(px - 3, py - 4, 2, 2)
-        ctx.fillRect(px + 1, py - 4, 2, 2)
-        ctx.fillRect(px - 2, py - 2, 4, 4)
-        ctx.fillRect(px - 3, py + 2, 2, 3)
-        ctx.fillRect(px + 1, py + 2, 2, 3)
-        ctx.shadowBlur = 0
-        break
-
-      case 'brute':
-        ctx.fillStyle = '#a855f7'
-        ctx.shadowColor = 'rgba(168,85,247,0.6)'; ctx.shadowBlur = 8
-        // Square with horns
-        ctx.fillRect(px - 4, py - 3, 8, 8)
-        ctx.fillRect(px - 5, py - 5, 3, 2)
-        ctx.fillRect(px + 2, py - 5, 3, 2)
-        ctx.shadowBlur = 0
-        break
-
-      case 'shooter':
-        ctx.fillStyle = '#fbbf24'
-        ctx.shadowColor = 'rgba(251,191,36,0.6)'; ctx.shadowBlur = 6
-        // Hooded figure
-        ctx.beginPath()
-        ctx.arc(px, py - 3, 3, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.fillRect(px - 3, py, 6, 5)
-        ctx.shadowBlur = 0
-        break
-    }
-  }
 
   // ── UI ────────────────────────────────────────────────────────────────────
 
