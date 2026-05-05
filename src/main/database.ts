@@ -48,6 +48,13 @@ export function findDriveRoot(): string | null {
  * Returns the directory where library.db and app data should be stored.
  * In production: <driveRoot>/app  (travels with the drive)
  * In dev:        <cwd>/dev-data
+ *
+ * This ensures all persistent data (library metadata, game saves, settings)
+ * resides on the external drive and is automatically included in sync.backup.
+ * Game save data includes:
+ * - Arcade games: snakeHighScore, vaultDelverBest (saved via settings → config table)
+ * - YouTube playlists: youtube playlist data (saved when downloader is enabled)
+ * - All other application settings (saved via settings → config table)
  */
 function getDbDir(): string {
   if (!app.isPackaged) return join(process.cwd(), 'dev-data')
