@@ -1,4 +1,4 @@
-// Recursive shadowcasting for field of view calculation (standard roguelike FoV)
+// Recursive shadowcasting field of view (standard algorithm with octant matrices)
 
 export function computeFov(
   grid: any[][],
@@ -11,86 +11,76 @@ export function computeFov(
   const MAP_W = grid[0]?.length ?? 32
   const MAP_H = grid.length ?? 18
 
-  // Origin is always visible
   visible.add(`${ox},${oy}`)
 
-  // Cast light into each of 8 octants
-  for (let octant = 0; octant < 8; octant++) {
-    castLight(ox, oy, 1, 1.0, 0.0, octant, radius, visible, isOpaque, MAP_W, MAP_H)
+  // 8 octant transformation matrices: [xx, xy, yx, yy]
+  const octants: ReadonlyArray<readonly [number, number, number, number]> = [
+    [ 1,  0,  0,  1],  // E to NE
+    [ 0,  1,  1,  0],  // NE to N
+    [ 0, -1,  1,  0],  // N to NW
+    [-1,  0,  0,  1],  // NW to W
+    [-1,  0,  0, -1],  // W to SW
+    [ 0, -1, -1,  0],  // SW to S
+    [ 0,  1, -1,  0],  // S to SE
+    [ 1,  0,  0, -1],  // SE to E
+  ]
+
+  for (const [xx, xy, yx, yy] of octants) {
+    castLight(ox, oy, 1, 1.0, 0.0, radius, xx, xy, yx, yy, visible, isOpaque, MAP_W, MAP_H)
   }
 
   return visible
 }
 
 function castLight(
-  ox: number,
-  oy: number,
+  cx: number, cy: number,
   row: number,
   startSlope: number,
   endSlope: number,
-  octant: number,
   radius: number,
+  xx: number, xy: number, yx: number, yy: number,
   visible: Set<string>,
   isOpaque: (x: number, y: number) => boolean,
-  MAP_W: number,
-  MAP_H: number
+  MAP_W: number, MAP_H: number
 ): void {
   if (startSlope < endSlope) return
+  let newStart = startSlope
 
   for (let distance = row; distance <= radius; distance++) {
     let blocked = false
-    let newStartSlope = startSlope
+    const deltaY = -distance
 
-    for (let y = 0; y <= distance; y++) {
-      const x = distance - y
-      const lSlope = (x - 0.5) / (y + 0.5)
-      const rSlope = (x + 0.5) / (y - 0.5)
+    for (let deltaX = -distance; deltaX <= 0; deltaX++) {
+      const currentX = cx + deltaX * xx + deltaY * xy
+      const currentY = cy + deltaX * yx + deltaY * yy
+      const leftSlope  = (deltaX - 0.5) / (deltaY + 0.5)
+      const rightSlope = (deltaX + 0.5) / (deltaY - 0.5)
 
-      if (startSlope < rSlope) continue
-      if (endSlope > lSlope) break
+      if (currentX < 0 || currentX >= MAP_W || currentY < 0 || currentY >= MAP_H) continue
+      if (startSlope < rightSlope) continue
+      if (endSlope > leftSlope) break
 
-      // Transform octant to world coordinates
-      const { px, py } = octantToWorld(ox, oy, x, y, octant)
-
-      if (px < 0 || px >= MAP_W || py < 0 || py >= MAP_H) continue
-
-      // Calculate chebyshev distance to verify within radius
-      const dist = Math.max(Math.abs(px - ox), Math.abs(py - oy))
-      if (dist > radius) continue
-
-      visible.add(`${px},${py}`)
+      // Within radius (Euclidean for circular FoV)
+      const dx = currentX - cx, dy = currentY - cy
+      if (dx * dx + dy * dy <= radius * radius) {
+        visible.add(`${currentX},${currentY}`)
+      }
 
       if (blocked) {
-        if (isOpaque(px, py)) {
-          newStartSlope = rSlope
+        if (isOpaque(currentX, currentY)) {
+          newStart = rightSlope
           continue
         } else {
           blocked = false
-          startSlope = newStartSlope
+          startSlope = newStart
         }
-      }
-
-      if (isOpaque(px, py) && distance < radius) {
+      } else if (isOpaque(currentX, currentY) && distance < radius) {
         blocked = true
-        castLight(ox, oy, distance + 1, startSlope, lSlope, octant, radius, visible, isOpaque, MAP_W, MAP_H)
-        newStartSlope = rSlope
+        castLight(cx, cy, distance + 1, startSlope, leftSlope, radius, xx, xy, yx, yy, visible, isOpaque, MAP_W, MAP_H)
+        newStart = rightSlope
       }
     }
 
     if (blocked) break
-  }
-}
-
-function octantToWorld(ox: number, oy: number, x: number, y: number, octant: number): { px: number; py: number } {
-  switch (octant) {
-    case 0: return { px: ox + x, py: oy - y } // NE (right-up)
-    case 1: return { px: ox + y, py: oy - x } // N (up-right)
-    case 2: return { px: ox - y, py: oy - x } // NW (up-left)
-    case 3: return { px: ox - x, py: oy - y } // W (left-up)
-    case 4: return { px: ox - x, py: oy + y } // SW (left-down)
-    case 5: return { px: ox - y, py: oy + x } // S (down-left)
-    case 6: return { px: ox + y, py: oy + x } // SE (down-right)
-    case 7: return { px: ox + x, py: oy + y } // E (right-down)
-    default: return { px: ox, py: oy }
   }
 }

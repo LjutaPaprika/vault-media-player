@@ -138,6 +138,7 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
     }
     const vis = computeFov(grid, p.x, p.y, LOS_RADIUS, isOpaque)
     visibleRef.current = vis
+    console.log('FoV size:', vis.size, 'at', p.x, p.y)
     vis.forEach(k => {
       const [x, y] = k.split(',').map(Number)
       visitedRef.current[y][x] = true
