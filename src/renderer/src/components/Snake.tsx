@@ -8,6 +8,16 @@ const W    = COLS * CELL   // 1120
 const H    = ROWS * CELL   // 600
 const SAVE_KEY = 'snakeHighScore'
 
+const DEFAULT_SETTINGS = {
+  bonusPoints: 5,
+  bonusGrows: 2,
+  maxRocks: 10,
+  maxEnemies: 3,
+  enemyLength: 5,
+  playerSpeedMultiplier: 1,
+  enemySpeedMultiplier: 1,
+}
+
 const BONUS_POINTS      = 5
 const BONUS_LIFETIME_MS = 10_000
 const BONUS_FLASH_MS    = 3_000
@@ -30,6 +40,15 @@ type Phase = 'idle' | 'playing' | 'dead'
 type Bonus = { x: number; y: number; expiresAt: number }
 type Enemy = { body: Pt[]; dir: Dir }
 type Bomb  = { cells: Pt[]; lookup: Set<string>; phase: 'warning' | 'active'; phaseEnd: number }
+type SnakeSettings = {
+  bonusPoints: number
+  bonusGrows: number
+  maxRocks: number
+  maxEnemies: number
+  enemyLength: number
+  playerSpeedMultiplier: number
+  enemySpeedMultiplier: number
+}
 
 const OPPOSITE: Record<Dir, Dir> = { U: 'D', D: 'U', L: 'R', R: 'L' }
 const DX: Record<Dir, number>    = { R: 1, L: -1, U: 0,  D: 0  }
@@ -55,6 +74,8 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
   const [phase, setPhase]         = useState<Phase>('idle')
   const [score, setScore]         = useState(0)
   const [highScore, setHighScore] = useState(0)
+  const [showSettings, setShowSettings] = useState(false)
+  const [settings, setSettings]   = useState<SnakeSettings>(DEFAULT_SETTINGS)
 
   const canvasRef        = useRef<HTMLCanvasElement>(null)
   const snakeRef         = useRef<Pt[]>([])
@@ -75,12 +96,22 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
   const lastBombCenter   = useRef<Pt | null>(null)
   const rafRef           = useRef<number | null>(null)
   const phaseRef         = useRef<Phase>('idle')
+  const settingsRef      = useRef<SnakeSettings>(DEFAULT_SETTINGS)
 
   useEffect(() => {
-    window.api.settings.get(SAVE_KEY, '0').then(v => {
-      const n = parseInt(v, 10) || 0
+    Promise.all([
+      window.api.settings.get(SAVE_KEY, '0'),
+      window.api.settings.get('snakeSettings', '{}')
+    ]).then(([scoreStr, settingsStr]) => {
+      const n = parseInt(scoreStr, 10) || 0
       hiRef.current = n
       setHighScore(n)
+      try {
+        const loaded = JSON.parse(settingsStr) as Partial<SnakeSettings>
+        const merged = { ...DEFAULT_SETTINGS, ...loaded }
+        settingsRef.current = merged
+        setSettings(merged)
+      } catch { /* use defaults */ }
     })
     requestAnimationFrame(draw)
     return () => stopAll()
@@ -160,7 +191,7 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
   // ── Rocks ─────────────────────────────────────────────────────────────────
 
   function trySpawnRock(): void {
-    if (rocksRef.current.length >= MAX_ROCKS) return
+    if (rocksRef.current.length >= settingsRef.current.maxRocks) return
     const head = snakeRef.current[0]
     const occ  = occupied()
     let p: Pt, t = 0
@@ -185,7 +216,7 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
     if (!pos) return
     const dir = ALL_DIRS[rand(4)]
     const body: Pt[] = [pos]
-    for (let i = 1; i < ENEMY_LENGTH; i++) {
+    for (let i = 1; i < settingsRef.current.enemyLength; i++) {
       const prev = body[i - 1]
       const nx = prev.x - DX[dir], ny = prev.y - DY[dir]
       if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) break
@@ -452,14 +483,15 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
     const ateBonus = !!bonusRef.current && next.x === bonusRef.current.x && next.y === bonusRef.current.y
 
     if (ateFood || ateBonus) {
-      snakeRef.current = [next, ...snakeRef.current]
+      const growBy = ateBonus ? settingsRef.current.bonusGrows : 1
+      snakeRef.current = [next, ...Array(growBy - 1).fill(next), ...snakeRef.current]
       if (ateFood) {
         const pt = pickEmpty(occupied()); if (pt) foodRef.current = pt
       }
       if (ateBonus) {
         bonusRef.current = null; scheduleBonus(BONUS_RESPAWN_MS)
       }
-      scoreRef.current += ateBonus ? BONUS_POINTS : 1
+      scoreRef.current += ateBonus ? settingsRef.current.bonusPoints : 1
       setScore(scoreRef.current)
       if (scoreRef.current % ROCK_EVERY === 0) trySpawnRock()
       checkEnemySpawns()
@@ -533,6 +565,24 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
         <div className={styles.hud}>
           <span>Score: <strong>{score}</strong></span>
           {highScore > 0 && <span className={styles.hudBest}>Best: {highScore}</span>}
+          <button className={styles.settingsBtn} onClick={() => setShowSettings(!showSettings)} title="Settings">⚙️</button>
+        </div>
+      )}
+      {showSettings && (
+        <div className={styles.settingsOverlay} onClick={() => setShowSettings(false)}>
+          <div className={styles.settingsPanel} onClick={e => e.stopPropagation()}>
+            <h3 className={styles.settingsTitle}>Snake Settings</h3>
+            <div className={styles.settingsGrid}>
+              <label>Bonus Points: <input type="number" min="1" max="50" value={settings.bonusPoints} onChange={e => { const v = parseInt(e.target.value, 10) || 1; setSettings({...settings, bonusPoints: v}); settingsRef.current.bonusPoints = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
+              <label>Bonus Growth: <input type="number" min="1" max="5" value={settings.bonusGrows} onChange={e => { const v = parseInt(e.target.value, 10) || 1; setSettings({...settings, bonusGrows: v}); settingsRef.current.bonusGrows = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
+              <label>Max Rocks: <input type="number" min="5" max="30" value={settings.maxRocks} onChange={e => { const v = parseInt(e.target.value, 10) || 10; setSettings({...settings, maxRocks: v}); settingsRef.current.maxRocks = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
+              <label>Enemy Length: <input type="number" min="3" max="10" value={settings.enemyLength} onChange={e => { const v = parseInt(e.target.value, 10) || 5; setSettings({...settings, enemyLength: v}); settingsRef.current.enemyLength = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
+              <label>Max Enemies: <input type="number" min="1" max="10" value={settings.maxEnemies} onChange={e => { const v = parseInt(e.target.value, 10) || 3; setSettings({...settings, maxEnemies: v}); settingsRef.current.maxEnemies = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
+              <label>Player Speed: <input type="number" min="0.5" max="2" step="0.1" value={settings.playerSpeedMultiplier} onChange={e => { const v = parseFloat(e.target.value) || 1; setSettings({...settings, playerSpeedMultiplier: v}); settingsRef.current.playerSpeedMultiplier = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
+              <label>Enemy Speed: <input type="number" min="0.5" max="2" step="0.1" value={settings.enemySpeedMultiplier} onChange={e => { const v = parseFloat(e.target.value) || 1; setSettings({...settings, enemySpeedMultiplier: v}); settingsRef.current.enemySpeedMultiplier = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
+            </div>
+            <button className={styles.closeSettingsBtn} onClick={() => setShowSettings(false)}>Close</button>
+          </div>
         </div>
       )}
     </div>
