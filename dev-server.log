@@ -1,0 +1,44 @@
+
+> Vault@0.1.0 dev
+> electron-vite dev
+
+[36mvite v5.4.21 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 10 modules transformed.
+rendering chunks...
+[2mout/main/[22m[36mindex.js  [39m[1m[2m87.46 kB[22m[1m[22m
+[32m✓ built in 136ms[39m
+[32m
+build the electron main process successfully[39m
+[90m
+-----
+[39m
+[36mvite v5.4.21 [32mbuilding SSR bundle for development...[36m[39m
+transforming...
+[32m✓[39m 1 modules transformed.
+rendering chunks...
+[2mout/preload/[22m[36mindex.js  [39m[1m[2m5.28 kB[22m[1m[22m
+[32m✓ built in 8ms[39m
+[32m
+build the electron preload files successfully[39m
+[90m
+-----
+[39m
+Port 5173 is in use, trying another one...
+[32mdev server running for the electron renderer process at:
+[39m
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5174[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[32m
+start electron app...
+[39m
+
+[28840:0505/001702.133:ERROR:cache_util_win.cc(20)] Unable to move the cache: Access is denied. (0x5)
+[28840:0505/001702.133:ERROR:cache_util_win.cc(20)] Unable to move the cache: Access is denied. (0x5)
+[28840:0505/001702.133:ERROR:cache_util_win.cc(20)] Unable to move the cache: Access is denied. (0x5)
+[28840:0505/001702.133:ERROR:disk_cache.cc(208)] Unable to create cache
+[28840:0505/001702.133:ERROR:gpu_disk_cache.cc(713)] Gpu Cache Creation failed: -2
+[28840:0505/001702.133:ERROR:disk_cache.cc(208)] Unable to create cache
+[28840:0505/001702.133:ERROR:gpu_disk_cache.cc(713)] Gpu Cache Creation failed: -2
+[28840:0505/001702.133:ERROR:disk_cache.cc(208)] Unable to create cache
+[28840:0505/001702.133:ERROR:gpu_disk_cache.cc(713)] Gpu Cache Creation failed: -2
