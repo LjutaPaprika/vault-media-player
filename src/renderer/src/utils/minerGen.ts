@@ -5,7 +5,7 @@ export type TileKind =
   | 'wall' | 'dirt' | 'stone' | 'gemDirt' | 'goldDirt'
   | 'floor' | 'stairs' | 'vaultDoor' | 'vaultFloor'
 
-export type EnemyType = 'crawler' | 'guard' | 'brute'
+export type EnemyType = 'crawler' | 'guard' | 'brute' | 'shooter'
 
 export interface GenEnemy {
   x: number
@@ -101,7 +101,8 @@ export function generateLevel(floor: number): Level {
       let type: EnemyType = 'crawler'
       if (floor >= 4) {
         const v = rng()
-        if (floor >= 9 && v < 0.18) type = 'brute'
+        if (floor >= 12 && v < 0.12) type = 'shooter'
+        else if (floor >= 9 && v < 0.18) type = 'brute'
         else if (v < 0.45) type = 'guard'
       }
       enemies.push({ x: ex, y: ey, type })
