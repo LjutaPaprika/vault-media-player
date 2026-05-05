@@ -1,5 +1,20 @@
+import { useEffect, useRef } from 'react'
 import { useIdleGameStore, showCost, prestigeMultiplier, baseClickPower } from '../store/idleGameStore'
 import styles from './IdleGame.module.css'
+
+interface VizParticle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  life: number
+  label: string
+}
+
+const FILE_PATHS = [
+  'index.json', 'meta.db', 'scan.log', 'cache.idx', 'thumb.bin',
+  'info.txt', 'hash.map', 'tags.json', 'data.bin', 'state.db'
+]
 
 function fmt(n: number): string {
   if (n >= 1e12) return (n / 1e12).toFixed(2) + 'T'
@@ -22,6 +37,11 @@ export default function IdleGame(): JSX.Element {
   const { files, lifetimeFiles, prestigeCount, shows, clickUpgrades,
           click, buyShow, buyUpgrade, prestige } = useIdleGameStore()
 
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const particlesRef = useRef<VizParticle[]>([])
+  const rafRef = useRef<number | null>(null)
+  const spawnAccumRef = useRef(0)
+
   const mult = prestigeMultiplier(prestigeCount)
   const passiveRate = shows.reduce((sum, sh) => sum + sh.count * sh.baseRate, 0) * mult
   const clickPower = baseClickPower(clickUpgrades) * mult
@@ -29,10 +49,63 @@ export default function IdleGame(): JSX.Element {
   const visibleShows = shows.filter((sh) => sh.unlockAt === 0 || lifetimeFiles >= sh.unlockAt * 0.9)
   const purchasedUpgradeCount = clickUpgrades.filter((u) => u.purchased).length
 
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const draw = (): void => {
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      // Clear
+      ctx.fillStyle = 'rgba(0,0,0,0.1)'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+      // Spawn new particles
+      spawnAccumRef.current += passiveRate / 60
+      while (spawnAccumRef.current >= 1 && passiveRate > 0) {
+        spawnAccumRef.current -= 1
+        const label = FILE_PATHS[Math.floor(Math.random() * FILE_PATHS.length)]
+        particlesRef.current.push({
+          x: Math.random() * canvas.width,
+          y: canvas.height,
+          vx: (Math.random() - 0.5) * 20,
+          vy: -20 - Math.random() * 40,
+          life: 1,
+          label
+        })
+      }
+
+      // Update and draw particles
+      particlesRef.current = particlesRef.current.filter(p => {
+        p.x += p.vx / 60
+        p.y += p.vy / 60
+        p.life -= 1 / 120
+        return p.life > 0
+      })
+
+      for (const p of particlesRef.current) {
+        const alpha = Math.min(1, p.life * 2) * (1 - p.life) * 0.6
+        ctx.fillStyle = `rgba(74,222,128,${alpha})`
+        ctx.font = '10px monospace'
+        ctx.textAlign = 'center'
+        ctx.fillText(p.label, p.x, p.y)
+      }
+
+      rafRef.current = requestAnimationFrame(draw)
+    }
+
+    rafRef.current = requestAnimationFrame(draw)
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
+  }, [passiveRate])
+
   return (
     <div className={styles.body}>
       {/* ── Resource counter ── */}
       <div className={styles.counter}>
+        <canvas ref={canvasRef} width={1000} height={60} className={styles.vizCanvas} />
         <div className={styles.counterMain}>
           <span className={styles.counterFiles}>{fmt(files)}</span>
           <span className={styles.counterLabel}>files indexed</span>
