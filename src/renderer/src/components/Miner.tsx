@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { generateLevel, MAP_W, MAP_H, type TileKind, type EnemyType } from '../utils/minerGen'
 import { CELL, drawSprite, variantFor, getWallVariant, SPRITE_FLOOR_A, SPRITE_FLOOR_B, SPRITE_FLOOR_C, SPRITE_DIRT_A, SPRITE_DIRT_B, SPRITE_DIRT_C, SPRITE_STONE, SPRITE_GEM_DIRT, SPRITE_GOLD_DIRT, SPRITE_STAIRS, SPRITE_VAULT_DOOR, SPRITE_VAULT_FLOOR, SPRITE_WALL, SPRITE_PLAYER_0, SPRITE_PLAYER_1, SPRITE_CRAWLER_0, SPRITE_CRAWLER_1, SPRITE_GUARD_0, SPRITE_GUARD_1, SPRITE_BRUTE_0, SPRITE_BRUTE_1, SPRITE_SHOOTER_0, SPRITE_SHOOTER_1, SPRITE_PROJECTILE, PAL, type Sprite } from '../utils/minerSprites'
+import { computeFov } from '../utils/minerFov'
+import { findPath } from '../utils/minerAI'
 import styles from './Miner.module.css'
 
 const W = MAP_W * CELL
@@ -34,6 +36,12 @@ interface Enemy {
   shootCooldown: number
   chargeDir: Direction | null
   lostSightTurns: number
+  cachedPath: Array<[number, number]> | null
+  pathStep: number
+  lastSeenPlayer: { x: number; y: number } | null
+  alertTurns: number
+  facing: 'L' | 'R'
+  animFrame: 0 | 1
 }
 
 interface Projectile {
@@ -119,46 +127,21 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
     msgTimer.current = setTimeout(() => setMessage(''), ms)
   }
 
-  // ── Line of sight (Bresenham) ─────────────────────────────────────────────
-
-  function hasLoS(x1: number, y1: number, x2: number, y2: number): boolean {
-    const dx = Math.abs(x2 - x1)
-    const dy = Math.abs(y2 - y1)
-    const sx = x1 < x2 ? 1 : -1
-    const sy = y1 < y2 ? 1 : -1
-    let err = dx - dy
-    let x = x1, y = y1
-    const grid = gridRef.current
-
-    while (true) {
-      if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return false
-      const tile = grid[y]?.[x]
-      if (tile === 'wall') return false
-      if (x === x2 && y === y2) return true
-
-      const e2 = 2 * err
-      if (e2 > -dy) { err -= dy; x += sx }
-      if (e2 < dx) { err += dx; y += sy }
-    }
-  }
-
-  // ── Fog of War ────────────────────────────────────────────────────────────
+  // ── Fog of War (shadowcasting) ────────────────────────────────────────
 
   function computeVisible(): void {
     const p = playerRef.current
-    const vis = new Set<string>()
     const grid = gridRef.current
-
-    for (let y = Math.max(0, p.y - LOS_RADIUS); y <= Math.min(MAP_H - 1, p.y + LOS_RADIUS); y++) {
-      for (let x = Math.max(0, p.x - LOS_RADIUS); x <= Math.min(MAP_W - 1, p.x + LOS_RADIUS); x++) {
-        const dist = Math.max(Math.abs(x - p.x), Math.abs(y - p.y))
-        if (dist <= LOS_RADIUS && hasLoS(p.x, p.y, x, y)) {
-          vis.add(`${x},${y}`)
-          visitedRef.current[y][x] = true
-        }
-      }
+    const isOpaque = (x: number, y: number): boolean => {
+      const t = grid[y]?.[x]
+      return t === 'wall' || t === 'dirt' || t === 'stone' || t === 'gemDirt' || t === 'goldDirt' || t === 'vaultDoor'
     }
+    const vis = computeFov(grid, p.x, p.y, LOS_RADIUS, isOpaque)
     visibleRef.current = vis
+    vis.forEach(k => {
+      const [x, y] = k.split(',').map(Number)
+      visitedRef.current[y][x] = true
+    })
   }
 
   function loadFloor(fl: number, preserveKey: boolean): void {
@@ -180,7 +163,9 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
         id: _eid++, x: e.x, y: e.y, type: e.type,
         hp: base.hp + hpBoost, maxHp: base.hp + hpBoost, atk: base.atk,
         state: 'patrol', dir: 'U', patrolTarget: null, patrolOrigin: null,
-        shootCooldown: 0, chargeDir: null, lostSightTurns: 0
+        shootCooldown: 0, chargeDir: null, lostSightTurns: 0,
+        cachedPath: null, pathStep: 0, lastSeenPlayer: null, alertTurns: 0,
+        facing: 'R', animFrame: 0
       }
     })
   }
@@ -351,57 +336,101 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
   function processEnemies(): void {
     const p = playerRef.current
     const grid = gridRef.current
+    const isWalkable = (x: number, y: number): boolean => {
+      if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return false
+      const t = grid[y][x]
+      if (t !== 'floor' && t !== 'vaultFloor' && t !== 'stairs') return false
+      if (enemiesRef.current.some(e => e.x === x && e.y === y)) return false
+      return true
+    }
 
     for (const enemy of enemiesRef.current) {
-      const eyeLos = hasLoS(enemy.x, enemy.y, p.x, p.y)
+      const eyeLos = visibleRef.current.has(`${enemy.x},${enemy.y}`)
       const dist = Math.abs(enemy.x - p.x) + Math.abs(enemy.y - p.y)
 
-      // Get valid adjacent moves
-      const adjacent = ([[-1, 0], [1, 0], [0, -1], [0, 1]] as const).filter(([ndx, ndy]) => {
-        const nx = enemy.x + ndx, ny = enemy.y + ndy
-        if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) return false
-        const t = grid[ny][nx]
-        if (t !== 'floor' && t !== 'vaultFloor' && t !== 'stairs') return false
-        if (enemiesRef.current.some(e2 => e2 !== enemy && e2.x === nx && e2.y === ny)) return false
-        return true
-      })
+      // Update animation and direction
+      enemy.facing = p.x > enemy.x ? 'R' : p.x < enemy.x ? 'L' : enemy.facing
+      enemy.animFrame = animTickRef.current % 2 === 0 ? 0 : 1
 
       // Melee combat
       if (dist <= 1) { p.hp -= enemy.atk; continue }
 
-      if (enemy.type === 'shooter') {
-        // Shooter AI: maintain distance 4-7 and shoot
-        if (eyeLos && dist >= 4 && dist <= 7) {
-          // Shoot
-          const dx = (p.x - enemy.x) / dist
-          const dy = (p.y - enemy.y) / dist
-          projectilesRef.current.push({ x: enemy.x + 0.5, y: enemy.y + 0.5, dx, dy, stepsLeft: 8 })
-          if (adjacent.length > 0) {
-            const m = adjacent[Math.floor(Math.random() * adjacent.length)]
-            enemy.x += m[0]; enemy.y += m[1]
+      // Update visibility state and memory
+      if (eyeLos) {
+        enemy.lastSeenPlayer = { x: p.x, y: p.y }
+        enemy.alertTurns = 5
+      } else if (enemy.alertTurns > 0) {
+        enemy.alertTurns--
+      }
+
+      if (enemy.type === 'crawler') {
+        // Crawler: patrol with A*, aggressive chase
+        if (eyeLos) {
+          enemy.state = 'chase'
+          const path = findPath(grid, enemy, p, isWalkable)
+          enemy.cachedPath = path
+          enemy.pathStep = 0
+        } else if (enemy.state === 'chase' && enemy.alertTurns === 0) {
+          enemy.state = 'patrol'
+          enemy.cachedPath = null
+          enemy.pathStep = 0
+        }
+
+        if (enemy.state === 'chase' && enemy.cachedPath && enemy.pathStep < enemy.cachedPath.length) {
+          const [nx, ny] = enemy.cachedPath[enemy.pathStep]
+          if (isWalkable(nx, ny)) {
+            enemy.x = nx
+            enemy.y = ny
+            enemy.pathStep++
           }
-        } else if (eyeLos && dist < 4) {
-          // Too close, back away
-          let bestDist = dist, bestMove = null as readonly [number, number] | null
-          for (const m of adjacent) {
-            const d = Math.abs(enemy.x + m[0] - p.x) + Math.abs(enemy.y + m[1] - p.y)
-            if (d > bestDist) { bestDist = d; bestMove = m }
+        } else if (enemy.state === 'patrol') {
+          if (!enemy.patrolTarget || (enemy.x === enemy.patrolTarget.x && enemy.y === enemy.patrolTarget.y)) {
+            enemy.patrolTarget = { x: 2 + Math.floor(Math.random() * (MAP_W - 4)), y: 2 + Math.floor(Math.random() * (MAP_H - 4)) }
           }
-          if (bestMove) { enemy.x += bestMove[0]; enemy.y += bestMove[1] }
-        } else if (eyeLos) {
-          // Too far, approach
-          let bestDist = dist, bestMove = null as readonly [number, number] | null
-          for (const m of adjacent) {
-            const d = Math.abs(enemy.x + m[0] - p.x) + Math.abs(enemy.y + m[1] - p.y)
-            if (d < bestDist) { bestDist = d; bestMove = m }
+          const path = findPath(grid, enemy, enemy.patrolTarget, isWalkable, 100)
+          if (path && path.length > 0) {
+            const [nx, ny] = path[0]
+            if (isWalkable(nx, ny)) {
+              enemy.x = nx
+              enemy.y = ny
+            }
           }
-          if (bestMove) { enemy.x += bestMove[0]; enemy.y += bestMove[1] }
-        } else if (adjacent.length > 0) {
-          const m = adjacent[Math.floor(Math.random() * adjacent.length)]
-          enemy.x += m[0]; enemy.y += m[1]
+        }
+      } else if (enemy.type === 'guard') {
+        // Guard: cautious patrol, methodical chase
+        if (eyeLos) {
+          enemy.state = 'chase'
+          const path = findPath(grid, enemy, p, isWalkable)
+          enemy.cachedPath = path
+          enemy.pathStep = 0
+        } else if (enemy.state === 'chase' && enemy.alertTurns === 0) {
+          enemy.state = 'patrol'
+          enemy.cachedPath = null
+          enemy.pathStep = 0
+        }
+
+        if (enemy.state === 'chase' && enemy.cachedPath && enemy.pathStep < enemy.cachedPath.length) {
+          const [nx, ny] = enemy.cachedPath[enemy.pathStep]
+          if (isWalkable(nx, ny)) {
+            enemy.x = nx
+            enemy.y = ny
+            enemy.pathStep++
+          }
+        } else if (enemy.state === 'patrol' && Math.random() < PATROL_WANDER_CHANCE) {
+          if (!enemy.patrolTarget || (enemy.x === enemy.patrolTarget.x && enemy.y === enemy.patrolTarget.y)) {
+            enemy.patrolTarget = { x: 2 + Math.floor(Math.random() * (MAP_W - 4)), y: 2 + Math.floor(Math.random() * (MAP_H - 4)) }
+          }
+          const path = findPath(grid, enemy, enemy.patrolTarget, isWalkable, 100)
+          if (path && path.length > 0) {
+            const [nx, ny] = path[0]
+            if (isWalkable(nx, ny)) {
+              enemy.x = nx
+              enemy.y = ny
+            }
+          }
         }
       } else if (enemy.type === 'brute') {
-        // Brute: stationary patrol, charges when LoS
+        // Brute: stationary, charges directly at player when seen
         if (eyeLos && dist <= 7) {
           enemy.state = 'charge'
           enemy.chargeDir = p.x > enemy.x ? 'R' : p.x < enemy.x ? 'L' : p.y > enemy.y ? 'D' : 'U'
@@ -411,49 +440,50 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
           const dirs: Record<Direction, readonly [number, number]> = { U: [0, -1], D: [0, 1], L: [-1, 0], R: [1, 0], N: [0, 0] }
           const [dx, dy] = dirs[enemy.chargeDir]
           const nx = enemy.x + dx, ny = enemy.y + dy
-          if (nx >= 0 && nx < MAP_W && ny >= 0 && ny < MAP_H && grid[ny]?.[nx] !== 'wall' && !enemiesRef.current.some(e => e !== enemy && e.x === nx && e.y === ny)) {
+          if (isWalkable(nx, ny)) {
             enemy.x = nx; enemy.y = ny
           } else {
             enemy.chargeDir = null; enemy.state = 'patrol'
           }
-        } else if (adjacent.length > 0 && Math.random() < PATROL_WANDER_CHANCE) {
-          const m = adjacent[Math.floor(Math.random() * adjacent.length)]
-          enemy.x += m[0]; enemy.y += m[1]
         }
-      } else {
-        // Crawler/Guard: patrol with waypoints, chase on LoS
+      } else if (enemy.type === 'shooter') {
+        // Shooter: maintain distance 4-7, use pathfinding to reposition
         if (eyeLos) {
           enemy.state = 'chase'
-          enemy.lostSightTurns = 0
-        } else if (enemy.state === 'chase') {
-          enemy.lostSightTurns++
-          if (enemy.lostSightTurns > 3) {
-            enemy.state = 'patrol'
-            enemy.patrolTarget = null
-          }
-        }
-
-        if (enemy.state === 'chase') {
-          let bestDist = dist, bestMove = null as readonly [number, number] | null
-          for (const m of adjacent) {
-            const d = Math.abs(enemy.x + m[0] - p.x) + Math.abs(enemy.y + m[1] - p.y)
-            if (d < bestDist) { bestDist = d; bestMove = m }
-          }
-          if (bestMove) { enemy.x += bestMove[0]; enemy.y += bestMove[1] }
-        } else if (adjacent.length > 0) {
-          if (!enemy.patrolTarget || (enemy.x === enemy.patrolTarget.x && enemy.y === enemy.patrolTarget.y)) {
-            enemy.patrolTarget = adjacent[Math.floor(Math.random() * adjacent.length)]
-            const offset = adjacent[Math.floor(Math.random() * adjacent.length)]
-            enemy.patrolTarget = { x: enemy.x + offset[0], y: enemy.y + offset[1] }
-          }
-          if (enemy.patrolTarget) {
-            let bestDist = Infinity, bestMove = null as readonly [number, number] | null
-            for (const m of adjacent) {
-              const d = Math.abs(enemy.x + m[0] - enemy.patrolTarget.x) + Math.abs(enemy.y + m[1] - enemy.patrolTarget.y)
-              if (d < bestDist) { bestDist = d; bestMove = m }
+          if (dist >= 4 && dist <= 7) {
+            // Ideal distance: shoot
+            const dx = (p.x - enemy.x) / dist
+            const dy = (p.y - enemy.y) / dist
+            projectilesRef.current.push({ x: enemy.x + 0.5, y: enemy.y + 0.5, dx, dy, stepsLeft: 8 })
+            // Small sidestep
+            if (Math.random() < 0.5) {
+              const side = Math.random() < 0.5 ? 1 : -1
+              const stepx = Math.abs(p.x - enemy.x) > Math.abs(p.y - enemy.y)
+                ? enemy.x
+                : enemy.x + side
+              const stepy = Math.abs(p.x - enemy.x) > Math.abs(p.y - enemy.y)
+                ? enemy.y + side
+                : enemy.y
+              if (isWalkable(stepx, stepy)) { enemy.x = stepx; enemy.y = stepy }
             }
-            if (bestMove) { enemy.x += bestMove[0]; enemy.y += bestMove[1] }
+          } else if (dist < 4) {
+            // Too close: back away
+            const path = findPath(grid, { x: p.x, y: p.y }, enemy, isWalkable, 50)
+            if (path && path.length > 1) {
+              const [nx, ny] = path[1]
+              if (isWalkable(nx, ny)) { enemy.x = nx; enemy.y = ny }
+            }
+          } else {
+            // Too far: approach
+            const path = findPath(grid, enemy, p, isWalkable, 50)
+            if (path && path.length > 0) {
+              const [nx, ny] = path[0]
+              if (isWalkable(nx, ny)) { enemy.x = nx; enemy.y = ny }
+            }
           }
+        } else if (enemy.alertTurns === 0) {
+          enemy.state = 'patrol'
+          enemy.cachedPath = null
         }
       }
     }
