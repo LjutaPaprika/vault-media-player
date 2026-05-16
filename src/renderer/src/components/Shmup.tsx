@@ -75,7 +75,7 @@ function buildWave(n: number): WaveDef {
   const spawns: WaveDef['spawns'] = []
   const slots: { col: number; row: number }[] = []
   // Fill slots from the front rows back as wave number rises
-  const totalSlots = Math.min(FORM_COLS * FORM_ROWS, 6 + Math.floor(n * 2.5))
+  const totalSlots = Math.min(FORM_COLS * FORM_ROWS, 10 + Math.floor(n * 3.5))
   for (let i = 0; i < totalSlots; i++) {
     slots.push({ col: i % FORM_COLS, row: Math.floor(i / FORM_COLS) % FORM_ROWS })
   }
@@ -99,7 +99,7 @@ function buildWave(n: number): WaveDef {
   for (let i = 0; i < slots.length; i++) {
     const side: 'left' | 'right' | 'top' = (i % 3 === 0) ? 'left' : (i % 3 === 1) ? 'right' : 'top'
     spawns.push({ type: order[i], col: slots[i].col, row: slots[i].row, side, delay: t })
-    t += Math.max(0.18, 0.5 - n * 0.02)
+    t += Math.max(0.12, 0.35 - n * 0.025)
   }
   return { spawns }
 }
@@ -135,7 +135,7 @@ export default function Shmup(): JSX.Element {
   const waveIntroTimerRef = useRef(0)
   const phaseRef = useRef<Phase>('idle')
   const scoreRef = useRef(0)
-  const diveCooldownRef = useRef(2)
+  const diveCooldownRef = useRef(1.2)
   const rafRef = useRef(0)
 
   const [score, setScore] = useState(0)
@@ -242,7 +242,7 @@ export default function Shmup(): JSX.Element {
         e.diveTargetX = p.x + (Math.random() - 0.5) * 80
       }
       // More frequent dives at higher waves
-      diveCooldownRef.current = Math.max(0.5, 2.5 - waveRef.current * 0.1)
+      diveCooldownRef.current = Math.max(0.4, 1.6 - waveRef.current * 0.1)
     }
 
     // Update enemies
@@ -257,12 +257,13 @@ export default function Shmup(): JSX.Element {
       } else if (e.state === 'formation') {
         const slotPos = formationSlotPos(e.col, e.row, driftX)
         e.x = slotPos.x; e.y = slotPos.y
-        // Occasional shot from formation
-        if (phaseRef.current === 'playing' && e.cooldown <= 0 && Math.random() < 0.5) {
+        // Occasional shot from formation — gets more aggressive at higher waves
+        const formFireChance = Math.min(0.9, 0.6 + waveRef.current * 0.03)
+        if (phaseRef.current === 'playing' && e.cooldown <= 0 && Math.random() < formFireChance) {
           enemyShoot(e, p)
-          e.cooldown = 2 + Math.random() * 3
+          e.cooldown = Math.max(0.7, 1.4 + Math.random() * 1.8 - waveRef.current * 0.04)
         } else if (e.cooldown <= 0) {
-          e.cooldown = 1 + Math.random()
+          e.cooldown = Math.max(0.4, 0.9 + Math.random() - waveRef.current * 0.04)
         }
       } else if (e.state === 'diving') {
         e.diveT += dt

@@ -11,6 +11,7 @@ export interface MediaCard {
   posterPath?: string | null
   subtitle?: string
   filePath?: string | null
+  complete?: boolean
 }
 
 interface Props {
@@ -106,6 +107,7 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
               ? <PosterImage filePath={item.posterPath} title={item.title} />
               : <div className={styles.placeholder}>{item.title.charAt(0)}</div>
             }
+            {item.complete && <span className={styles.completeDot} title="Series complete" />}
           </div>
           <div className={styles.info}>
             <span className={styles.cardTitle}>{item.title}</span>

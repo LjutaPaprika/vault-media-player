@@ -187,7 +187,8 @@ export default function TextDungeon(_props: TextDungeonProps): JSX.Element {
     }
 
     const isFirst = !room.visited
-    lines.push(room.longDesc)
+    const desc = room.cleared && room.clearedDesc ? room.clearedDesc : room.longDesc
+    lines.push(desc)
     if (room.flavor && isFirst) lines.push(`  — ${room.flavor}`)
 
     if (room.items.length) {
@@ -726,7 +727,39 @@ export default function TextDungeon(_props: TextDungeonProps): JSX.Element {
     }
     if (verb === 'inventory' || verb === 'inv' || verb === 'i') {
       if (!p.inventory.length) appendLog('You carry nothing.')
-      else appendLog(`Inventory: ${p.inventory.map(id => ITEMS[id]?.name ?? id).join(', ')}.`)
+      else {
+        // Group by category, with stack counts. Equipped items get an [E] marker.
+        const equippedSet = new Set<string>()
+        for (const slot of Object.keys(p.equipment) as (keyof typeof p.equipment)[]) {
+          const id = p.equipment[slot]; if (id) equippedSet.add(id)
+        }
+        const counts = new Map<string, number>()
+        for (const id of p.inventory) counts.set(id, (counts.get(id) ?? 0) + 1)
+        const buckets: Record<string, string[]> = {
+          'Weapons': [], 'Armor': [], 'Catalysts': [], 'Accessories': [],
+          'Consumables': [], 'Quest / Keys': [], 'Other': []
+        }
+        for (const [id, n] of counts) {
+          const item = ITEMS[id]
+          if (!item) { buckets['Other'].push(`${id}${n > 1 ? ` (x${n})` : ''}`); continue }
+          const equipMark = equippedSet.has(id) ? ' [E]' : ''
+          const entry = `${item.name}${n > 1 ? ` (x${n})` : ''}${equipMark}`
+          const cat = item.category
+          if (cat === 'weapon') buckets['Weapons'].push(entry)
+          else if (cat === 'armor') buckets['Armor'].push(entry)
+          else if (cat === 'catalyst') buckets['Catalysts'].push(entry)
+          else if (cat === 'accessory') buckets['Accessories'].push(entry)
+          else if (cat === 'consumable' || item.heal != null || item.healMp != null || item.cureStatus) buckets['Consumables'].push(entry)
+          else if (cat === 'key') buckets['Quest / Keys'].push(entry)
+          else if (cat === 'scroll') buckets['Consumables'].push(entry)
+          else buckets['Other'].push(entry)
+        }
+        appendLog('Inventory:')
+        for (const [label, entries] of Object.entries(buckets)) {
+          if (!entries.length) continue
+          appendLog(`  ${label}: ${entries.join(', ')}`)
+        }
+      }
       const eq = p.equipment
       const names: string[] = []
       if (eq.weapon) names.push(`Weapon: ${ITEMS[eq.weapon].name}`)
@@ -758,6 +791,20 @@ export default function TextDungeon(_props: TextDungeonProps): JSX.Element {
 
     if (cs.active) {
       if (combatCommand(p, ps, cs, verb, arg)) return
+    }
+
+    // Pre-emptive attack: out-of-combat "attack" triggers combat in the current room
+    if (verb === 'attack' || verb === 'a' || verb === 'fight' || verb === 'kill') {
+      const room = r[p.room]
+      if (!room.enemies.length || room.cleared) {
+        appendLog('Nothing here to attack.', '')
+        return
+      }
+      appendLog('You strike first!', '')
+      // The first round's initiative gives the player a normal turn order; the surprise
+      // is conveyed narratively. (No mechanical first-strike bonus yet.)
+      startCombat(p, r, ps, room, false)
+      return
     }
 
     // Movement
@@ -832,8 +879,13 @@ export default function TextDungeon(_props: TextDungeonProps): JSX.Element {
         item.category === 'catalyst' ? 'catalyst' :
         item.category === 'accessory' ? 'accessory' : null
       if (!slot) { appendLog(`Can't equip ${item.name}.`, ''); return }
+      const previous = p.equipment[slot]
       p.equipment[slot] = itemId
-      appendLog(`Equipped ${item.name}.`, '')
+      if (previous && previous !== itemId) {
+        appendLog(`Equipped ${item.name}. ${ITEMS[previous]?.name ?? previous} returns to inventory.`, '')
+      } else {
+        appendLog(`Equipped ${item.name}.`, '')
+      }
       setPlayer(p); return
     }
     if (verb === 'use' || verb === 'drink' || verb === 'eat') {
@@ -904,11 +956,24 @@ export default function TextDungeon(_props: TextDungeonProps): JSX.Element {
       setPlayer(p); setParty(ps); return
     }
     if (verb === 'spells') { handleNonCombatInfo(p, ps, 'spells'); return }
-    if (verb === 'learn') { appendLog('Visit a sage to learn spells.', ''); return }
+    // (The real "learn" handler runs below; only fall through to the "no sage here" notice
+    //  if no sage is currently in conversation.)
 
     // NPCs
     if (verb === 'talk' || verb === 'speak') {
       const room = r[p.room]
+      // First check if the arg matches a party member — they can be spoken to anywhere
+      if (arg) {
+        const member = ps.find(m => m.name.toLowerCase().includes(arg) || m.charId === arg)
+        if (member) {
+          const tpl = CHARACTERS[member.charId]
+          const lines = tpl?.idleLines ?? []
+          if (!lines.length) { appendLog(`${member.name} nods, says nothing.`, ''); return }
+          const line = lines[Math.floor(Math.random() * lines.length)]
+          appendLog(`${member.name}: ${line}`, '')
+          return
+        }
+      }
       const npcId = room.npcs.find(id => NPCS[id]?.name.toLowerCase().includes(arg)) ?? room.npcs[0]
       if (!npcId) { appendLog('No one to talk to.', ''); return }
       const npc = NPCS[npcId]
@@ -965,6 +1030,10 @@ export default function TextDungeon(_props: TextDungeonProps): JSX.Element {
       const offer = npc.shop?.find(s => s.id === itemId)
       const sellPrice = offer ? Math.floor(offer.price * 0.5) : Math.max(1, Math.floor(itemGoldValue(itemId) || 5))
       p.inventory.splice(p.inventory.indexOf(itemId), 1)
+      // If the item being sold is currently equipped, unequip it
+      for (const slot of Object.keys(p.equipment) as (keyof typeof p.equipment)[]) {
+        if (p.equipment[slot] === itemId) p.equipment[slot] = null
+      }
       p.gold += sellPrice
       appendLog(`Sold ${ITEMS[itemId].name} for ${sellPrice}g.`, '')
       setPlayer(p); return

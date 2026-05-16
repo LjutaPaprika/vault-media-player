@@ -114,6 +114,8 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
   const settingsRef      = useRef<SnakeSettings>(DEFAULT_SETTINGS)
   const gameModeRef      = useRef<GameMode>('standard')
   const snake2Ref        = useRef<Pt[]>([])
+  const lastPassiveGrowAtRef = useRef(0)
+  const PASSIVE_GROW_INTERVAL_MS = 5000
   const dir2Ref          = useRef<Dir>('L')
   const input2Queue      = useRef<Dir[]>([])
   const p2AliveRef       = useRef(true)
@@ -624,8 +626,12 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
       if (food1 || food2) {
         const pt = pickEmpty(occupied()); if (pt) foodRef.current = pt
       }
-      snakeRef.current = food1 ? [next, ...snakeRef.current] : [next, ...snakeRef.current.slice(0, -1)]
-      snake2Ref.current = food2 ? [next2, ...snake2Ref.current] : [next2, ...snake2Ref.current.slice(0, -1)]
+      const passiveGrow = Date.now() - lastPassiveGrowAtRef.current >= PASSIVE_GROW_INTERVAL_MS
+      if (passiveGrow) lastPassiveGrowAtRef.current = Date.now()
+      const grow1 = food1 || passiveGrow
+      const grow2 = food2 || passiveGrow
+      snakeRef.current  = grow1 ? [next, ...snakeRef.current]  : [next, ...snakeRef.current.slice(0, -1)]
+      snake2Ref.current = grow2 ? [next2, ...snake2Ref.current] : [next2, ...snake2Ref.current.slice(0, -1)]
     }
   }
 
@@ -656,6 +662,7 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
     p2ScoreRef.current = 0
     setP2Score(0)
     setP2Alive(true)
+    lastPassiveGrowAtRef.current = Date.now()
     setWinner(null)
     if (isPvp) {
       snake2Ref.current = [{ x: COLS - 9, y: 14 }, { x: COLS - 8, y: 14 }, { x: COLS - 7, y: 14 }]

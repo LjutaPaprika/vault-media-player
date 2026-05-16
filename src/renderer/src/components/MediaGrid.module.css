@@ -37,6 +37,19 @@
   flex-shrink: 0;
   box-shadow: var(--shadow-md);
   transition: box-shadow 0.2s ease;
+  position: relative;
+}
+
+.completeDot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ec4899;
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.45), 0 0 8px rgba(236, 72, 153, 0.65);
+  pointer-events: none;
 }
 
 .poster img {

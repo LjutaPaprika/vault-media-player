@@ -49,6 +49,41 @@
   font-variant-numeric: tabular-nums;
 }
 
+.bestsRow {
+  display: flex;
+  gap: 8px;
+  margin-top: -2px;
+}
+
+.bestPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.45);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.bestPillActive {
+  border-color: rgba(232, 180, 75, 0.4);
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(232, 180, 75, 0.06);
+}
+
+.bestPillLabel {
+  text-transform: uppercase;
+}
+
+.bestPillVal {
+  color: rgba(232, 180, 75, 0.85);
+}
+
 .gameArea {
   position: relative;
   display: inline-block;

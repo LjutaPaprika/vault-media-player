@@ -210,6 +210,8 @@ export interface Room {
   tier: 1 | 2 | 3 | 4 | 5 | 6
   shortDesc: string
   longDesc: string
+  /** Optional override used after the room is cleared — for rooms whose default desc references the now-defeated foe. */
+  clearedDesc?: string
   flavor?: string // first-visit only
   exits: Partial<Record<Direction, ExitTarget>>
   enemies: EnemyId[]

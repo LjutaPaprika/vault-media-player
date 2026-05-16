@@ -224,6 +224,14 @@ export default function Minesweeper({ onNewBest }: MinesweeperProps): JSX.Elemen
           <span>⏱️ {displayTime}s</span>
         </div>
       </div>
+      <div className={styles.bestsRow}>
+        {(['beginner', 'intermediate', 'expert'] as Difficulty[]).map(d => (
+          <span key={d} className={`${styles.bestPill} ${difficulty === d ? styles.bestPillActive : ''}`}>
+            <span className={styles.bestPillLabel}>{d.charAt(0).toUpperCase() + d.slice(1)}</span>
+            <span className={styles.bestPillVal}>{best[d] != null ? `${best[d]}s` : '—'}</span>
+          </span>
+        ))}
+      </div>
 
       <div className={styles.gameArea}>
         <div

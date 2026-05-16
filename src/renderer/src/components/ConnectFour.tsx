@@ -5,8 +5,19 @@ const COLS = 7, ROWS = 6, CELL = 60
 const CANVAS_W = COLS * CELL, CANVAS_H = ROWS * CELL
 const SAVE_KEY = 'connectFourWins'
 
+const AI_DEPTH = 6
+const DROP_PX_PER_S = 1700        // drop speed: 1700 px/s — feels weighty but snappy
+
 type Player = 0 | 1 | 2
 type Phase = 'idle' | 'playing' | 'won' | 'draw'
+
+interface DropAnim {
+  col: number
+  targetRow: number
+  player: Player
+  y: number              // current top-of-disc canvas y
+  done: boolean
+}
 
 export default function ConnectFour(): JSX.Element {
   const [phase, setPhase] = useState<Phase>('idle')
@@ -23,6 +34,8 @@ export default function ConnectFour(): JSX.Element {
   const drawsRef = useRef(0)
   const hoverColRef = useRef(-1)
   const rafRef = useRef<number | null>(null)
+  const dropRef = useRef<DropAnim | null>(null)
+  const lastFrameRef = useRef(0)
 
   useEffect(() => {
     window.api.settings.get(SAVE_KEY, '{}').then(v => {
@@ -50,10 +63,11 @@ export default function ConnectFour(): JSX.Element {
     function onClick(e: MouseEvent): void {
       if (phaseRef.current !== 'playing' || !canvasRef.current) return
       if (currentPlayerRef.current !== 1) return
+      if (dropRef.current) return                       // input locked during animation
       const rect = canvasRef.current.getBoundingClientRect()
       const x = e.clientX - rect.left
       const col = Math.floor(x / CELL)
-      dropPiece(col)
+      startDrop(col)
     }
     const c = canvasRef.current
     c?.addEventListener('mousemove', onMouseMove)
@@ -70,61 +84,177 @@ export default function ConnectFour(): JSX.Element {
     })).catch(() => {})
   }
 
-  function dropPiece(col: number): void {
+  // Start a disc-drop animation in the given column for the current player.
+  function startDrop(col: number): void {
     if (col < 0 || col >= COLS) return
+    const targetRow = findLandingRow(boardRef.current, col)
+    if (targetRow === -1) return
+    dropRef.current = {
+      col,
+      targetRow,
+      player: currentPlayerRef.current,
+      y: -CELL,                                          // start just above the board
+      done: false
+    }
+  }
+
+  // Called when a drop animation finishes — commits the piece and advances turn.
+  function commitDrop(anim: DropAnim): void {
     const board = boardRef.current
-    for (let row = ROWS - 1; row >= 0; row--) {
-      if (board[row][col] === 0) {
-        board[row][col] = currentPlayerRef.current
-        if (checkWin(board, col, row)) {
-          phaseRef.current = 'won'
-          setPhase('won')
-          if (currentPlayerRef.current === 1) { winsRef.current++; setWins(winsRef.current) }
-          else { lossesRef.current++; setLosses(lossesRef.current) }
-          persistRecord()
-        } else if (board.every(r => r.every(c => c !== 0))) {
-          phaseRef.current = 'draw'
-          setPhase('draw')
-          drawsRef.current++
-          setDraws(drawsRef.current)
-          persistRecord()
-        } else {
-          currentPlayerRef.current = (3 - currentPlayerRef.current) as Player
-          if (currentPlayerRef.current === 2) setTimeout(aiTurn, 500)
-        }
-        return
-      }
+    board[anim.targetRow][anim.col] = anim.player
+    if (checkWin(board, anim.col, anim.targetRow)) {
+      phaseRef.current = 'won'
+      setPhase('won')
+      if (anim.player === 1) { winsRef.current++; setWins(winsRef.current) }
+      else                   { lossesRef.current++; setLosses(lossesRef.current) }
+      persistRecord()
+      return
+    }
+    if (board.every(r => r.every(c => c !== 0))) {
+      phaseRef.current = 'draw'
+      setPhase('draw')
+      drawsRef.current++
+      setDraws(drawsRef.current)
+      persistRecord()
+      return
+    }
+    currentPlayerRef.current = (3 - anim.player) as Player
+    if (currentPlayerRef.current === 2) {
+      // Defer AI think so the player's disc renders settled before AI's drop starts
+      setTimeout(aiTurn, 300)
     }
   }
 
   function aiTurn(): void {
     if (phaseRef.current !== 'playing') return
-    dropPiece(chooseCol())
+    if (dropRef.current) return
+    const col = chooseColMinimax(boardRef.current, 2)
+    startDrop(col)
   }
 
-  function chooseCol(): number {
-    const board = boardRef.current
-    const winCol = canWin(board, 2)
-    if (winCol !== -1) return winCol
-    const blockCol = canWin(board, 1)
-    if (blockCol !== -1) return blockCol
-    const validCols = Array.from({ length: COLS }, (_, i) => i).filter(c => board[0][c] === 0)
-    if (validCols.includes(3)) return 3
-    return validCols[Math.floor(Math.random() * validCols.length)]
+  function findLandingRow(board: Player[][], col: number): number {
+    for (let row = ROWS - 1; row >= 0; row--) if (board[row][col] === 0) return row
+    return -1
   }
 
-  function canWin(board: Player[][], player: Player): number {
-    for (let col = 0; col < COLS; col++) {
-      for (let row = ROWS - 1; row >= 0; row--) {
-        if (board[row][col] === 0) {
-          board[row][col] = player
-          if (checkWin(board, col, row)) { board[row][col] = 0; return col }
-          board[row][col] = 0
-          break
-        }
+  // ── AI: alpha-beta minimax + threat-based evaluation ────────────────────────
+
+  // Static board score from `aiPlayer`'s perspective. Positive = good for aiPlayer.
+  function evaluate(board: Player[][], aiPlayer: Player): number {
+    const opp: Player = (3 - aiPlayer) as Player
+    let score = 0
+    // Center column control
+    for (let r = 0; r < ROWS; r++) {
+      if (board[r][3] === aiPlayer) score += 6
+      else if (board[r][3] === opp) score -= 6
+    }
+    // All 4-in-a-row windows
+    const windows: [number, number][][] = []
+    // Horizontal
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c <= COLS - 4; c++)
+        windows.push([[r, c], [r, c + 1], [r, c + 2], [r, c + 3]])
+    // Vertical
+    for (let r = 0; r <= ROWS - 4; r++)
+      for (let c = 0; c < COLS; c++)
+        windows.push([[r, c], [r + 1, c], [r + 2, c], [r + 3, c]])
+    // Diagonal \
+    for (let r = 0; r <= ROWS - 4; r++)
+      for (let c = 0; c <= COLS - 4; c++)
+        windows.push([[r, c], [r + 1, c + 1], [r + 2, c + 2], [r + 3, c + 3]])
+    // Diagonal /
+    for (let r = 3; r < ROWS; r++)
+      for (let c = 0; c <= COLS - 4; c++)
+        windows.push([[r, c], [r - 1, c + 1], [r - 2, c + 2], [r - 3, c + 3]])
+
+    for (const w of windows) {
+      let a = 0, o = 0
+      for (const [r, c] of w) {
+        const v = board[r][c]
+        if (v === aiPlayer) a++
+        else if (v === opp) o++
+      }
+      if (a > 0 && o > 0) continue                     // mixed window — no value
+      if (a === 4) score += 1000
+      else if (a === 3) score += 50
+      else if (a === 2) score += 5
+      if (o === 4) score -= 1100                       // weigh opponent threats slightly higher
+      else if (o === 3) score -= 60
+      else if (o === 2) score -= 5
+    }
+    return score
+  }
+
+  function isTerminal(board: Player[][]): boolean {
+    // Check any winning 4 anywhere; also full board
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        if (board[r][c] !== 0 && checkWin(board, c, r)) return true
       }
     }
-    return -1
+    return board[0].every(c => c !== 0)
+  }
+
+  function getValidCols(board: Player[][]): number[] {
+    // Center-out order improves alpha-beta pruning
+    const order = [3, 2, 4, 1, 5, 0, 6]
+    return order.filter(c => board[0][c] === 0)
+  }
+
+  function minimax(
+    board: Player[][], depth: number, alpha: number, beta: number,
+    maxPlayer: boolean, aiPlayer: Player
+  ): { score: number; col: number } {
+    const valid = getValidCols(board)
+    const terminal = isTerminal(board)
+    if (depth === 0 || terminal || valid.length === 0) {
+      return { score: terminal && !valid.length ? 0 : evaluate(board, aiPlayer), col: -1 }
+    }
+
+    let bestCol = valid[0]
+    if (maxPlayer) {
+      let best = -Infinity
+      for (const c of valid) {
+        const row = findLandingRow(board, c)
+        if (row === -1) continue
+        board[row][c] = aiPlayer
+        const winNow = checkWin(board, c, row)
+        let s: number
+        if (winNow) s = 100000 + depth                   // prefer fast wins
+        else s = minimax(board, depth - 1, alpha, beta, false, aiPlayer).score
+        board[row][c] = 0
+        if (s > best) { best = s; bestCol = c }
+        alpha = Math.max(alpha, best)
+        if (alpha >= beta) break
+      }
+      return { score: best, col: bestCol }
+    } else {
+      const opp: Player = (3 - aiPlayer) as Player
+      let best = Infinity
+      for (const c of valid) {
+        const row = findLandingRow(board, c)
+        if (row === -1) continue
+        board[row][c] = opp
+        const winNow = checkWin(board, c, row)
+        let s: number
+        if (winNow) s = -100000 - depth                  // opponent winning here is awful
+        else s = minimax(board, depth - 1, alpha, beta, true, aiPlayer).score
+        board[row][c] = 0
+        if (s < best) { best = s; bestCol = c }
+        beta = Math.min(beta, best)
+        if (alpha >= beta) break
+      }
+      return { score: best, col: bestCol }
+    }
+  }
+
+  function chooseColMinimax(board: Player[][], aiPlayer: Player): number {
+    const { col } = minimax(board, AI_DEPTH, -Infinity, Infinity, true, aiPlayer)
+    if (col === -1) {
+      const valid = getValidCols(board)
+      return valid[0] ?? 3
+    }
+    return col
   }
 
   function checkWin(board: Player[][], col: number, row: number): boolean {
@@ -151,22 +281,45 @@ export default function ConnectFour(): JSX.Element {
   function startGame(): void {
     boardRef.current = Array.from({ length: ROWS }, () => Array(COLS).fill(0))
     currentPlayerRef.current = 1
+    dropRef.current = null
     phaseRef.current = 'playing'
     setPhase('playing')
+    lastFrameRef.current = performance.now()
     startRaf()
   }
 
   function backToMenu(): void {
     phaseRef.current = 'idle'
     setPhase('idle')
+    dropRef.current = null
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
   }
 
   function startRaf(): void {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    const loop = (): void => {
+    const loop = (t: number): void => {
+      const dt = Math.min(0.05, (t - lastFrameRef.current) / 1000)
+      lastFrameRef.current = t
+      // Advance any active drop animation
+      const anim = dropRef.current
+      if (anim && !anim.done) {
+        const targetY = anim.targetRow * CELL
+        anim.y += DROP_PX_PER_S * dt
+        if (anim.y >= targetY) {
+          anim.y = targetY
+          anim.done = true
+        }
+      }
       draw()
-      if (phaseRef.current === 'playing') rafRef.current = requestAnimationFrame(loop)
+      // Commit after a one-frame display of the settled disc
+      if (anim && anim.done) {
+        const finished = anim
+        dropRef.current = null
+        commitDrop(finished)
+      }
+      if (phaseRef.current === 'playing' || dropRef.current) {
+        rafRef.current = requestAnimationFrame(loop)
+      }
     }
     rafRef.current = requestAnimationFrame(loop)
   }
@@ -187,21 +340,19 @@ export default function ConnectFour(): JSX.Element {
         ctx.fillStyle = '#0c1a2e'
         ctx.fillRect(x, y, CELL - 4, CELL - 4)
         const cell = board[r]?.[c]
-        if (cell === 1) {
-          ctx.fillStyle = '#ef4444'
-          ctx.beginPath()
-          ctx.arc(x + CELL / 2 - 2, y + CELL / 2 - 2, CELL / 2 - 6, 0, Math.PI * 2)
-          ctx.fill()
-        } else if (cell === 2) {
-          ctx.fillStyle = '#eab308'
-          ctx.beginPath()
-          ctx.arc(x + CELL / 2 - 2, y + CELL / 2 - 2, CELL / 2 - 6, 0, Math.PI * 2)
-          ctx.fill()
-        }
+        if (cell === 1) drawDisc(ctx, x, y, '#ef4444')
+        else if (cell === 2) drawDisc(ctx, x, y, '#eab308')
       }
     }
 
-    if (phaseRef.current === 'playing' && hoverColRef.current >= 0 && hoverColRef.current < COLS && currentPlayerRef.current === 1) {
+    // In-flight drop
+    const anim = dropRef.current
+    if (anim) {
+      const x = anim.col * CELL + 2
+      drawDisc(ctx, x, anim.y + 2, anim.player === 1 ? '#ef4444' : '#eab308')
+    }
+
+    if (phaseRef.current === 'playing' && hoverColRef.current >= 0 && hoverColRef.current < COLS && currentPlayerRef.current === 1 && !anim) {
       const c = hoverColRef.current
       const x = c * CELL + 2, y = 2
       ctx.fillStyle = '#ef4444'
@@ -211,6 +362,13 @@ export default function ConnectFour(): JSX.Element {
       ctx.fill()
       ctx.globalAlpha = 1
     }
+  }
+
+  function drawDisc(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(x + CELL / 2 - 2, y + CELL / 2 - 2, CELL / 2 - 6, 0, Math.PI * 2)
+    ctx.fill()
   }
 
   return (

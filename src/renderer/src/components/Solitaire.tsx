@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import styles from './Solitaire.module.css'
 
-// Klondike Solitaire — single-card draw, drag-to-move, auto-finish.
+// Klondike Solitaire — drag-to-move, auto-finish, supports single-card or three-card draw.
 
 type Suit = 'S' | 'H' | 'D' | 'C'
 const SUITS: Suit[] = ['S', 'H', 'D', 'C']
@@ -27,6 +27,8 @@ const CANVAS_W = MX * 2 + COL_GAP * 7 - 6
 const CANVAS_H = 540
 
 const SAVE_KEY = 'solitaireWins'
+const DRAW_MODE_KEY = 'solitaireDrawMode'
+const WASTE_FAN_OFFSET = 16     // visual offset between fanned waste cards (Draw 3 mode)
 
 function isRed(s: Suit): boolean { return s === 'H' || s === 'D' }
 
@@ -72,16 +74,31 @@ export default function Solitaire(): JSX.Element {
   const [movesUI, setMovesUI] = useState(0)
   const [phase, setPhase] = useState<'playing' | 'won'>('playing')
   const [wins, setWins] = useState(0)
+  const [drawMode, setDrawMode] = useState<1 | 3>(1)
+  const drawModeRef = useRef<1 | 3>(1)
   const movesRef = useRef(0)
 
   useEffect(() => {
     window.api.settings.get(SAVE_KEY, '0').then(v => setWins(parseInt(v, 10) || 0))
+    window.api.settings.get(DRAW_MODE_KEY, '1').then(v => {
+      const n = parseInt(v, 10) === 3 ? 3 : 1
+      drawModeRef.current = n as 1 | 3
+      setDrawMode(n as 1 | 3)
+    })
     startRaf()
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       if (autoTimerRef.current) clearInterval(autoTimerRef.current)
     }
   }, [])
+
+  function changeDrawMode(n: 1 | 3): void {
+    drawModeRef.current = n
+    setDrawMode(n)
+    window.api.settings.set(DRAW_MODE_KEY, String(n)).catch(() => {})
+    // Reset to a clean game so the draw rule applies from the start
+    reset()
+  }
 
   useEffect(() => {
     const c = canvasRef.current
@@ -122,9 +139,17 @@ export default function Solitaire(): JSX.Element {
 
   function pileXY(kind: PileKind, pile: number): { x: number; y: number } {
     if (kind === 'stock')      return { x: MX, y: MY }
-    if (kind === 'waste')      return { x: MX + COL_GAP, y: MY }
+    if (kind === 'waste')      return { x: MX + COL_GAP + wasteTopOffsetX(), y: MY }
     if (kind === 'foundation') return { x: MX + COL_GAP * (3 + pile), y: MY }
     return { x: MX + COL_GAP * pile, y: MY + CH + 28 }
+  }
+
+  // In Draw-3 mode, the top of the waste sits to the right of the slot's left edge
+  // by up to 2 × WASTE_FAN_OFFSET so the most recently drawn cards fan out beneath it.
+  function wasteTopOffsetX(): number {
+    if (drawModeRef.current !== 3) return 0
+    const w = stateRef.current.waste
+    return Math.min(2, Math.max(0, w.length - 1)) * WASTE_FAN_OFFSET
   }
 
   function within(px: number, py: number, x: number, y: number, w: number, h: number): boolean {
@@ -169,9 +194,13 @@ export default function Solitaire(): JSX.Element {
     if (hit.kind === 'stock') {
       const s = stateRef.current
       if (s.stock.length > 0) {
-        const c = s.stock.pop()!
-        c.faceUp = true
-        s.waste.push(c)
+        const drawN = drawModeRef.current
+        const n = Math.min(drawN, s.stock.length)
+        for (let i = 0; i < n; i++) {
+          const c = s.stock.pop()!
+          c.faceUp = true
+          s.waste.push(c)
+        }
       } else if (s.waste.length > 0) {
         while (s.waste.length) {
           const c = s.waste.pop()!
@@ -382,7 +411,26 @@ export default function Solitaire(): JSX.Element {
     drawStockSlot(ctx)
     drawPileSlot(ctx, MX + COL_GAP, MY)
     const w = stateRef.current.waste
-    if (w.length) drawCard(ctx, MX + COL_GAP, MY, w[w.length - 1], false)
+    if (w.length) {
+      if (drawModeRef.current === 3) {
+        // Show up to the last 3 cards fanning right; the rightmost is the playable top.
+        const visible = Math.min(3, w.length)
+        for (let i = 0; i < visible; i++) {
+          const card = w[w.length - visible + i]
+          // The drag layer renders the top card separately while a drag is active; skip
+          // drawing it here so it doesn't show in two places.
+          const drag = dragRef.current
+          const isTop = i === visible - 1
+          if (isTop && drag && drag.src.kind === 'waste') continue
+          drawCard(ctx, MX + COL_GAP + i * WASTE_FAN_OFFSET, MY, card, false)
+        }
+      } else {
+        const drag = dragRef.current
+        if (!(drag && drag.src.kind === 'waste')) {
+          drawCard(ctx, MX + COL_GAP, MY, w[w.length - 1], false)
+        }
+      }
+    }
 
     for (let i = 0; i < 4; i++) {
       const p = pileXY('foundation', i)
@@ -498,6 +546,18 @@ export default function Solitaire(): JSX.Element {
       <div className={styles.header}>
         <span>Moves <strong>{movesUI}</strong></span>
         <span>Wins <strong>{wins}</strong></span>
+        <div className={styles.modeRow}>
+          {([1, 3] as const).map(n => (
+            <button
+              key={n}
+              className={`${styles.modeBtn} ${drawMode === n ? styles.modeBtnActive : ''}`}
+              onClick={() => changeDrawMode(n)}
+              title={n === 1 ? 'Klondike — Draw 1' : 'Klondike — Draw 3 (harder)'}
+            >
+              Draw {n}
+            </button>
+          ))}
+        </div>
         <button className={styles.resetBtn} onClick={reset}>↻ New Game</button>
       </div>
       <canvas ref={canvasRef} width={CANVAS_W} height={CANVAS_H} className={styles.canvas} />

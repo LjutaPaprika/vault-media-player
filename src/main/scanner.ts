@@ -150,7 +150,9 @@ const NEEDS_CONTEXT_RE = /^(?:Special|Non-Credit (?:Ending|Opening)|Promo Video|
 // Folders to scan as extras/bonus content
 const KNOWN_EXTRAS_FOLDERS = new Set([
   'featurettes', 'extras', 'bonus', 'specials', 'behind the scenes',
-  'deleted scenes', 'interviews', 'scenes', 'shorts', 'trailers', 'nc'
+  'deleted scenes', 'interviews', 'scenes', 'shorts', 'trailers', 'nc',
+  'openings', 'endings', 'openings & endings', 'openings and endings',
+  'ovas', 'oads', 'pv', 'pvs', 'commercials', 'cms'
 ])
 
 // Folders to skip entirely

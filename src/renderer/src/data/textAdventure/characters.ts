@@ -10,6 +10,8 @@ export interface CharacterTemplate {
   knownSpells: string[]
   joinRoom?: string
   bio: string
+  /** Idle banter — rotated when the player "talks" to them outside of an event. */
+  idleLines?: string[]
 }
 
 export const CHARACTERS: Record<CharacterId, CharacterTemplate> = {
@@ -19,7 +21,13 @@ export const CHARACTERS: Record<CharacterId, CharacterTemplate> = {
     startingGear: { weapon: 'dagger', armor: 'leather' },
     knownSpells: [],
     joinRoom: 'ruins_3',
-    bio: 'Raised in the watchtowers of Quartzlight. Quick hands, quicker tongue.'
+    bio: 'Raised in the watchtowers of Quartzlight. Quick hands, quicker tongue.',
+    idleLines: [
+      '"Keep your knife loose. Bandits move quiet down here."',
+      '"My sister used to climb these towers. She didn\'t come back."',
+      '"If you hear bells, run. Doesn\'t matter which way."',
+      '"I scouted ahead twice this morning. Twice I came back wrong."'
+    ]
   },
   tomas: {
     id: 'tomas', name: 'Brother Tomas', class: 'cleric',
@@ -27,7 +35,13 @@ export const CHARACTERS: Record<CharacterId, CharacterTemplate> = {
     startingGear: { weapon: 'shortsword', armor: 'leather', catalyst: 'app_wand' },
     knownSpells: ['mend', 'shield'],
     joinRoom: 'library_4',
-    bio: 'A monk of an order whose temple no longer exists. He still keeps the hours.'
+    bio: 'A monk of an order whose temple no longer exists. He still keeps the hours.',
+    idleLines: [
+      '"The hours of dawn, of midday, of vesper. I keep them. Someone must."',
+      '"My order built the saints into the walls. Look closely and you find their faces."',
+      '"There is a passage in the Liturgy of Bone: ‘The deep is patient.’ I think of it often."',
+      '"Don\'t fear the dark. Fear what was put there by hands like ours."'
+    ]
   },
   garrick: {
     id: 'garrick', name: 'Garrick the Reaver', class: 'fighter',
@@ -35,7 +49,13 @@ export const CHARACTERS: Record<CharacterId, CharacterTemplate> = {
     startingGear: { weapon: 'warhammer', armor: 'chain' },
     knownSpells: [],
     joinRoom: 'forge_3',
-    bio: 'Once iron-clad guardian of Forge Hold. Now its only survivor.'
+    bio: 'Once iron-clad guardian of Forge Hold. Now its only survivor.',
+    idleLines: [
+      '"My hold had seven gates. Six fell in a single night."',
+      '"Steel is honest. Magic isn\'t. Stay near me when the air smells of iron."',
+      '"I don\'t pray. Not anymore. But I salute the ones who do."',
+      '"Stop apologising and swing harder."'
+    ]
   },
   mira: {
     id: 'mira', name: 'Mira the Loremaster', class: 'mage',
@@ -43,7 +63,13 @@ export const CHARACTERS: Record<CharacterId, CharacterTemplate> = {
     startingGear: { weapon: 'dagger', armor: 'leather', catalyst: 'oak_staff' },
     knownSpells: ['spark', 'frost', 'shield', 'aura'],
     joinRoom: 'library_5',
-    bio: 'Last librarian. She walks the stacks even now, cataloguing what survives.'
+    bio: 'Last librarian. She walks the stacks even now, cataloguing what survives.',
+    idleLines: [
+      '"Did you notice the carvings shift when no one watches them? I noticed."',
+      '"Every book I read here was written by someone now dead. Mine will be too."',
+      '"There are three meanings to ‘keep.’ Castle, vigil, custody. The Keep has all three."',
+      '"Frost is just heat refusing to move. People are like that too."'
+    ]
   },
   kael: {
     id: 'kael', name: 'Kael the Hunter', class: 'archer',
@@ -51,7 +77,13 @@ export const CHARACTERS: Record<CharacterId, CharacterTemplate> = {
     startingGear: { weapon: 'longbow', armor: 'leather' },
     knownSpells: [],
     joinRoom: 'cave_4',
-    bio: 'He hunted the deeper caves before they swallowed half his clan. He is still hunting.'
+    bio: 'He hunted the deeper caves before they swallowed half his clan. He is still hunting.',
+    idleLines: [
+      '"Watch your feet. The cave-floor draws marks I don\'t like."',
+      '"The pack I started with was eight. I am four short."',
+      '"If we make the surface again — I owe you a stag."',
+      '"You can\'t outrun what hunts the deep. You can only outlast it."'
+    ]
   }
 }
 

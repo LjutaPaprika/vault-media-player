@@ -31,13 +31,17 @@ export default function AnimePage(): JSX.Element {
     )
   }
 
-  // Deduplicate: one card per unique series title
+  // Deduplicate: one card per unique series title; collect all episodes per series for completion check
   const seriesMap = new Map<string, MediaItem>()
+  const episodesByTitle = new Map<string, MediaItem[]>()
   for (const item of items) {
     if (!seriesMap.has(item.title)) seriesMap.set(item.title, item)
+    if (!episodesByTitle.has(item.title)) episodesByTitle.set(item.title, [])
+    episodesByTitle.get(item.title)!.push(item)
   }
   const series = Array.from(seriesMap.values())
     .filter((i) => i.title.toLowerCase().includes(query.toLowerCase()))
+    .map((i) => ({ ...i, complete: isSeriesComplete(episodesByTitle.get(i.title) ?? []) }))
 
   return (
     <PageShell title="Anime" searchValue={query} onSearch={setQuery}>
@@ -52,4 +56,17 @@ export default function AnimePage(): JSX.Element {
       )}
     </PageShell>
   )
+}
+
+// "Complete" = the highest-numbered main-series episode (S01E01 sort order) has been opened.
+function isSeriesComplete(episodes: MediaItem[]): boolean {
+  const parsed = episodes
+    .map((ep) => {
+      const m = ep.description?.match(/S(\d+)E(\d+)/i)
+      return m ? { ep, season: parseInt(m[1], 10), num: parseInt(m[2], 10) } : null
+    })
+    .filter((x): x is { ep: MediaItem; season: number; num: number } => x !== null)
+    .sort((a, b) => a.season - b.season || a.num - b.num)
+  if (parsed.length === 0) return false
+  return !!parsed[parsed.length - 1].ep.lastOpenedAt
 }

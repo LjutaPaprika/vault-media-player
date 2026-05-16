@@ -224,7 +224,9 @@ export default function YouTubePage(): JSX.Element {
   useEffect(() => { setQuery('') }, [contentResetKey])
 
   const filtered = items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase()))
-  const ungrouped = filtered.filter((i) => !i.genre)
+  const naturalCmp = (a: MediaItem, b: MediaItem): number =>
+    a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' })
+  const ungrouped = filtered.filter((i) => !i.genre).sort(naturalCmp)
 
   const playlistMap = new Map<string, MediaItem[]>()
   for (const item of filtered) {
@@ -233,6 +235,7 @@ export default function YouTubePage(): JSX.Element {
       playlistMap.get(item.genre)!.push(item)
     }
   }
+  for (const vids of playlistMap.values()) vids.sort(naturalCmp)
 
   // Collapse new playlists by default when they first appear
   useEffect(() => {

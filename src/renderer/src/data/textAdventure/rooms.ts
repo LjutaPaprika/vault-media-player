@@ -14,6 +14,8 @@ interface RoomBuilderArgs {
   pos: [number, number]
   tier: 1 | 2 | 3 | 4 | 5 | 6
   desc: string
+  /** Override description shown after the room's enemies have been defeated. */
+  clearedDesc?: string
   flavor?: string
   exits: Partial<Record<Direction, ExitTarget>>
   enemies?: EnemyId[]
@@ -30,6 +32,7 @@ function R(a: RoomBuilderArgs): Room {
     id: a.id, name: a.name, area: a.area, pos: { x: a.pos[0], y: a.pos[1] }, tier: a.tier,
     shortDesc: a.desc.split('.')[0],
     longDesc: a.desc,
+    clearedDesc: a.clearedDesc,
     flavor: a.flavor,
     exits: a.exits,
     enemies: a.enemies ?? [],
@@ -209,6 +212,7 @@ const ALL: Room[] = [
 
   R({ id: 'ruins_boss', name: 'Gate-Tower', area: 'surface_ruins', pos: [3, 2], tier: 1,
       desc: 'A tall man in leathers and chain stands before the inner door, bandit archers behind him. "Lost?" he says.',
+      clearedDesc: 'The gate-tower stands silent. Vex and his bandits lie where they fell. The inner door is no longer barred.',
       exits: { north: 'ruins_8', west: 'ruins_10', south: 'ql_gate' },
       enemies: ['boss_vex'],
       insp: [
