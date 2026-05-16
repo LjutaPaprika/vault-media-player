@@ -134,6 +134,12 @@
   white-space: nowrap;
 }
 
+.storageExtras {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
 .barTrack {
   height: 5px;
   background: var(--bg-elevated);

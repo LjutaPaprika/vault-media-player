@@ -198,12 +198,28 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+function formatDurationOverlay(sec: number): string {
+  const s = Math.floor(sec % 60).toString().padStart(2, '0')
+  const totalMin = Math.floor(sec / 60)
+  if (sec >= 3600) {
+    const h = Math.floor(sec / 3600)
+    const m = (totalMin % 60).toString().padStart(2, '0')
+    return `${h}:${m}:${s}`
+  }
+  return `${totalMin}:${s}`
+}
+
 export default function YouTubePage(): JSX.Element {
   const { items, loading, error, reload } = useLibrary('youtube')
   const { contentResetKey } = useAppStore()
   const [query, setQuery] = useState('')
   const [showDownload, setShowDownload] = useState(false)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [durations, setDurations] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    window.api.library.getDurations('youtube').then(setDurations)
+  }, [items])
 
   useEffect(() => { setQuery('') }, [contentResetKey])
 
@@ -269,7 +285,7 @@ export default function YouTubePage(): JSX.Element {
           {playlistMap.size > 0 && <p className={styles.sectionLabel}>Saved Videos</p>}
           <div className={styles.grid}>
             {ungrouped.map((item) => (
-              <VideoCard key={item.id} item={item} />
+              <VideoCard key={item.id} item={item} duration={item.filePath ? durations[item.filePath] : undefined} />
             ))}
           </div>
         </>
@@ -295,7 +311,7 @@ export default function YouTubePage(): JSX.Element {
             {!isCollapsed && (
               <div className={styles.grid}>
                 {videos.map((item) => (
-                  <VideoCard key={item.id} item={item} />
+                  <VideoCard key={item.id} item={item} duration={item.filePath ? durations[item.filePath] : undefined} />
                 ))}
               </div>
             )}
@@ -316,7 +332,7 @@ export default function YouTubePage(): JSX.Element {
 
 // ─── Video card ───────────────────────────────────────────────────────────────
 
-function VideoCard({ item }: { item: MediaItem }): JSX.Element {
+function VideoCard({ item, duration }: { item: MediaItem; duration?: number }): JSX.Element {
   function play(): void {
     if (!item.filePath) return
     window.api.playback.openVideo(item.filePath, 'youtube')
@@ -336,6 +352,9 @@ function VideoCard({ item }: { item: MediaItem }): JSX.Element {
         <div className={styles.playOverlay}>
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         </div>
+        {duration !== undefined && duration > 0 && (
+          <div className={styles.durationOverlay}>{formatDurationOverlay(duration)}</div>
+        )}
       </div>
       <div className={styles.info}>
         <span className={styles.title}>{item.title}</span>

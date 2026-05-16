@@ -1,0 +1,44 @@
+.genrePills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 0 16px 0;
+}
+
+.genrePill {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(232, 180, 75, 0.3);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.genrePill:hover {
+  border-color: rgba(232, 180, 75, 0.6);
+  color: var(--text);
+}
+
+.genrePillActive {
+  background: rgba(232, 180, 75, 0.15);
+  border-color: #e8b44b;
+  color: #e8b44b;
+}
+
+.genrePillClear {
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.genrePillClear:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}

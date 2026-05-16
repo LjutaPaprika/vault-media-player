@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS = {
   enemyLength: 5,
   playerSpeedMultiplier: 1,
   enemySpeedMultiplier: 1,
+  specialSnakes: 0,
 }
 
 const BONUS_POINTS      = 5
@@ -29,6 +30,9 @@ const BOMB_FIRST_MS     = 35_000
 const BOMB_RESPAWN_MS   = 50_000
 const BOMB_WARNING_MS   = 3_500
 const BOMB_ACTIVE_MS    = 5_000
+const INSANITY_BOMB_FIRST_MS = 15_000
+const INSANITY_BOMB_RESPAWN_MS = 15_000
+const INSANITY_WALL_EVERY_MS = 25_000
 const ENEMY_TICK_EVERY  = 2       // move enemies every N player ticks
 const ENEMY_TURN_CHANCE = 0.07
 const ENEMY_SCORES      = [8, 20, 40]  // score thresholds to spawn each enemy
@@ -37,8 +41,9 @@ const ENEMY_LENGTH      = 5
 type Dir   = 'U' | 'D' | 'L' | 'R'
 type Pt    = { x: number; y: number }
 type Phase = 'idle' | 'playing' | 'dead'
+type GameMode = 'standard' | 'pvp' | 'insanity'
 type Bonus = { x: number; y: number; expiresAt: number }
-type Enemy = { body: Pt[]; dir: Dir }
+type Enemy = { body: Pt[]; dir: Dir; special: boolean }
 type Bomb  = { cells: Pt[]; lookup: Set<string>; phase: 'warning' | 'active'; phaseEnd: number }
 type SnakeSettings = {
   bonusPoints: number
@@ -48,6 +53,7 @@ type SnakeSettings = {
   enemyLength: number
   playerSpeedMultiplier: number
   enemySpeedMultiplier: number
+  specialSnakes: number
 }
 
 const OPPOSITE: Record<Dir, Dir> = { U: 'D', D: 'U', L: 'R', R: 'L' }
@@ -57,7 +63,10 @@ const ALL_DIRS: Dir[]            = ['U', 'D', 'L', 'R']
 
 function rand(n: number): number { return Math.floor(Math.random() * n) }
 function shuffle<T>(a: T[]): T[] { return [...a].sort(() => Math.random() - 0.5) }
-function tickMs(score: number): number { return Math.max(80, 150 - score * 1.5) }
+function tickMs(score: number, mode: GameMode = 'standard'): number {
+  if (mode === 'insanity') return Math.max(40, 55 - score * 0.4)
+  return Math.max(80, 150 - score * 1.5)
+}
 function perps(dir: Dir): Dir[] { return (dir === 'U' || dir === 'D') ? ['L', 'R'] : ['U', 'D'] }
 
 function pickEmpty(occupied: Set<string>): Pt | null {
@@ -76,6 +85,10 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
   const [highScore, setHighScore] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
   const [settings, setSettings]   = useState<SnakeSettings>(DEFAULT_SETTINGS)
+  const [gameMode, setGameMode]   = useState<GameMode>('standard')
+  const [p2Score, setP2Score]     = useState(0)
+  const [p2Alive, setP2Alive]     = useState(true)
+  const [winner, setWinner]       = useState<'p1' | 'p2' | 'draw' | null>(null)
 
   const canvasRef        = useRef<HTMLCanvasElement>(null)
   const snakeRef         = useRef<Pt[]>([])
@@ -84,6 +97,8 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
   const foodRef          = useRef<Pt>({ x: 0, y: 0 })
   const bonusRef         = useRef<Bonus | null>(null)
   const rocksRef         = useRef<Pt[]>([])
+  const wallsRef         = useRef<Pt[]>([])
+  const insanityWallTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const enemiesRef       = useRef<Enemy[]>([])
   const bombRef          = useRef<Bomb | null>(null)
   const scoreRef         = useRef(0)
@@ -97,6 +112,12 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
   const rafRef           = useRef<number | null>(null)
   const phaseRef         = useRef<Phase>('idle')
   const settingsRef      = useRef<SnakeSettings>(DEFAULT_SETTINGS)
+  const gameModeRef      = useRef<GameMode>('standard')
+  const snake2Ref        = useRef<Pt[]>([])
+  const dir2Ref          = useRef<Dir>('L')
+  const input2Queue      = useRef<Dir[]>([])
+  const p2AliveRef       = useRef(true)
+  const p2ScoreRef       = useRef(0)
 
   useEffect(() => {
     Promise.all([
@@ -123,20 +144,26 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
         if (e.key === 'Enter' || e.key === ' ') startGame()
         return
       }
-      const map: Record<string, Dir> = {
-        ArrowUp: 'U', w: 'U', W: 'U',
-        ArrowDown: 'D', s: 'D', S: 'D',
-        ArrowLeft: 'L', a: 'L', A: 'L',
-        ArrowRight: 'R', d: 'R', D: 'R',
+      const isPvp = gameModeRef.current === 'pvp'
+      const p1map: Record<string, Dir> = {
+        ArrowUp: 'U', ArrowDown: 'D', ArrowLeft: 'L', ArrowRight: 'R',
       }
-      const d = map[e.key]
-      if (!d) return
-      const q = inputQueue.current
-      const last = q.length > 0 ? q[q.length - 1] : dirRef.current
-      if (d !== OPPOSITE[last] && d !== last && q.length < 3) q.push(d)
-      if (e.key.startsWith('Arrow')) {
+      const p2map: Record<string, Dir> = {
+        w: 'U', W: 'U', s: 'D', S: 'D', a: 'L', A: 'L', d: 'R', D: 'R',
+      }
+      const d1 = p1map[e.key]
+      const d2 = isPvp ? p2map[e.key] : undefined
+      if (d1) {
+        const q = inputQueue.current
+        const last = q.length > 0 ? q[q.length - 1] : dirRef.current
+        if (d1 !== OPPOSITE[last] && d1 !== last && q.length < 3) q.push(d1)
         e.preventDefault()
         e.stopImmediatePropagation()
+      }
+      if (d2) {
+        const q = input2Queue.current
+        const last = q.length > 0 ? q[q.length - 1] : dir2Ref.current
+        if (d2 !== OPPOSITE[last] && d2 !== last && q.length < 3) q.push(d2)
       }
     }
     window.addEventListener('keydown', onKey, { capture: true })
@@ -149,6 +176,7 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
     stopTimer(); stopRaf()
     if (bonusTimerRef.current) { clearTimeout(bonusTimerRef.current); bonusTimerRef.current = null }
     if (bombTimerRef.current)  { clearTimeout(bombTimerRef.current);  bombTimerRef.current = null  }
+    if (insanityWallTimerRef.current) { clearInterval(insanityWallTimerRef.current); insanityWallTimerRef.current = null }
   }
 
   function stopTimer(): void {
@@ -172,6 +200,7 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
     snakeRef.current.forEach(p => s.add(`${p.x},${p.y}`))
     s.add(`${foodRef.current.x},${foodRef.current.y}`)
     rocksRef.current.forEach(r => s.add(`${r.x},${r.y}`))
+    wallsRef.current.forEach(w => s.add(`${w.x},${w.y}`))
     if (bonusRef.current) s.add(`${bonusRef.current.x},${bonusRef.current.y}`)
     enemiesRef.current.forEach(e => e.body.forEach(p => s.add(`${p.x},${p.y}`)))
     return s
@@ -222,7 +251,8 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
       if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) break
       body.push({ x: nx, y: ny })
     }
-    enemiesRef.current = [...enemiesRef.current, { body, dir }]
+    const special = enemiesRef.current.length < settingsRef.current.specialSnakes
+    enemiesRef.current = [...enemiesRef.current, { body, dir, special }]
   }
 
   function checkEnemySpawns(): void {
@@ -238,6 +268,7 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
   function isEnemyBlocked(x: number, y: number): boolean {
     if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return true
     if (rocksRef.current.some(r => r.x === x && r.y === y)) return true
+    if (wallsRef.current.some(w => w.x === x && w.y === y)) return true
     if (bombRef.current?.phase === 'active' && bombRef.current.lookup.has(`${x},${y}`)) return true
     return false
   }
@@ -247,7 +278,23 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
       const head = enemy.body[0]
       let dir    = enemy.dir
 
-      if (Math.random() < ENEMY_TURN_CHANCE) {
+      if (enemy.special) {
+        const playerHead = snakeRef.current[0]
+        const dx = playerHead.x - head.x
+        const dy = playerHead.y - head.y
+        const dManhattan = Math.abs(dx) + Math.abs(dy)
+
+        if (dManhattan > 1) {
+          if (Math.random() < 0.3) {
+            const p = perps(dir); dir = p[rand(2)]
+          } else {
+            const dirs: Dir[] = []
+            if (dx > 0) dirs.push('R'); else if (dx < 0) dirs.push('L')
+            if (dy > 0) dirs.push('D'); else if (dy < 0) dirs.push('U')
+            if (dirs.length > 0) dir = dirs[rand(dirs.length)]
+          }
+        }
+      } else if (Math.random() < ENEMY_TURN_CHANCE) {
         const p = perps(dir); dir = p[rand(2)]
       }
 
@@ -264,11 +311,20 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
         if (!moved) return enemy
       }
 
-      return { body: [{ x: nx, y: ny }, ...enemy.body.slice(0, -1)], dir }
+      return { body: [{ x: nx, y: ny }, ...enemy.body.slice(0, -1)], dir, special: enemy.special }
     })
   }
 
   // ── Bomb ──────────────────────────────────────────────────────────────────
+
+  function scheduleInsanityWalls(): void {
+    if (insanityWallTimerRef.current) clearInterval(insanityWallTimerRef.current)
+    insanityWallTimerRef.current = setInterval(() => {
+      if (phaseRef.current !== 'playing' || wallsRef.current.length >= 6) return
+      const wall: Pt | null = pickEmpty(occupied())
+      if (wall) wallsRef.current = [...wallsRef.current, wall]
+    }, INSANITY_WALL_EVERY_MS)
+  }
 
   function scheduleBomb(delayMs: number): void {
     if (bombTimerRef.current) clearTimeout(bombTimerRef.current)
@@ -307,7 +363,10 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
       bombRef.current = { ...bombRef.current, phase: 'active', phaseEnd: Date.now() + BOMB_ACTIVE_MS }
       bombTimerRef.current = setTimeout(() => {
         bombRef.current = null
-        if (phaseRef.current === 'playing') scheduleBomb(BOMB_RESPAWN_MS)
+        if (phaseRef.current === 'playing') {
+          const respawnMs = gameModeRef.current === 'insanity' ? INSANITY_BOMB_RESPAWN_MS : BOMB_RESPAWN_MS
+          scheduleBomb(respawnMs)
+        }
       }, BOMB_ACTIVE_MS)
     }, BOMB_WARNING_MS)
   }
@@ -376,6 +435,15 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
       ctx.stroke()
     })
 
+    // Insanity walls
+    wallsRef.current.forEach(w => {
+      ctx.fillStyle = 'rgba(120,120,120,0.35)'
+      ctx.fillRect(w.x*CELL+1, w.y*CELL+1, CELL-2, CELL-2)
+      ctx.strokeStyle = 'rgba(180,180,180,0.7)'
+      ctx.lineWidth = 2
+      ctx.strokeRect(w.x*CELL+1, w.y*CELL+1, CELL-2, CELL-2)
+    })
+
     // Regular food
     const f = foodRef.current
     ctx.shadowColor = 'rgba(232,180,75,0.8)'; ctx.shadowBlur = 12
@@ -408,16 +476,19 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
     // Enemy snakes
     enemiesRef.current.forEach(enemy => {
       const elen = enemy.body.length
+      const bodyRgb = enemy.special ? '139,92,246' : '185,28,28'
+      const headFill = enemy.special ? '#a855f7' : '#ef4444'
+      const headGlow = enemy.special ? 'rgba(168,85,247,0.6)' : 'rgba(239,68,68,0.6)'
       enemy.body.forEach((p, i) => {
         if (i === 0) return
         const alpha = (1 - (i / elen) * 0.65).toFixed(2)
-        ctx.fillStyle = `rgba(185,28,28,${alpha})`
+        ctx.fillStyle = `rgba(${bodyRgb},${alpha})`
         ctx.fillRect(p.x*CELL+1, p.y*CELL+1, CELL-2, CELL-2)
       })
       if (elen > 0) {
         const h = enemy.body[0]
-        ctx.shadowColor = 'rgba(239,68,68,0.6)'; ctx.shadowBlur = 8
-        ctx.fillStyle = '#ef4444'
+        ctx.shadowColor = headGlow; ctx.shadowBlur = 8
+        ctx.fillStyle = headFill
         ctx.fillRect(h.x*CELL+1, h.y*CELL+1, CELL-2, CELL-2)
         ctx.shadowBlur = 0
       }
@@ -440,76 +511,139 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
       ctx.fillRect(h.x*CELL+1, h.y*CELL+1, CELL-2, CELL-2)
       ctx.shadowBlur = 0
     }
+
+    // Player 2 (PVP only)
+    if (gameModeRef.current === 'pvp') {
+      const len2 = snake2Ref.current.length
+      snake2Ref.current.forEach((p, i) => {
+        if (i === 0) return
+        const alpha = (1 - (i / len2) * 0.65).toFixed(2)
+        ctx.fillStyle = `rgba(59,130,246,${alpha})`
+        ctx.fillRect(p.x*CELL+1, p.y*CELL+1, CELL-2, CELL-2)
+      })
+      if (len2 > 0) {
+        const h2 = snake2Ref.current[0]
+        ctx.shadowColor = 'rgba(96,165,250,0.55)'; ctx.shadowBlur = 10
+        ctx.fillStyle = '#60a5fa'
+        ctx.fillRect(h2.x*CELL+1, h2.y*CELL+1, CELL-2, CELL-2)
+        ctx.shadowBlur = 0
+      }
+    }
   }
 
   // ── Game tick ─────────────────────────────────────────────────────────────
 
   function tick(): void {
+    const isPvp = gameModeRef.current === 'pvp'
     tickCountRef.current++
-    if (tickCountRef.current % ENEMY_TICK_EVERY === 0) tickEnemies()
+    if (!isPvp && tickCountRef.current % ENEMY_TICK_EVERY === 0) tickEnemies()
 
+    // Player 1 move
     if (inputQueue.current.length > 0) dirRef.current = inputQueue.current.shift()!
     const head = snakeRef.current[0]
     const next: Pt = { x: head.x + DX[dirRef.current], y: head.y + DY[dirRef.current] }
 
-    const hitEnemy = enemiesRef.current.some(e => e.body.some(p => p.x === next.x && p.y === next.y))
-    const hitBomb  = bombRef.current?.phase === 'active' && bombRef.current.lookup.has(`${next.x},${next.y}`)
+    const hitEnemy = !isPvp && enemiesRef.current.some(e => e.body.some(p => p.x === next.x && p.y === next.y))
+    const hitBomb  = !isPvp && bombRef.current?.phase === 'active' && bombRef.current.lookup.has(`${next.x},${next.y}`)
+    const hitSelf  = snakeRef.current.some(p => p.x === next.x && p.y === next.y)
+    const hitRock  = rocksRef.current.some(r => r.x === next.x && r.y === next.y)
+    const hitGameWall = wallsRef.current.some(w => w.x === next.x && w.y === next.y)
+    const hitWall  = next.x < 0 || next.x >= COLS || next.y < 0 || next.y >= ROWS
+    const hitP2Snake = isPvp && snake2Ref.current.some(p => p.x === next.x && p.y === next.y)
 
-    if (
-      next.x < 0 || next.x >= COLS || next.y < 0 || next.y >= ROWS ||
-      snakeRef.current.some(p => p.x === next.x && p.y === next.y) ||
-      rocksRef.current.some(r => r.x === next.x && r.y === next.y) ||
-      hitEnemy || hitBomb
-    ) {
+    let p1Dead = hitWall || hitSelf || hitRock || hitEnemy || hitBomb || hitGameWall || hitP2Snake
+
+    // Player 2 move (PVP only)
+    let p2Dead = false
+    let next2: Pt = { x: 0, y: 0 }
+    if (isPvp) {
+      if (input2Queue.current.length > 0) dir2Ref.current = input2Queue.current.shift()!
+      const head2 = snake2Ref.current[0]
+      next2 = { x: head2.x + DX[dir2Ref.current], y: head2.y + DY[dir2Ref.current] }
+      const hitSelf2 = snake2Ref.current.some(p => p.x === next2.x && p.y === next2.y)
+      const hitWall2 = next2.x < 0 || next2.x >= COLS || next2.y < 0 || next2.y >= ROWS
+      const hitP1Snake = snakeRef.current.some(p => p.x === next2.x && p.y === next2.y)
+      const hitNextP1 = p1Dead ? false : (next.x === next2.x && next.y === next2.y)
+      p2Dead = hitWall2 || hitSelf2 || hitP1Snake || hitNextP1
+    }
+
+    if (p1Dead || p2Dead) {
       stopAll()
       phaseRef.current = 'dead'
       setPhase('dead')
-      const s = scoreRef.current
-      if (s > hiRef.current) {
-        hiRef.current = s; setHighScore(s)
-        window.api.settings.set(SAVE_KEY, String(s)).catch(() => {})
-        onNewBest?.(s)
+      if (isPvp) {
+        if (p1Dead && p2Dead) {
+          setWinner('draw')
+        } else if (p1Dead) {
+          setWinner('p2')
+        } else {
+          setWinner('p1')
+        }
+      } else {
+        const s = scoreRef.current
+        if (s > hiRef.current) {
+          hiRef.current = s; setHighScore(s)
+          window.api.settings.set(SAVE_KEY, String(s)).catch(() => {})
+          onNewBest?.(s)
+        }
       }
       requestAnimationFrame(draw)
       return
     }
 
-    if (bonusRef.current && Date.now() >= bonusRef.current.expiresAt) {
-      bonusRef.current = null
-      scheduleBonus(BONUS_RESPAWN_MS)
-    }
+    if (!isPvp) {
+      if (bonusRef.current && Date.now() >= bonusRef.current.expiresAt) {
+        bonusRef.current = null
+        scheduleBonus(BONUS_RESPAWN_MS)
+      }
 
-    const ateFood  = next.x === foodRef.current.x  && next.y === foodRef.current.y
-    const ateBonus = !!bonusRef.current && next.x === bonusRef.current.x && next.y === bonusRef.current.y
+      const ateFood  = next.x === foodRef.current.x  && next.y === foodRef.current.y
+      const ateBonus = !!bonusRef.current && next.x === bonusRef.current.x && next.y === bonusRef.current.y
 
-    if (ateFood || ateBonus) {
-      const growBy = ateBonus ? settingsRef.current.bonusGrows : 1
-      snakeRef.current = [next, ...Array(growBy - 1).fill(next), ...snakeRef.current]
-      if (ateFood) {
+      if (ateFood || ateBonus) {
+        const growBy = ateBonus ? settingsRef.current.bonusGrows : 1
+        snakeRef.current = [next, ...Array(growBy - 1).fill(next), ...snakeRef.current]
+        if (ateFood) {
+          const pt = pickEmpty(occupied()); if (pt) foodRef.current = pt
+        }
+        if (ateBonus) {
+          bonusRef.current = null; scheduleBonus(BONUS_RESPAWN_MS)
+        }
+        scoreRef.current += ateBonus ? settingsRef.current.bonusPoints : 1
+        setScore(scoreRef.current)
+        if (scoreRef.current % ROCK_EVERY === 0) trySpawnRock()
+        checkEnemySpawns()
+        stopTimer()
+        timerRef.current = setInterval(tick, tickMs(scoreRef.current, gameModeRef.current))
+      } else {
+        snakeRef.current = [next, ...snakeRef.current.slice(0, -1)]
+      }
+    } else {
+      const food1 = next.x === foodRef.current.x && next.y === foodRef.current.y
+      const food2 = next2.x === foodRef.current.x && next2.y === foodRef.current.y
+      if (food1 || food2) {
         const pt = pickEmpty(occupied()); if (pt) foodRef.current = pt
       }
-      if (ateBonus) {
-        bonusRef.current = null; scheduleBonus(BONUS_RESPAWN_MS)
-      }
-      scoreRef.current += ateBonus ? settingsRef.current.bonusPoints : 1
-      setScore(scoreRef.current)
-      if (scoreRef.current % ROCK_EVERY === 0) trySpawnRock()
-      checkEnemySpawns()
-      stopTimer()
-      timerRef.current = setInterval(tick, tickMs(scoreRef.current))
-    } else {
-      snakeRef.current = [next, ...snakeRef.current.slice(0, -1)]
+      snakeRef.current = food1 ? [next, ...snakeRef.current] : [next, ...snakeRef.current.slice(0, -1)]
+      snake2Ref.current = food2 ? [next2, ...snake2Ref.current] : [next2, ...snake2Ref.current.slice(0, -1)]
     }
   }
 
   // ── Game start ────────────────────────────────────────────────────────────
 
   function startGame(): void {
-    const s: Pt[] = [{ x: 27, y: 14 }, { x: 26, y: 14 }, { x: 25, y: 14 }]
+    gameModeRef.current = gameMode
+    const isPvp = gameMode === 'pvp'
+    const isInsanity = gameMode === 'insanity'
+    const p1Start = isPvp ? 8 : 27
+    const s: Pt[] = isInsanity
+      ? Array.from({ length: 15 }, (_, i) => ({ x: p1Start - i, y: 14 }))
+      : [{ x: p1Start, y: 14 }, { x: p1Start - 1, y: 14 }, { x: p1Start - 2, y: 14 }]
     snakeRef.current        = s
     dirRef.current          = 'R'
     inputQueue.current      = []
-    rocksRef.current        = []
+    rocksRef.current        = isPvp ? [] : []
+    wallsRef.current        = []
     enemiesRef.current      = []
     bonusRef.current        = null
     bombRef.current         = null
@@ -517,14 +651,39 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
     tickCountRef.current    = 0
     enemySpawnedRef.current = 0
     lastBombCenter.current  = null
-    foodRef.current = pickEmpty(new Set(s.map(p => `${p.x},${p.y}`))) ?? { x: 35, y: 14 }
     setScore(0)
+    p2AliveRef.current = true
+    p2ScoreRef.current = 0
+    setP2Score(0)
+    setP2Alive(true)
+    setWinner(null)
+    if (isPvp) {
+      snake2Ref.current = [{ x: COLS - 9, y: 14 }, { x: COLS - 8, y: 14 }, { x: COLS - 7, y: 14 }]
+      dir2Ref.current = 'L'
+      input2Queue.current = []
+    } else {
+      snake2Ref.current = []
+    }
+    const occupied = new Set([...s, ...(isPvp ? snake2Ref.current : [])].map(p => `${p.x},${p.y}`))
+    foodRef.current = pickEmpty(occupied) ?? { x: 35, y: 14 }
+    occupied.add(`${foodRef.current.x},${foodRef.current.y}`)
     phaseRef.current = 'playing'
     setPhase('playing')
     stopAll()
-    timerRef.current = setInterval(tick, tickMs(0))
-    scheduleBonus(BONUS_FIRST_MS)
-    scheduleBomb(BOMB_FIRST_MS)
+    if (isInsanity) {
+      settingsRef.current = { ...settingsRef.current, specialSnakes: 2 }
+      enemySpawnedRef.current = 5
+      for (let i = 0; i < 5; i++) spawnEnemy()
+      timerRef.current = setInterval(tick, 55)
+      scheduleBomb(INSANITY_BOMB_FIRST_MS)
+      scheduleInsanityWalls()
+    } else {
+      timerRef.current = setInterval(tick, tickMs(0))
+      if (!isPvp) {
+        scheduleBonus(BONUS_FIRST_MS)
+        scheduleBomb(BOMB_FIRST_MS)
+      }
+    }
     startRaf()
   }
 
@@ -539,19 +698,51 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
             {phase === 'dead' ? (
               <>
                 <span className={styles.overlayTitle}>Game Over</span>
-                <span className={styles.overlayScore}>{score} pts</span>
-                {isNewBest && <span className={styles.overlayNew}>✨ New Best!</span>}
+                {gameMode === 'pvp' ? (
+                  <>
+                    {winner === 'draw' ? (
+                      <span className={styles.overlayScore}>It's a Draw!</span>
+                    ) : (
+                      <span className={styles.overlayScore}>{winner === 'p1' ? 'Player 1' : 'Player 2'} Wins!</span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className={styles.overlayScore}>{score} pts</span>
+                    {isNewBest && <span className={styles.overlayNew}>✨ New Best!</span>}
+                  </>
+                )}
+                <button className={styles.settingsBtn} onClick={() => setShowSettings(!showSettings)} title="Settings">⚙️</button>
               </>
             ) : (
               <>
                 <span className={styles.overlayTitle}>🐍 Snake</span>
-                <div className={styles.legend}>
-                  <span className={styles.legendItem}><span className={styles.dotGold} />food · 1 pt</span>
-                  <span className={styles.legendItem}><span className={styles.dotOrange} />bonus · {BONUS_POINTS} pts</span>
-                  <span className={styles.legendItem}><span className={styles.dotRock} />rocks</span>
-                  <span className={styles.legendItem}><span className={styles.dotEnemy} />enemies</span>
-                  <span className={styles.legendItem}><span className={styles.dotBomb} />meteor zone</span>
+                <div className={styles.modeSelector}>
+                  {(['standard', 'pvp', 'insanity'] as GameMode[]).map(m => (
+                    <button
+                      key={m}
+                      className={`${styles.modeBtn} ${gameMode === m ? styles.modeBtnActive : ''}`}
+                      onClick={() => setGameMode(m)}
+                    >
+                      {m === 'standard' ? '🐍 Standard' : m === 'pvp' ? '⚔️ PVP' : '💀 Insanity'}
+                    </button>
+                  ))}
                 </div>
+                {gameMode !== 'pvp' && (
+                  <div className={styles.legend}>
+                    <span className={styles.legendItem}><span className={styles.dotGold} />food · 1 pt</span>
+                    <span className={styles.legendItem}><span className={styles.dotOrange} />bonus · {BONUS_POINTS} pts</span>
+                    <span className={styles.legendItem}><span className={styles.dotRock} />rocks</span>
+                    <span className={styles.legendItem}><span className={styles.dotEnemy} />enemies</span>
+                    <span className={styles.legendItem}><span className={styles.dotBomb} />meteor zone</span>
+                  </div>
+                )}
+                {gameMode === 'pvp' && (
+                  <div className={styles.legend}>
+                    <span className={styles.legendItem}><span style={{display: 'inline-block', width: 12, height: 12, background: '#4ade80', marginRight: 6}} />P1 (Arrows)</span>
+                    <span className={styles.legendItem}><span style={{display: 'inline-block', width: 12, height: 12, background: '#60a5fa', marginRight: 6}} />P2 (WASD)</span>
+                  </div>
+                )}
               </>
             )}
             <button className={styles.startBtn} onClick={startGame}>
@@ -580,6 +771,7 @@ export default function Snake({ onNewBest }: SnakeProps): JSX.Element {
               <label>Max Enemies: <input type="number" min="1" max="10" value={settings.maxEnemies} onChange={e => { const v = parseInt(e.target.value, 10) || 3; setSettings({...settings, maxEnemies: v}); settingsRef.current.maxEnemies = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
               <label>Player Speed: <input type="number" min="0.5" max="2" step="0.1" value={settings.playerSpeedMultiplier} onChange={e => { const v = parseFloat(e.target.value) || 1; setSettings({...settings, playerSpeedMultiplier: v}); settingsRef.current.playerSpeedMultiplier = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
               <label>Enemy Speed: <input type="number" min="0.5" max="2" step="0.1" value={settings.enemySpeedMultiplier} onChange={e => { const v = parseFloat(e.target.value) || 1; setSettings({...settings, enemySpeedMultiplier: v}); settingsRef.current.enemySpeedMultiplier = v; window.api.settings.set('snakeSettings', JSON.stringify(settings)).catch(() => {}) }} /></label>
+              <label>Special Snakes: <input type="number" min="0" max="3" value={settings.specialSnakes} onChange={e => { const v = parseInt(e.target.value, 10) || 0; setSettings({...settings, specialSnakes: v}); settingsRef.current.specialSnakes = v; window.api.settings.set('snakeSettings', JSON.stringify(settingsRef.current)).catch(() => {}) }} /></label>
             </div>
             <button className={styles.closeSettingsBtn} onClick={() => setShowSettings(false)}>Close</button>
           </div>

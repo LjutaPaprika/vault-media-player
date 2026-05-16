@@ -1,0 +1,480 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+}
+
+.hud {
+  display: flex;
+  gap: 18px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 640px;
+}
+
+.hud strong {
+  color: #4ade80;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.danger {
+  color: #ef4444 !important;
+}
+
+.timer {
+  color: rgba(34, 211, 238, 0.85);
+  font-weight: 600;
+}
+
+.best {
+  margin-left: auto;
+  color: rgba(232, 180, 75, 0.6);
+}
+
+.mapBadge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.diffBadge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid;
+  background: rgba(0, 0, 0, 0.3);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.saveBtn {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.1);
+  color: #22d3ee;
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: background 0.12s;
+}
+
+.saveBtn:hover {
+  background: rgba(34, 211, 238, 0.2);
+}
+
+.idleScreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 640px;
+}
+
+.idleSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.idleLabel {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.diffRow {
+  display: flex;
+  gap: 6px;
+}
+
+.diffPill {
+  flex: 1;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.diffPill:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.diffActive {
+  border-width: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mapGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mapGroupLabel {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  opacity: 0.8;
+}
+
+.mapGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.mapCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.mapCard:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.mapCardActive {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+  border-width: 2px;
+  padding: 7px 9px;
+}
+
+.mapCardName {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.mapCardSlot {
+  font-size: 10px;
+  color: #22d3ee;
+  font-family: monospace;
+}
+
+.mapCardBest {
+  font-size: 10px;
+  color: rgba(232, 180, 75, 0.65);
+  font-family: monospace;
+}
+
+.idleActions {
+  display: flex;
+  gap: 8px;
+}
+
+.resumeBtn {
+  padding: 8px 22px;
+  background: linear-gradient(160deg, #0e7490 0%, #22d3ee 100%);
+  color: #000;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: transform 0.08s;
+}
+
+.resumeBtn:hover {
+  transform: translateY(-1px);
+}
+
+.canvas {
+  display: block;
+  border: 1px solid rgba(74, 222, 128, 0.18);
+  border-radius: 6px;
+  background: #0c0c18;
+  cursor: crosshair;
+}
+
+.startBtn {
+  padding: 8px 22px;
+  background: linear-gradient(160deg, #16a34a 0%, #4ade80 100%);
+  color: #000;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: transform 0.08s;
+}
+
+.startBtn:hover {
+  transform: translateY(-1px);
+}
+
+.gameOver {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.titleText {
+  font-size: 16px;
+  font-weight: 800;
+  color: #ef4444;
+  letter-spacing: 0.04em;
+}
+
+.towers {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.towerBar {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+  width: 100%;
+  max-width: 660px;
+}
+
+@media (max-width: 720px) {
+  .towerBar { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.branchPicker {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.branchBtn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, border-width 0.12s;
+}
+
+.branchBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-width: 2px;
+  padding: 7px 9px;
+}
+
+.branchBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.branchName {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.branchStats {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.65);
+  font-family: monospace;
+  text-align: center;
+}
+
+.branchCost {
+  font-size: 11px;
+  color: rgba(232, 180, 75, 0.85);
+  font-family: monospace;
+  font-weight: 700;
+}
+
+.towerBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s;
+  min-width: 70px;
+}
+
+.towerBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.towerBtn.active {
+  border-width: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.towerBtn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.towerName {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.towerCost {
+  font-size: 10px;
+  color: rgba(232, 180, 75, 0.85);
+}
+
+.mapRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.mapBtn {
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 5px;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.mapBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.mapActive {
+  background: rgba(74, 222, 128, 0.12);
+  border-color: #4ade80;
+  color: #4ade80;
+}
+
+.upgradePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.4);
+  width: 100%;
+  max-width: 640px;
+}
+
+.upgradeHeader {
+  display: flex;
+  justify-content: space-between;
+  font-family: monospace;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.upgradeStats {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.upgradeActions {
+  display: flex;
+  gap: 8px;
+}
+
+.upgradeBtn {
+  flex: 1;
+  padding: 6px 12px;
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.1);
+  color: #4ade80;
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: all 0.12s;
+}
+
+.upgradeBtn:hover:not(:disabled) {
+  background: rgba(74, 222, 128, 0.2);
+  border-color: #4ade80;
+}
+
+.upgradeBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.upgradeMaxed {
+  flex: 1;
+  text-align: center;
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(232, 180, 75, 0.85);
+  padding: 6px 12px;
+  letter-spacing: 0.04em;
+}
+
+.sellBtn {
+  padding: 6px 14px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: all 0.12s;
+}
+
+.sellBtn:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: #ef4444;
+}

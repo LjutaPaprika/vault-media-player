@@ -46,7 +46,7 @@ const PLATFORM_LABEL: Record<string, string> = {
 
 const CARD_ORDER = ['movies', 'tv', 'anime', 'music', 'manga', 'books', 'games', 'youtube', 'arcade']
 
-function LibraryOverview({ stats, arcadeStats }: { stats: LibraryStats; arcadeStats: { snakeBest: number; minerBest: { score: number; depth: number } | null } | null }): JSX.Element {
+function LibraryOverview({ stats, arcadeStats }: { stats: LibraryStats; arcadeStats: { snakeBest: number } | null }): JSX.Element {
   return (
     <section className={`${styles.section} ${styles.sectionFull}`}>
       <h2 className={styles.sectionTitle}>Library Overview</h2>
@@ -64,24 +64,18 @@ function LibraryOverview({ stats, arcadeStats }: { stats: LibraryStats; arcadeSt
             const tracks = stats.storage?.musicTrackCount
             if (tracks != null && tracks > 0) sub = `${tracks.toLocaleString()} songs`
           } else if (cat === 'arcade') {
-            if (!arcadeStats) {
-              count = 0
-            } else {
-              const hasSnake = arcadeStats.snakeBest > 0
-              const hasMiner = arcadeStats.minerBest != null
-              count = (hasSnake ? 1 : 0) + (hasMiner ? 1 : 0)
-              if (count > 0) {
-                const parts = []
-                if (hasSnake) parts.push(`Snake: ${arcadeStats.snakeBest}`)
-                if (hasMiner) parts.push(`Miner: ${arcadeStats.minerBest!.score} pts`)
-                sub = parts.join(' · ')
-              }
-            }
+            count = arcadeStats?.snakeBest > 0 ? 1 : 0
           } else {
             count = stats.counts[cat] ?? 0
           }
 
           if (count === 0) return null
+
+          // Fold extras count into movies/tv/anime cards as a sub-label
+          if (cat === 'movies' || cat === 'tv' || cat === 'anime') {
+            const extras = stats.extrasByParent?.[cat] ?? 0
+            if (extras > 0) sub = `+${extras.toLocaleString()} extras`
+          }
 
           return (
             <div key={cat} className={styles.card}>
@@ -110,9 +104,18 @@ function StorageSection({ storage, driveInfo }: {
     )
   }
 
-  const { total, byCategory, computedAt } = storage
-  const sorted = Object.entries(byCategory)
-    .filter(([cat, b]) => b > 0 && cat !== 'extras')
+  const { total, byCategory, computedAt, extrasBytesByParent } = storage
+
+  // Fold extras bytes into the parent categories (movies / tv / anime)
+  const folded: Record<string, number> = { ...byCategory }
+  delete folded.extras
+  if (extrasBytesByParent) {
+    for (const [parent, bytes] of Object.entries(extrasBytesByParent)) {
+      folded[parent] = (folded[parent] ?? 0) + bytes
+    }
+  }
+  const sorted = Object.entries(folded)
+    .filter(([_, b]) => b > 0)
     .sort(([, a], [, b]) => b - a)
 
   const driveFree = driveInfo?.freeBytes ?? null
@@ -136,10 +139,12 @@ function StorageSection({ storage, driveInfo }: {
       <div className={styles.storageBars}>
         {sorted.map(([cat, bytes]) => {
           const pct = total > 0 ? (bytes / total) * 100 : 0
+          const extrasBytes = extrasBytesByParent?.[cat] ?? 0
           return (
             <div key={cat} className={styles.storageRow}>
               <span className={styles.storageLabel}>
                 {CATEGORY_ICON[cat] ?? '📁'} {CATEGORY_LABEL[cat] ?? cat}
+                {extrasBytes > 0 && <span className={styles.storageExtras}> +extras {formatBytes(extrasBytes)}</span>}
               </span>
               <div className={styles.barTrack}>
                 <div className={styles.barFill} style={{ width: `${pct}%` }} />
@@ -276,25 +281,15 @@ export default function StatsPage(): JSX.Element {
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
-  const [arcadeStats, setArcadeStats] = useState<{ snakeBest: number; minerBest: { score: number; depth: number } | null } | null>(null)
+  const [arcadeStats, setArcadeStats] = useState<{ snakeBest: number } | null>(null)
 
   useEffect(() => {
     window.api.library.getStats().then(setStats)
     window.api.system.getInfo().then(setSysInfo)
     window.api.system.getAppInfo().then(setAppInfo)
 
-    Promise.all([
-      window.api.settings.get('snakeHighScore', '0'),
-      window.api.settings.get('vaultDelverBest', '')
-    ]).then(([snakeStr, minerStr]) => {
-      const snakeBest = parseInt(snakeStr, 10) || 0
-      let minerBest = null
-      if (minerStr) {
-        try {
-          minerBest = JSON.parse(minerStr) as { score: number; depth: number }
-        } catch { /* ignore */ }
-      }
-      setArcadeStats({ snakeBest, minerBest })
+    window.api.settings.get('snakeHighScore', '0').then(snakeStr => {
+      setArcadeStats({ snakeBest: parseInt(snakeStr, 10) || 0 })
     })
   }, [])
 

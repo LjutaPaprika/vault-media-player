@@ -4,6 +4,10 @@ import { createReadStream, statSync, existsSync } from 'fs'
 import { Readable } from 'stream'
 import { spawnSync } from 'child_process'
 
+// Skip Chromium's GPU disk cache; it tries to relocate at startup and fails with
+// "Access is denied" on Windows when AV or a stale instance holds the directory.
+app.commandLine.appendSwitch('disable-gpu-disk-cache')
+
 // Must be called before app.whenReady()
 protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { stream: true, bypassCSP: true, supportFetchAPI: true } },

@@ -10,7 +10,7 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, setLastOpened, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, getDurationsForCategory, setLastOpened, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -191,6 +191,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('library:getItem',         (_event, id: number) => getItem(id))
   ipcMain.handle('library:getExtras',       (_event, seriesTitle: string) => getExtras(seriesTitle))
   ipcMain.handle('library:getTechInfo',     (_event, filePath: string) => getTechInfo(filePath))
+  ipcMain.handle('library:getDurations',    (_event, category: string) => getDurationsForCategory(category))
   ipcMain.handle('library:getEpubInfo',     (_event, filePath: string) => getEpubInfo(filePath))
   ipcMain.handle('library:readEpubChapter', (_event, filePath: string, chapterHref: string) => readEpubChapter(filePath, chapterHref))
 
@@ -352,6 +353,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           '-x', '--audio-format', 'mp3', '--audio-quality', '0',
           '--newline', '--no-playlist', '--no-update', '-o', outTemplate, url
         ])
+        let stderrBuf = ''
 
         proc.stdout.on('data', (chunk: Buffer) => {
           const text = chunk.toString()
@@ -368,16 +370,23 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           }
         })
 
-        proc.on('error', () => {
+        proc.stderr.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString() })
+
+        proc.on('error', (err) => {
+          console.error('[yt-dlp music] spawn error', url, err)
           win.webContents.send('download:progress', {
-            index: i, total: urls.length, url, status: 'error', percent: 0
+            index: i, total: urls.length, url, status: 'error', percent: 0, error: String(err)
           })
           resolve()
         })
 
         proc.on('close', (code) => {
+          if (code !== 0) {
+            console.error(`[yt-dlp music] exit ${code} for ${url}\n${stderrBuf.trim()}`)
+          }
           win.webContents.send('download:progress', {
-            index: i, total: urls.length, url, status: code === 0 ? 'done' : 'error', percent: 100
+            index: i, total: urls.length, url, status: code === 0 ? 'done' : 'error', percent: 100,
+            error: code === 0 ? undefined : stderrBuf.trim().split('\n').slice(-3).join(' | ')
           })
           resolve()
         })
@@ -412,6 +421,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         '--yes-playlist', '--newline', '--no-update',
         '-o', outTemplate, url
       ])
+      let stderrBuf = ''
+      proc.stderr.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString() })
 
       proc.stdout.on('data', (chunk: Buffer) => {
         lineBuffer += chunk.toString()
@@ -451,18 +462,23 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         }
       })
 
-      proc.on('error', () => {
+      proc.on('error', (err) => {
+        console.error('[yt-dlp playlist] spawn error', url, err)
         win.webContents.send('download:progress', {
-          index: Math.max(currentItem, 0), total: Math.max(totalItems, 1), url, status: 'error', percent: 0
+          index: Math.max(currentItem, 0), total: Math.max(totalItems, 1), url, status: 'error', percent: 0, error: String(err)
         })
         resolve()
       })
       proc.on('close', (code) => {
+        if (code !== 0) {
+          console.error(`[yt-dlp playlist] exit ${code} for ${url}\n${stderrBuf.trim()}`)
+        }
         // Mark the final track done (or errored)
         if (currentItem >= 0) {
           win.webContents.send('download:progress', {
             index: currentItem, total: Math.max(totalItems, 1), url,
-            status: code === 0 ? 'done' : 'error', percent: 100
+            status: code === 0 ? 'done' : 'error', percent: 100,
+            error: code === 0 ? undefined : stderrBuf.trim().split('\n').slice(-3).join(' | ')
           })
         }
         resolve()
@@ -660,6 +676,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           '--newline', '--no-playlist', '--no-update',
           '-o', outTemplate, url
         ])
+        let stderrBuf = ''
+        proc.stderr.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString() })
 
         proc.stdout.on('data', (chunk: Buffer) => {
           const text = chunk.toString()
@@ -676,13 +694,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           }
         })
 
-        proc.on('error', () => {
-          win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'error', percent: 0 })
+        proc.on('error', (err) => {
+          console.error('[yt-dlp video] spawn error', url, err)
+          win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'error', percent: 0, error: String(err) })
           resolve()
         })
         proc.on('close', (code) => {
+          if (code !== 0) {
+            console.error(`[yt-dlp video] exit ${code} for ${url}\n${stderrBuf.trim()}`)
+          }
           win.webContents.send('download:progress', {
-            index: i, total: urls.length, url, status: code === 0 ? 'done' : 'error', percent: 100
+            index: i, total: urls.length, url, status: code === 0 ? 'done' : 'error', percent: 100,
+            error: code === 0 ? undefined : stderrBuf.trim().split('\n').slice(-3).join(' | ')
           })
           resolve()
         })

@@ -1,0 +1,164 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.modeSelect {
+  display: flex;
+  gap: 6px;
+}
+
+.modeBtn {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(74, 222, 128, 0.2);
+  background: rgba(74, 222, 128, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.modeBtn:hover {
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.1);
+}
+
+.modeBtnActive {
+  background: rgba(74, 222, 128, 0.2);
+  border-color: #4ade80;
+  color: #4ade80;
+}
+
+.stats {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+.gameArea {
+  position: relative;
+  display: inline-block;
+}
+
+.gridWrapper {
+  border-radius: 6px;
+  border: 1px solid rgba(74, 222, 128, 0.12);
+  overflow: hidden;
+  background: #08080f;
+}
+
+.grid {
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+}
+
+.card {
+  border-radius: 6px;
+  border: 1px solid rgba(74, 222, 128, 0.1);
+  background: linear-gradient(135deg, #1a1a2e 0%, #2a2a4e 100%);
+  color: #4ade80;
+  cursor: pointer;
+  perspective: 600px;
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 0.1s;
+}
+
+.card:hover {
+  border-color: rgba(74, 222, 128, 0.3);
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.15);
+}
+
+.cardInner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.35s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cardFlipped .cardInner {
+  transform: rotateY(180deg);
+}
+
+.cardFront,
+.cardBack {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.cardFront {
+  font-size: 24px;
+}
+
+.cardBack {
+  font-size: 20px;
+  transform: rotateY(180deg);
+  background: linear-gradient(135deg, #0c1a2e 0%, #162040 100%);
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 15, 0.88);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 6px;
+  backdrop-filter: blur(3px);
+  z-index: 2;
+}
+
+.message {
+  font-size: 14px;
+  font-weight: 700;
+  color: #4ade80;
+}
+
+.flips {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.btn {
+  padding: 6px 16px;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  color: #4ade80;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.btn:hover {
+  background: rgba(74, 222, 128, 0.15);
+  border-color: #4ade80;
+}

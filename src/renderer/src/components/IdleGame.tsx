@@ -58,8 +58,7 @@ export default function IdleGame(): JSX.Element {
       if (!ctx) return
 
       // Clear
-      ctx.fillStyle = 'rgba(0,0,0,0.1)'
-      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
 
       // Spawn new particles
       spawnAccumRef.current += passiveRate / 60
@@ -74,6 +73,9 @@ export default function IdleGame(): JSX.Element {
           life: 1,
           label
         })
+      }
+      if (particlesRef.current.length > 80) {
+        particlesRef.current = particlesRef.current.slice(-80)
       }
 
       // Update and draw particles

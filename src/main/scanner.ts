@@ -9,6 +9,7 @@ let _storedTimes     = new Map<string, number>()
 let _foundPaths      = new Set<string>()
 let _updatedCount    = 0
 let _categoryBytes   = new Map<string, number>()
+let _extrasBytesByParent = new Map<string, number>()
 let _musicTrackCount = 0
 let _mangaSeriesCount = 0
 
@@ -20,6 +21,16 @@ function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]
   // Accumulate file size per category regardless of whether the file changed
   const cat = item.category
   _categoryBytes.set(cat, (_categoryBytes.get(cat) ?? 0) + size)
+  // For extras, also attribute bytes to the parent category (movies/tv/anime) so the stats
+  // page can fold extras storage into its parent category.
+  if (cat === 'extras') {
+    const norm = filePath.replace(/\\/g, '/').toLowerCase()
+    const m = norm.match(/\/media\/(movies|tv|anime)\//)
+    if (m) {
+      const parent = m[1]
+      _extrasBytesByParent.set(parent, (_extrasBytesByParent.get(parent) ?? 0) + size)
+    }
+  }
   if (_storedTimes.get(filePath) === mtime) return false // unchanged — skip
   upsertItem({ ...item, fileModified: mtime })
   _updatedCount++
@@ -81,6 +92,7 @@ function titleFromFilename(filename: string): string {
     .replace(/\s*\(\d{4}\).*$/, '')
     .replace(/\s*\[.*?\]/g, '')
     .replace(/\./g, ' ')
+    .replace(/\s{2,}/g, ' ')
     .trim()
 }
 
@@ -308,7 +320,7 @@ function scanMovies(rootDir: string, ffprobePath = ''): number {
         filePath: firstVideo,
         posterPath: poster,
         description: (meta.description as string) ?? null,
-        genre: Array.isArray(meta.genre) ? (meta.genre as string[]).join(', ') : null
+        genre: Array.isArray(meta.genre) ? (meta.genre as string[]).join(',') : typeof meta.genre === 'string' ? meta.genre : null
       })
       probeMovieIfNeeded(firstVideo, ffprobePath)
       scanMovieExtras(movieDir, movieTitle, poster)
@@ -630,16 +642,39 @@ function scanPcGames(rootDir: string): number {
       platform: 'pc',
       executable: execName
     })
+    // The exe is one file in a much larger directory — accumulate the rest of the dir
+    // so the stats page reflects the actual on-disk footprint (game data, saves, etc).
+    const exeSize = statSync(exePath).size
+    const dirSize = walkDirBytes(gameDir)
+    _categoryBytes.set('games', (_categoryBytes.get('games') ?? 0) + (dirSize - exeSize))
     count++
   }
   return count
 }
 
+function walkDirBytes(dir: string): number {
+  let total = 0
+  let entries: import('fs').Dirent[]
+  try { entries = readdirSync(dir, { withFileTypes: true }) } catch { return 0 }
+  for (const e of entries) {
+    const p = join(dir, e.name)
+    try {
+      if (e.isDirectory()) total += walkDirBytes(p)
+      else if (e.isFile()) total += statSync(p).size
+    } catch { /* permission denied / broken link — skip */ }
+  }
+  return total
+}
+
+// Filenames that are .exe files but should NEVER be picked as the game launcher.
+const NON_GAME_EXE_RE = /^(unins\d*|uninstall|setup|installer|redist|vcredist|dxsetup|directx|crashreport|launcher_settings)/i
+
 function findExe(dir: string): string | null {
   const entries = readdirSync(dir)
 
   if (process.platform === 'win32') {
-    return entries.find((f) => extname(f).toLowerCase() === '.exe') ?? null
+    const exes = entries.filter((f) => extname(f).toLowerCase() === '.exe')
+    return exes.find((f) => !NON_GAME_EXE_RE.test(f)) ?? exes[0] ?? null
   }
 
   if (process.platform === 'darwin') {
@@ -741,7 +776,7 @@ function scanRoms(rootDir: string): number {
 
 // ─── YouTube videos ──────────────────────────────────────────────────────────
 
-function scanYouTube(rootDir: string): number {
+function scanYouTube(rootDir: string, ffprobePath = ''): number {
   if (!existsSync(rootDir)) return 0
   let count = 0
 
@@ -758,6 +793,11 @@ function scanYouTube(rootDir: string): number {
       posterPath: sidecarPoster,
       genre: playlist
     })
+    // Probe for duration (used by YouTube card overlay). Runs only on first scan; subsequent scans skip.
+    if (ffprobePath && needsTechInfo(filePath)) {
+      const info = probeFile(filePath, ffprobePath)
+      if (info) updateTechInfo(filePath, info)
+    }
     count++
   }
 
@@ -787,6 +827,7 @@ export function scanLibrary(root: string, ffprobePath = ''): { total: number; up
   _foundPaths       = new Set<string>()
   _updatedCount     = 0
   _categoryBytes    = new Map<string, number>()
+  _extrasBytesByParent = new Map<string, number>()
   _musicTrackCount  = 0
   _mangaSeriesCount = 0
 
@@ -794,7 +835,7 @@ export function scanLibrary(root: string, ffprobePath = ''): { total: number; up
   total += scanMovies(m('movies'), ffprobePath)
   total += scanEpisodeCategory(m('tv'), 'tv')
   total += scanEpisodeCategory(m('anime'), 'anime')
-  total += scanYouTube(m('youtube'))
+  total += scanYouTube(m('youtube'), ffprobePath)
   total += scanMusic(m('music'), ffprobePath)
   total += scanBooks(m('books'))
   total += scanManga(m('manga'))
@@ -813,6 +854,7 @@ export function scanLibrary(root: string, ffprobePath = ''): { total: number; up
     byCategory: Object.fromEntries(_categoryBytes),
     musicTrackCount: _musicTrackCount,
     mangaSeriesCount: _mangaSeriesCount,
+    extrasBytesByParent: Object.fromEntries(_extrasBytesByParent),
     computedAt: Date.now()
   }))
 
@@ -821,6 +863,7 @@ export function scanLibrary(root: string, ffprobePath = ''): { total: number; up
   _foundPaths       = new Set()
   _updatedCount     = 0
   _categoryBytes    = new Map()
+  _extrasBytesByParent = new Map()
   _musicTrackCount  = 0
   _mangaSeriesCount = 0
 

@@ -107,6 +107,7 @@ export default function MangaPage(): JSX.Element {
   // Build series cards for MediaGrid
   const filteredSeries = Array.from(grouped.entries())
     .filter(([name]) => name.toLowerCase().includes(query.toLowerCase()))
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
 
   const seriesCards: MediaCard[] = filteredSeries.map(([name, vols]) => {
     const { singular, plural } = detectUnit(vols)

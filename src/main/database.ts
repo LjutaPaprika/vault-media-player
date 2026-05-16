@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join, dirname, basename } from 'path'
-import { mkdirSync, existsSync, readdirSync } from 'fs'
+import { mkdirSync, existsSync, readdirSync, copyFileSync } from 'fs'
 import type { MediaTechInfo } from './mediaInfo'
 
 let db: Database.Database | null = null
@@ -59,7 +59,7 @@ export function findDriveRoot(): string | null {
 function getDbDir(): string {
   if (!app.isPackaged) return join(process.cwd(), 'dev-data')
   const driveRoot = findDriveRoot()
-  if (driveRoot) return join(driveRoot, 'app')
+  if (driveRoot) return join(driveRoot, 'data')
   return app.getPath('userData') // fallback if .vault marker not found
 }
 
@@ -69,6 +69,17 @@ function getDb(): Database.Database {
   const dbDir = getDbDir()
   mkdirSync(dbDir, { recursive: true })
   const dbPath = join(dbDir, 'library.db')
+
+  // One-time migration: if no db at new location but old one exists in /app, copy it over
+  if (!existsSync(dbPath)) {
+    const driveRoot = findDriveRoot()
+    if (driveRoot) {
+      const oldDb = join(driveRoot, 'app', 'library.db')
+      if (existsSync(oldDb)) {
+        try { copyFileSync(oldDb, dbPath) } catch { /* best-effort */ }
+      }
+    }
+  }
 
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
@@ -187,6 +198,21 @@ export function needsTechInfo(filePath: string): boolean {
   return !row?.tech_info
 }
 
+/** Batch read duration (seconds) for every cached item in a category. Filepath → seconds. */
+export function getDurationsForCategory(category: string): Record<string, number> {
+  const rows = getDb()
+    .prepare('SELECT file_path, tech_info FROM media_items WHERE category = ? AND tech_info IS NOT NULL')
+    .all(category) as { file_path: string; tech_info: string }[]
+  const out: Record<string, number> = {}
+  for (const r of rows) {
+    try {
+      const info = JSON.parse(r.tech_info) as MediaTechInfo
+      if (info.duration && info.duration > 0) out[r.file_path] = info.duration
+    } catch { /* skip bad rows */ }
+  }
+  return out
+}
+
 export function clearStoredFileTimes(): void {
   getDb().prepare('UPDATE media_items SET file_modified = 0').run()
 }
@@ -286,12 +312,18 @@ export interface LibraryStats {
   platforms: { platform: string; count: number }[]
   recentlyOpened: { title: string; category: string; filePath: string; lastOpenedAt: number }[]
   total: number
+  /** Number of extras attributed to each parent category. Derived from file_path prefix. */
+  extrasByParent: Record<string, number>
+  /** Bytes of extras attributed to each parent category. Null if storageStats hasn't been computed. */
+  extrasBytesByParent: Record<string, number> | null
   storage: {
     total: number
     byCategory: Record<string, number>
     musicTrackCount: number
     mangaSeriesCount: number
     computedAt: number
+    /** Optional per-parent extras bytes, when scanner has populated it. */
+    extrasBytesByParent?: Record<string, number>
   } | null
 }
 
@@ -327,7 +359,7 @@ export function getStats(): LibraryStats {
   // collapse to their series name (TV/anime already share a title, so SQL GROUP BY
   // works for them, but manga chapter titles are unique per file).
   const allRecent = db
-    .prepare('SELECT title, category, file_path as filePath, last_opened_at as lastOpenedAt FROM media_items WHERE last_opened_at IS NOT NULL ORDER BY last_opened_at DESC LIMIT 200')
+    .prepare("SELECT title, category, file_path as filePath, last_opened_at as lastOpenedAt FROM media_items WHERE last_opened_at IS NOT NULL AND category != 'extras' ORDER BY last_opened_at DESC LIMIT 200")
     .all() as { title: string; category: string; filePath: string; lastOpenedAt: number }[]
 
   const seen = new Map<string, { title: string; category: string; filePath: string; lastOpenedAt: number }>()
@@ -352,7 +384,29 @@ export function getStats(): LibraryStats {
     try { storage = JSON.parse(storageJson) as LibraryStats['storage'] } catch { /* corrupt — leave null */ }
   }
 
-  return { counts, seriesCounts, platforms, recentlyOpened, total: totalRow.total, storage }
+  // Compute extras-per-parent from file_path prefix
+  const extrasRows = db
+    .prepare("SELECT file_path FROM media_items WHERE category = 'extras'")
+    .all() as { file_path: string }[]
+  const extrasByParent: Record<string, number> = {}
+  for (const r of extrasRows) {
+    const parent = parentCategoryFromPath(r.file_path)
+    if (parent) extrasByParent[parent] = (extrasByParent[parent] ?? 0) + 1
+  }
+
+  return {
+    counts, seriesCounts, platforms, recentlyOpened, total: totalRow.total,
+    extrasByParent,
+    extrasBytesByParent: storage?.extrasBytesByParent ?? null,
+    storage
+  }
+}
+
+/** Extract the parent category from an extras file path. Looks for /media/<cat>/ in the path. */
+function parentCategoryFromPath(filePath: string): string | null {
+  const norm = filePath.replace(/\\/g, '/').toLowerCase()
+  const m = norm.match(/\/media\/(movies|tv|anime)\//)
+  return m ? m[1] : null
 }
 
 export function getDbPath(): string {

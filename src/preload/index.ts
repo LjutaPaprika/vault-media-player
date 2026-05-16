@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
     readImage: (filePath: string) => ipcRenderer.invoke('library:readImage', filePath),
     getExtras: (seriesTitle: string) => ipcRenderer.invoke('library:getExtras', seriesTitle),
     getTechInfo:     (filePath: string) => ipcRenderer.invoke('library:getTechInfo', filePath),
+    getDurations:    (category: string) => ipcRenderer.invoke('library:getDurations', category),
     getEpubInfo:     (filePath: string) => ipcRenderer.invoke('library:getEpubInfo', filePath),
     readEpubChapter: (filePath: string, chapterHref: string) => ipcRenderer.invoke('library:readEpubChapter', filePath, chapterHref),
     getWatchOrder: (seriesTitle: string, category: string) => ipcRenderer.invoke('library:getWatchOrder', seriesTitle, category),

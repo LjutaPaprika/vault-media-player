@@ -138,7 +138,6 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
     }
     const vis = computeFov(grid, p.x, p.y, LOS_RADIUS, isOpaque)
     visibleRef.current = vis
-    console.log('FoV size:', vis.size, 'at', p.x, p.y)
     vis.forEach(k => {
       const [x, y] = k.split(',').map(Number)
       visitedRef.current[y][x] = true
@@ -176,6 +175,7 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
     scoreRef.current = 0
     playerRef.current = { x: 0, y: 0, hp: 10, maxHp: 10, atk: 1, hasKey: false }
     loadFloor(1, false)
+    computeVisible()
     phaseRef.current = 'playing'
     setPhase('playing'); setHp(10); setScore(0); setFloor(1); setHasKey(false); setMessage('')
     draw()
@@ -279,6 +279,7 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
       const fl = floorRef.current + 1
       scoreRef.current += 20 + fl * 5
       loadFloor(fl, p.hasKey)
+      computeVisible()
       p.hp = Math.min(p.maxHp, p.hp + 2)
       setFloor(fl); setScore(scoreRef.current); setHp(p.hp); setHasKey(p.hasKey)
       showMsg(`Floor ${fl}`)
@@ -548,12 +549,11 @@ export default function Miner({ onNewBest }: MinerProps): JSX.Element {
 
         drawSprite(ctx, getTileSprite(x, y, grid[y][x]), x, y)
 
-        // Fog overlay for visited-but-not-visible
+        // DEBUG: dim overlay for unseen tiles instead of full black
         if (!isVisible && isVisited) {
           ctx.fillStyle = PAL.fogVisited
           ctx.fillRect(x * CELL, y * CELL, CELL, CELL)
         }
-        // Black for unvisited
         else if (!isVisible && !isVisited) {
           ctx.fillStyle = PAL.black
           ctx.fillRect(x * CELL, y * CELL, CELL, CELL)

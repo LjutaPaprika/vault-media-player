@@ -31,6 +31,7 @@ interface DownloadProgress {
   url: string
   status: 'downloading' | 'converting' | 'done' | 'error'
   percent: number
+  error?: string
 }
 
 interface WatchOrderData {
@@ -113,6 +114,7 @@ interface StorageStats {
   musicTrackCount: number
   mangaSeriesCount: number
   computedAt: number
+  extrasBytesByParent?: Record<string, number>
 }
 
 interface LibraryStats {
@@ -121,6 +123,8 @@ interface LibraryStats {
   platforms: { platform: string; count: number }[]
   recentlyOpened: { title: string; category: string; filePath: string; lastOpenedAt: number }[]
   total: number
+  extrasByParent: Record<string, number>
+  extrasBytesByParent: Record<string, number> | null
   storage: StorageStats | null
 }
 
@@ -153,6 +157,7 @@ interface Window {
       getExtras: (seriesTitle: string) => Promise<MediaItem[]>
       getAlbumTracks: (firstTrackPath: string) => Promise<{ path: string; title: string; artist?: string; trackNumber: number; duration: number; artPath: string | null }[]>
       getTechInfo:     (filePath: string) => Promise<MediaTechInfo | null>
+      getDurations:    (category: string) => Promise<Record<string, number>>
       getEpubInfo:     (filePath: string) => Promise<{ title: string; author: string; chapters: { id: string; title: string; href: string }[]; coverDataUrl: string | null }>
       readEpubChapter: (filePath: string, chapterHref: string) => Promise<string>
       getWatchOrder: (seriesTitle: string, category: string) => Promise<WatchOrderData | null>

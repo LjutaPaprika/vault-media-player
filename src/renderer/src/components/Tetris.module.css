@@ -1,0 +1,105 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.header {
+  display: flex;
+  gap: 18px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.header strong {
+  color: #22d3ee;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.stageRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.stage {
+  position: relative;
+}
+
+.sidePanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.sideLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.nextCanvas {
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  border-radius: 6px;
+  background: #0b0f14;
+}
+
+.canvas {
+  display: block;
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  border-radius: 6px;
+  background: #0b0f14;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.78);
+  border-radius: 6px;
+}
+
+.title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #22d3ee;
+  letter-spacing: 0.1em;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.btn {
+  padding: 8px 22px;
+  background: linear-gradient(160deg, #0891b2 0%, #22d3ee 100%);
+  color: #000;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: transform 0.08s;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.02em;
+  text-align: center;
+}

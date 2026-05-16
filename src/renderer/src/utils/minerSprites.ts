@@ -404,7 +404,7 @@ export const SPRITE_PLAYER_0: Sprite = {
     '....DDD.DDD.....',
     '................',
   ],
-  map: { 'B': PAL.playerBody, 'D': PAL.playerDark, 'h': PAL.playerHi, '.': null as any },
+  map: { 'B': PAL.playerBody, 'D': PAL.playerDark, 'H': PAL.playerHi, '.': null as any },
 }
 
 export const SPRITE_PLAYER_1: Sprite = {
@@ -426,7 +426,7 @@ export const SPRITE_PLAYER_1: Sprite = {
     '................',
     '................',
   ],
-  map: { 'B': PAL.playerBody, 'D': PAL.playerDark, 'h': PAL.playerHi, '.': null as any },
+  map: { 'B': PAL.playerBody, 'D': PAL.playerDark, 'H': PAL.playerHi, '.': null as any },
 }
 
 export const SPRITE_CRAWLER_0: Sprite = {
