@@ -10,7 +10,7 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, getDurationsForCategory, setLastOpened, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, getDurationsForCategory, setLastOpened, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -197,6 +197,28 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // ─── Last opened tracking ─────────────────────────────────────────────────
   ipcMain.handle('library:markOpened', (_event, filePath: string) => setLastOpened(filePath))
+
+  // ─── Genre editing (movies) ───────────────────────────────────────────────
+  ipcMain.handle('library:setGenre', (_event, filePath: string, genre: string | null) => {
+    setGenre(filePath, genre)
+    // Persist to sidecar movie.json so genres survive a full rescan
+    try {
+      const movieDir = dirname(filePath)
+      const sidecarPath = join(movieDir, 'movie.json')
+      let sidecar: Record<string, unknown> = {}
+      if (existsSync(sidecarPath)) {
+        try { sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8')) } catch { /* corrupt — overwrite */ }
+      }
+      if (genre && genre.trim().length > 0) {
+        sidecar.genre = genre.split(',').map((g) => g.trim()).filter(Boolean)
+      } else {
+        delete sidecar.genre
+      }
+      writeFileSync(sidecarPath, JSON.stringify(sidecar, null, 2), 'utf-8')
+    } catch (err) {
+      console.warn('[library:setGenre] sidecar write failed:', err)
+    }
+  })
 
   // ─── Favourites ───────────────────────────────────────────────────────────
   ipcMain.handle('playlist:getFavourites', () => getFavourites())

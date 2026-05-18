@@ -247,3 +247,74 @@
 
 .extraRow:hover .playIcon,
 .extraRow:focus-visible .playIcon { opacity: 1; }
+
+/* ── Genres ───────────────────────────────────────────────────────────────── */
+
+.genreRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.genreChip {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--genre-pill) 22%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--genre-pill) 35%, transparent);
+}
+
+.genreEditBtn {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px dashed var(--border);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.genreEditBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.genrePicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.genrePickerChip {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--bg-base);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.genrePickerChip:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.genrePickerChipActive {
+  background: var(--genre-pill);
+  color: #fff;
+  border-color: var(--genre-pill);
+}

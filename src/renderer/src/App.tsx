@@ -4,7 +4,8 @@ import { useIdleGameStore, initGameSave } from './store/idleGameStore'
 import {
   applyAccentColor, applyColor,
   DEFAULT_ACCENT, DEFAULT_PILL_LAST_WATCHED, DEFAULT_PILL_EXTRA,
-  DEFAULT_SIDEBAR_ACTIVE, DEFAULT_EPISODE_BADGE, DEFAULT_MUSIC_PROGRESS
+  DEFAULT_SIDEBAR_ACTIVE, DEFAULT_EPISODE_BADGE, DEFAULT_MUSIC_PROGRESS,
+  DEFAULT_GENRE_PILL
 } from './utils/accent'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
@@ -68,6 +69,7 @@ export default function App(): JSX.Element {
       window.api.settings.get('sidebarActive',    DEFAULT_SIDEBAR_ACTIVE).then((h) => applyColor('--sidebar-active', h)),
       window.api.settings.get('episodeBadge',     DEFAULT_EPISODE_BADGE).then((h) => applyColor('--episode-badge', h)),
       window.api.settings.get('musicProgress',    DEFAULT_MUSIC_PROGRESS).then((h) => applyColor('--music-progress', h)),
+      window.api.settings.get('genrePill',        DEFAULT_GENRE_PILL).then((h) => applyColor('--genre-pill', h)),
     ])
     Promise.all([minDelay, configFetch, colorFetches, initGameSave()]).then(() => setConfigLoading(false))
   }, [])

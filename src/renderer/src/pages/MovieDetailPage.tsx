@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import PosterImage from '../components/PosterImage'
 import { useController } from '../hooks/useController'
@@ -11,8 +11,15 @@ interface Props {
   year: number | null
   posterPath: string | null
   filePath: string
+  initialGenre?: string | null
   onBack: () => void
 }
+
+const PRESET_GENRES = [
+  'Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary',
+  'Drama', 'Fantasy', 'Horror', 'Mystery', 'Romance', 'Sci-Fi',
+  'Thriller', 'War', 'Western', 'Musical', 'Historical', 'Noir'
+]
 
 function formatDuration(secs: number): string {
   if (!secs) return ''
@@ -69,12 +76,26 @@ function formatAudioCodec(codec: string): string {
   return map[codec.toLowerCase()] ?? codec.toUpperCase()
 }
 
-export default function MovieDetailPage({ title, year, posterPath, filePath, onBack }: Props): JSX.Element {
+export default function MovieDetailPage({ title, year, posterPath, filePath, initialGenre, onBack }: Props): JSX.Element {
   const { setFocusZone } = useAppStore()
   useEscapeKey(onBack)
   const [extras, setExtras] = useState<MediaItem[]>([])
   const [techInfo, setTechInfo] = useState<MediaTechInfo | null>(null)
+  const [genre, setGenreState] = useState<string | null>(initialGenre ?? null)
+  const [editingGenre, setEditingGenre] = useState(false)
   const [focusedIdx, setFocusedIdx] = useState(0)
+
+  const currentGenres = useMemo(() =>
+    new Set((genre ?? '').split(',').map((g) => g.trim()).filter(Boolean)),
+  [genre])
+
+  function toggleGenre(g: string): void {
+    const next = new Set(currentGenres)
+    next.has(g) ? next.delete(g) : next.add(g)
+    const joined = [...next].join(', ')
+    setGenreState(joined || null)
+    window.api.library.setGenre(filePath, joined || null)
+  }
   const focusedIdxRef = useRef(0)
   const playBtnRef = useRef<HTMLButtonElement | null>(null)
   const extraRefs = useRef<(HTMLButtonElement | null)[]>([])
@@ -147,6 +168,30 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, onB
           {metaChips.length > 0 && (
             <div className={styles.heroChips}>
               {metaChips.map((chip, i) => <span key={i} className={styles.chip}>{chip}</span>)}
+            </div>
+          )}
+          <div className={styles.genreRow}>
+            {currentGenres.size > 0 && [...currentGenres].map((g) => (
+              <span key={g} className={styles.genreChip}>{g}</span>
+            ))}
+            <button
+              className={styles.genreEditBtn}
+              onClick={() => setEditingGenre((v) => !v)}
+            >
+              {editingGenre ? 'Done' : currentGenres.size === 0 ? '+ Add genres' : 'Edit'}
+            </button>
+          </div>
+          {editingGenre && (
+            <div className={styles.genrePicker}>
+              {PRESET_GENRES.map((g) => (
+                <button
+                  key={g}
+                  className={`${styles.genrePickerChip} ${currentGenres.has(g) ? styles.genrePickerChipActive : ''}`}
+                  onClick={() => toggleGenre(g)}
+                >
+                  {g}
+                </button>
+              ))}
             </div>
           )}
           <button

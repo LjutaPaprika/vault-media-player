@@ -4,6 +4,7 @@ export const DEFAULT_PILL_EXTRA        = '#4ecdc4'
 export const DEFAULT_SIDEBAR_ACTIVE    = '#e8b44b'
 export const DEFAULT_EPISODE_BADGE     = '#e8b44b'
 export const DEFAULT_MUSIC_PROGRESS    = '#e8b44b'
+export const DEFAULT_GENRE_PILL        = '#a78bfa'
 
 export const ACCENT_PRESETS = [
   '#e8b44b', // Amber (default)

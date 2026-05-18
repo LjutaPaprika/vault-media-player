@@ -5,7 +5,8 @@ import styles from './SettingsPage.module.css'
 import {
   applyAccentColor, applyColor, ACCENT_PRESETS,
   DEFAULT_ACCENT, DEFAULT_PILL_LAST_WATCHED, DEFAULT_PILL_EXTRA,
-  DEFAULT_SIDEBAR_ACTIVE, DEFAULT_EPISODE_BADGE, DEFAULT_MUSIC_PROGRESS
+  DEFAULT_SIDEBAR_ACTIVE, DEFAULT_EPISODE_BADGE, DEFAULT_MUSIC_PROGRESS,
+  DEFAULT_GENRE_PILL
 } from '../utils/accent'
 
 function DriveField({
@@ -530,6 +531,7 @@ export default function SettingsPage(): JSX.Element {
             <ColorSetting label="Sidebar active item" settingsKey="sidebarActive" cssVar="--sidebar-active" defaultColor={DEFAULT_SIDEBAR_ACTIVE} />
             <ColorSetting label="Episode badge" settingsKey="episodeBadge" cssVar="--episode-badge" defaultColor={DEFAULT_EPISODE_BADGE} />
             <ColorSetting label="Music progress bar" settingsKey="musicProgress" cssVar="--music-progress" defaultColor={DEFAULT_MUSIC_PROGRESS} />
+            <ColorSetting label="Movie genre pill" settingsKey="genrePill" cssVar="--genre-pill" defaultColor={DEFAULT_GENRE_PILL} />
           </div>
         </section>
 

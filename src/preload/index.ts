@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('api', {
     getWatchOrder: (seriesTitle: string, category: string) => ipcRenderer.invoke('library:getWatchOrder', seriesTitle, category),
     getWatchGuide: (seriesTitle: string, category: string) => ipcRenderer.invoke('library:getWatchGuide', seriesTitle, category),
     markOpened: (filePath: string) => ipcRenderer.invoke('library:markOpened', filePath),
+    setGenre: (filePath: string, genre: string | null) => ipcRenderer.invoke('library:setGenre', filePath, genre),
     getMusicAlbums: () => ipcRenderer.invoke('library:getMusicAlbums'),
     downloadYouTube: (args: { urls: { url: string; title: string }[]; albumPath: string; artist?: string }) =>
       ipcRenderer.invoke('library:downloadYouTube', args),

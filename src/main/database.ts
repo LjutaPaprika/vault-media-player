@@ -157,7 +157,7 @@ export function upsertItem(item: {
          category      = excluded.category,
          poster_path   = excluded.poster_path,
          description   = excluded.description,
-         genre         = excluded.genre,
+         genre         = COALESCE(excluded.genre, genre),
          platform      = excluded.platform,
          executable    = excluded.executable,
          file_modified = excluded.file_modified,
@@ -256,6 +256,12 @@ export function setLastOpened(filePath: string): void {
   getDb()
     .prepare('UPDATE media_items SET last_opened_at = unixepoch() WHERE file_path = ?')
     .run(filePath)
+}
+
+export function setGenre(filePath: string, genre: string | null): void {
+  getDb()
+    .prepare('UPDATE media_items SET genre = ? WHERE file_path = ?')
+    .run(genre, filePath)
 }
 
 export function getItems(category: string): object[] {
