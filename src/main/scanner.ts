@@ -1,7 +1,29 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs'
 import { join, extname, basename, dirname } from 'path'
+import { execSync } from 'child_process'
 import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, updateTechInfo, needsTechInfo, setConfig } from './database'
 import { probeFile, probeAudioFileSync } from './mediaInfo'
+
+// Returns the set of subdirectory names inside `dir` flagged as hidden by the OS.
+// Windows: parses `attrib /D <dir>\*` for the H bit.
+// Mac/Linux: honors the dot-prefix convention (caller can also check directly).
+function listHiddenDirs(dir: string): Set<string> {
+  const hidden = new Set<string>()
+  if (process.platform !== 'win32') return hidden
+  try {
+    const out = execSync(`attrib /D "${join(dir, '*')}"`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    for (const line of out.split(/\r?\n/)) {
+      // attrib output: flags occupy fixed columns at the start, path follows.
+      // We look for ' H ' in the attribute span (first ~20 chars) and capture the trailing path.
+      const m = line.match(/^(.{0,20}?)\s{2,}([A-Za-z]:\\.+)$/)
+      if (!m) continue
+      const flags = m[1]
+      const path = m[2]
+      if (/\bH\b/.test(flags)) hidden.add(basename(path))
+    }
+  } catch { /* attrib not available or dir empty — treat as nothing hidden */ }
+  return hidden
+}
 
 // ─── Incremental scan session state ─────────────────────────────────────────
 // Populated at the start of each scanLibrary call, cleared at the end.
@@ -88,7 +110,13 @@ function stableSeasonHash(name: string): number {
 
 function titleFromFilename(filename: string): string {
   // "The Dark Knight (2008) [1080p].mkv" → "The Dark Knight"
-  return basename(filename, extname(filename))
+  // Only strip the trailing extension if it's a known media ext — otherwise
+  // titles containing dots (e.g. "Mr. Deeds Goes to Town") get truncated by
+  // Node's extname(), which treats the first dot as an extension boundary.
+  const ext = extname(filename).toLowerCase()
+  const knownExts = new Set([...VIDEO_EXTS, '.jpg', '.jpeg', '.png', '.webp'])
+  const stripped = knownExts.has(ext) ? basename(filename, extname(filename)) : filename
+  return stripped
     .replace(/\s*\(\d{4}\).*$/, '')
     .replace(/\s*\[.*?\]/g, '')
     .replace(/\./g, ' ')
@@ -96,17 +124,21 @@ function titleFromFilename(filename: string): string {
     .trim()
 }
 
-// Abbreviation → readable label for anime extras
+// Abbreviation → readable label for anime extras.
+// The trailing `(?=…)` lookahead ensures the abbreviation isn't actually the
+// start of a longer word — e.g. `/^SP/i` would otherwise chew the "Sp" off
+// "Special", producing "Special ecial" (Toradora bug).
+const ABBR_TAIL = '(?=$|[\\s\\d\\-_(\\[.])'
 const EXTRAS_TYPE_MAP: [RegExp, string][] = [
-  [/^NCED/i, 'Non-Credit Ending'],
-  [/^NCOP/i, 'Non-Credit Opening'],
-  [/^PV/i,   'Promo Video'],
-  [/^CM/i,   'Commercial'],
-  [/^OP/i,   'Opening'],
-  [/^ED/i,   'Ending'],
-  [/^OAD/i,  'OAD'],
-  [/^OVA/i,  'OVA'],
-  [/^SP\b/i, 'Special'],
+  [new RegExp(`^NCED${ABBR_TAIL}`, 'i'), 'Non-Credit Ending'],
+  [new RegExp(`^NCOP${ABBR_TAIL}`, 'i'), 'Non-Credit Opening'],
+  [new RegExp(`^PV${ABBR_TAIL}`,   'i'), 'Promo Video'],
+  [new RegExp(`^CM${ABBR_TAIL}`,   'i'), 'Commercial'],
+  [new RegExp(`^OP${ABBR_TAIL}`,   'i'), 'Opening'],
+  [new RegExp(`^ED${ABBR_TAIL}`,   'i'), 'Ending'],
+  [new RegExp(`^OAD${ABBR_TAIL}`,  'i'), 'OAD'],
+  [new RegExp(`^OVA${ABBR_TAIL}`,  'i'), 'OVA'],
+  [new RegExp(`^SP${ABBR_TAIL}`,   'i'), 'Special'],
 ]
 
 function titleFromExtrasFilename(filename: string): string {
@@ -178,6 +210,15 @@ function parseEpisodeInfo(filename: string, season?: number): string | null {
   if (leadMatch) {
     const badge = leadMatch[1].toUpperCase()
     const title = leadMatch[2].trim()
+    if (!title || QUALITY_RE.test(title)) return badge
+    return `${badge} · ${title}`
+  }
+
+  // Filename starts with bare Exx (named-subfolder convention): "E05 - Title.mkv"
+  const leadEMatch = filename.match(/^(E\d+)[-\s]+(.+?)(?:\s*\[[^\]]*\])?\.[^.]+$/i)
+  if (leadEMatch) {
+    const badge = leadEMatch[1].toUpperCase()
+    const title = leadEMatch[2].trim()
     if (!title || QUALITY_RE.test(title)) return badge
     return `${badge} · ${title}`
   }
@@ -469,19 +510,36 @@ function scanEpisodes(
 function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | null, prefix?: string, seasonContext?: string): void {
   if (!existsSync(dir)) return
   const entries = readdirSync(dir, { withFileTypes: true })
+
+  // Pre-pass: detect duplicate titles so we can disambiguate them with an index.
+  // Without this, three "NCED.mkv" files all collapse to "Non-Credit Ending"
+  // (Mob Psycho 100 / Yuru Camp grouping bugs).
+  const titleCounts = new Map<string, number>()
+  const fileTitles = new Map<string, string>()
+  for (const entry of entries) {
+    if (!entry.isFile() || !VIDEO_EXTS.has(extname(entry.name).toLowerCase())) continue
+    const rawTitle = titleFromExtrasFilename(entry.name)
+    const withContext = (seasonContext && NEEDS_CONTEXT_RE.test(rawTitle))
+      ? `${seasonContext} ${rawTitle}`
+      : rawTitle
+    const title = prefix ? `${prefix} - ${withContext}` : withContext
+    fileTitles.set(entry.name, title)
+    titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1)
+  }
+  const dupSeen = new Map<string, number>()
+
   for (const entry of entries) {
     if (entry.isDirectory()) {
       scanExtrasFolder(join(dir, entry.name), seriesTitle, poster, entry.name, seasonContext)
       continue
     }
     if (!entry.isFile() || !VIDEO_EXTS.has(extname(entry.name).toLowerCase())) continue
-    const rawTitle = titleFromExtrasFilename(entry.name)
-    // Prepend season/sub-series context when the title is a bare type label (e.g. "Special 01")
-    // that would be ambiguous across seasons without it.
-    const withContext = (seasonContext && NEEDS_CONTEXT_RE.test(rawTitle))
-      ? `${seasonContext} ${rawTitle}`
-      : rawTitle
-    const title = prefix ? `${prefix} - ${withContext}` : withContext
+    let title = fileTitles.get(entry.name)!
+    if ((titleCounts.get(title) ?? 0) > 1) {
+      const n = (dupSeen.get(title) ?? 0) + 1
+      dupSeen.set(title, n)
+      title = `${title} ${String(n).padStart(2, '0')}`
+    }
     const extraPath = join(dir, entry.name)
     checkAndUpsert(extraPath, {
       title,
@@ -624,10 +682,15 @@ function scanManga(rootDir: string): number {
 // ─── PC Games ──────────────────────────────────────────────────────────────
 
 function scanPcGames(rootDir: string): number {
+  // PC games are Windows .exe binaries — not runnable on Mac/Linux without a
+  // compatibility layer. Skip the shelf entirely on non-Windows hosts.
+  if (process.platform !== 'win32') return 0
   if (!existsSync(rootDir)) return 0
   let count = 0
+  const hidden = listHiddenDirs(rootDir)
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
+    if (entry.name.startsWith('.') || hidden.has(entry.name)) continue
     const gameDir = join(rootDir, entry.name)
     const meta = tryReadJson(join(gameDir, 'game.json'))
     const execName = (meta.executable as string) ?? findExe(gameDir)

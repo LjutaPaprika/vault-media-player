@@ -432,7 +432,11 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
               {(() => {
                 let n = 0
                 return watchGuide.map((entry, i) =>
-                  entry.startsWith('---') ? (
+                  entry.startsWith('===') ? (
+                    <div key={i} className={styles.guideDividerMajor}>
+                      {entry.replace(/^=+\s*/, '').replace(/\s*=+$/, '')}
+                    </div>
+                  ) : entry.startsWith('---') ? (
                     <div key={i} className={styles.guideDivider}>
                       {entry.replace(/^-+\s*/, '').replace(/\s*-+$/, '')}
                     </div>

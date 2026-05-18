@@ -136,6 +136,19 @@
   padding-top: 6px;
 }
 
+.guideDividerMajor {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-primary, #fff);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent, #e8b44b) 22%, transparent), transparent);
+  border-left: 3px solid var(--accent, #e8b44b);
+  padding: 7px 10px;
+  margin-top: 10px;
+  border-radius: 2px;
+}
+
 /* ── Right panel — episode list ── */
 .rightPanel {
   flex: 1;

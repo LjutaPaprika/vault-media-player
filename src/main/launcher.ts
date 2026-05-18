@@ -166,11 +166,20 @@ function ensureMpvConfig(mpvExePath: string, hwdec: string): string {
 // ─── Spawn helpers ────────────────────────────────────────────────────────────
 
 function spawnDetached(exe: string, args: string[]): void {
-  const child = spawn(exe, args, {
+  const opts = {
+    cwd: dirname(exe),
     detached: true,
-    stdio: 'ignore'
-  })
-  child.unref()
+    stdio: 'ignore' as const
+  }
+  if (process.platform === 'win32') {
+    // Shell-wrap to dodge EACCES from CreateProcess on exFAT removable drives.
+    const quoted = [exe, ...args].map(a => `"${a}"`).join(' ')
+    const child = spawn(quoted, [], { ...opts, shell: true })
+    child.unref()
+  } else {
+    const child = spawn(exe, args, opts)
+    child.unref()
+  }
 }
 
 export function openWithSystem(filePath: string): void {
@@ -218,6 +227,9 @@ export function openAudio(filePath: string, driveRoot: string): void {
 
 export function launchGame(filePath: string, platform: string, driveRoot: string): void {
   if (platform === 'pc') {
+    if (process.platform !== 'win32') {
+      throw new Error('PC games are Windows-only and cannot be launched on this OS.')
+    }
     spawnDetached(filePath, [])
     return
   }
