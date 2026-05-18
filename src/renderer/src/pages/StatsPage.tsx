@@ -139,12 +139,10 @@ function StorageSection({ storage, driveInfo }: {
       <div className={styles.storageBars}>
         {sorted.map(([cat, bytes]) => {
           const pct = total > 0 ? (bytes / total) * 100 : 0
-          const extrasBytes = extrasBytesByParent?.[cat] ?? 0
           return (
             <div key={cat} className={styles.storageRow}>
               <span className={styles.storageLabel}>
                 {CATEGORY_ICON[cat] ?? '📁'} {CATEGORY_LABEL[cat] ?? cat}
-                {extrasBytes > 0 && <span className={styles.storageExtras}> +extras {formatBytes(extrasBytes)}</span>}
               </span>
               <div className={styles.barTrack}>
                 <div className={styles.barFill} style={{ width: `${pct}%` }} />
