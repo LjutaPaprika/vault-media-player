@@ -241,15 +241,49 @@ export function deleteOrphanedEntries(foundPaths: Set<string>): void {
 
 export function rerootPaths(oldRoot: string, newRoot: string): void {
   const db = getDb()
-  db.prepare(`
-    UPDATE media_items
-    SET
-      file_path   = ? || SUBSTR(file_path,   LENGTH(?) + 1),
-      poster_path = CASE WHEN poster_path IS NOT NULL
-                    THEN ? || SUBSTR(poster_path, LENGTH(?) + 1)
-                    ELSE NULL END
-    WHERE file_path LIKE ? || '%'
-  `).run(newRoot, oldRoot, newRoot, oldRoot, oldRoot)
+
+  // Normalize to forward slashes and strip any trailing separator so startsWith
+  // is reliable. SQL `||` concat couldn't handle Windows↔Mac slash differences.
+  const fwd = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '')
+  const normOld = fwd(oldRoot)
+  const normNew = fwd(newRoot)
+
+  function reroot(p: string | null): string | null {
+    if (!p) return null
+    const normP = fwd(p)
+    if (!normP.startsWith(normOld)) return p
+    let result = normNew + normP.slice(normOld.length)
+    if (process.platform === 'win32') result = result.replace(/\//g, '\\')
+    return result
+  }
+
+  const mediaRows = db
+    .prepare('SELECT rowid, file_path, poster_path FROM media_items')
+    .all() as { rowid: number; file_path: string; poster_path: string | null }[]
+  const updateMedia = db.prepare(
+    'UPDATE media_items SET file_path = ?, poster_path = ? WHERE rowid = ?'
+  )
+
+  // Favourites are keyed by absolute album path — must be rerooted too or they
+  // become orphans after a drive move.
+  const favRows = db
+    .prepare('SELECT album_path FROM favourites')
+    .all() as { album_path: string }[]
+  const updateFav = db.prepare('UPDATE favourites SET album_path = ? WHERE album_path = ?')
+
+  db.transaction(() => {
+    for (const row of mediaRows) {
+      const nf = reroot(row.file_path)
+      const np = reroot(row.poster_path)
+      if (nf !== row.file_path || np !== row.poster_path) {
+        updateMedia.run(nf, np, row.rowid)
+      }
+    }
+    for (const row of favRows) {
+      const na = reroot(row.album_path)
+      if (na && na !== row.album_path) updateFav.run(na, row.album_path)
+    }
+  })()
 }
 
 export function setLastOpened(filePath: string): void {
