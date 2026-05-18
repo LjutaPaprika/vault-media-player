@@ -61,9 +61,10 @@ const ALL: Room[] = [
 
   // ═══ Area 1: Sunken Path (6 rooms, tier 1) ═════════════════════════════
   R({ id: 'path_1', name: 'Sunken Path', area: 'sunken_path', pos: [0, 0], tier: 1,
-      desc: 'Stone slabs, half-swallowed by roots, march downward into a hollow of ancient forest. The light is green and slow.',
-      flavor: 'You stand at the threshold of a fallen kingdom. Behind you is the world. Ahead, only down.',
+      desc: 'Worn stone slabs descend through a hollow of black-barked trees, the path half-eaten by patient roots. The air is colder than the surface had any right to be, and the green light that filters down feels filtered through something other than leaves. Faint marks remain at the edges of the slabs — the masons\' guild signs, of houses whose names this country has stopped saying aloud.',
+      flavor: 'You stand at the threshold of a fallen kingdom. The Sundering took it in a single winter, they say, though the truth is messier; what came down here did so over generations, and what waits below has had time to settle in. Behind you is the world that forgot. Ahead, only down.',
       exits: { east: 'path_2', south: 'path_6' },
+      items: [{ id: 'silver_coin', hidden: true }],
       insp: [
         flavor('roots', 'Roots like fingers grip the slabs. Old, watching.'),
         gold('milestone', 'A weathered stone reads "Quartzlight, that way." Three silver coins lie in the offering bowl.', 15),
@@ -71,7 +72,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'path_2', name: 'Hollow of Roots', area: 'sunken_path', pos: [1, 0], tier: 1,
-      desc: 'The trees lean inward here. Small bones, neatly piled, suggest someone has been here recently.',
+      desc: 'The trees lean inward here as if conferring, their crowns laced into a single dim canopy. Roots have surfaced like the ribs of something half-buried, and between them, small bones are stacked in neat conical piles — squirrel, rat, the occasional finger. Whoever does the stacking is careful. Whoever does the stacking has been doing it for a long time.',
       exits: { west: 'path_1', east: 'path_3', south: 'path_5' },
       enemies: ['cave_rat'],
       insp: [
@@ -80,9 +81,10 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'path_3', name: 'Brokenshrine', area: 'sunken_path', pos: [2, 0], tier: 1,
-      desc: 'A small altar of split stone. Black-veined flowers rest upon it, whispering when the wind isn\'t.',
+      desc: 'A small altar of split stone, the dedication line scoured to a whisper of glyphs. Black-veined flowers rest upon it in a heap that does not decay, their petals turned toward you regardless of where you stand. When the wind drops, the flowers do not — a sound like breath through teeth keeps going. Whoever was prayed to here is still listening; the question is whether the listener and the prayed-for are the same thing.',
       exits: { west: 'path_2', south: 'path_4' },
       save: 'shrine',
+      items: [{ id: 'silver_coin', hidden: true }, { id: 'ration', hidden: true }],
       insp: [
         buff('altar', 'You kneel. Something old answers — not unkindly. Your wounds knit a little deeper. (+5 max HP, permanent.)', 'maxHp', 5),
         damage('flowers', 'You touch one. It bites back.', 3, 'flowers'),
@@ -90,25 +92,26 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'path_4', name: 'Ruined Gate', area: 'sunken_path', pos: [2, 1], tier: 1,
-      desc: 'The arch has fallen, but the threshold is unmistakable. Beyond, the ruins of a keep.',
+      desc: 'The arch has fallen inward, its keystone split clean down its center as if cleaved by a single intent. The threshold beneath, however, is unmistakable: a worn groove from centuries of feet, the carved sigil of the lions of Quartzlight still visible at the base. Beyond, the ruins of a keep rise in fragments through the mist — towers without roofs, walls without rooms, a silhouette that would once have been the second-largest city in the kingdom.',
       exits: { north: 'path_3', west: 'path_5', south: 'ruins_1' },
-      enemies: ['goblin'], items: ['torch'],
+      enemies: ['goblin'], items: ['torch', { id: 'ration', hidden: true }],
       insp: [
         lore('arch', 'Carved with lions and crowns. The lions weep.', 'fall_of_quartz'),
         flavor('rubble', 'The gate fell from the inside. Whatever broke it was already within.')
       ] }),
 
   R({ id: 'path_5', name: 'Moss Hollow', area: 'sunken_path', pos: [1, 1], tier: 1,
-      desc: 'A bowl of moss and silence. A cracked statue, headless, presides.',
+      desc: 'A natural bowl in the earth, lined floor to lip with moss so deep your boots vanish to the ankle. A statue stands at the center, weathered to anonymity — the head taken, the hands taken, the sword-stub at the hip the only clue it was ever a warrior. Around its feet, the moss has grown unnaturally vivid in a perfect circle, as if something keeps feeding it; you do not want to know what.',
       exits: { north: 'path_2', east: 'path_4', west: 'path_6' },
       enemies: ['spider'],
+      items: [{ id: 'silver_coin', hidden: true }],
       insp: [
         gold('statue', 'Someone has hidden three silver coins in the broken collar of the statue.', 15),
         flavor('moss', 'The moss is unnaturally vivid. Something fed it well.')
       ] }),
 
   R({ id: 'path_6', name: 'Old Camp', area: 'sunken_path', pos: [0, 1], tier: 1,
-      desc: 'A dead campfire and bedrolls long abandoned. Whoever camped here did not pack to leave.',
+      desc: 'A dead campfire ringed in stones, three bedrolls laid out as if for a watch rotation that never ended. The packs are still here, untouched by the years; the owners did not return for them, and nothing else has dared. Above the fire, on a notched stick, a tin kettle hangs empty. The water inside it has dried to a thin crust of minerals, and beneath the crust, in fine careful script, someone wrote a word that you cannot quite read.',
       exits: { north: 'path_1', east: 'path_5' },
       items: ['ration', 'silver_coin'],
       insp: [
@@ -118,7 +121,7 @@ const ALL: Room[] = [
 
   // ═══ Area 2: Surface Ruins (11 rooms, tier 1-2, Vex boss + cursed knight miniboss) ═══
   R({ id: 'ruins_1', name: 'Outer Bailey', area: 'surface_ruins', pos: [0, 0], tier: 1,
-      desc: 'A shattered courtyard, walls fallen inward. A small fire is banked nearby — recent.',
+      desc: 'The bailey lies open to the grey sky, its curtain walls fallen inward as though the keep had drawn breath and held it too long. Banners of bleached cloth, faded past identification, snag on crooked pikes. Near a half-collapsed lean-to, a fire has been banked under embers — recent, careful, watched. Bandits, then, and they know the value of not announcing themselves.',
       exits: { north: 'path_4', east: 'ruins_2', south: 'ruins_5' },
       enemies: ['bandit'],
       insp: [
@@ -127,7 +130,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'ruins_2', name: 'Collapsed Hall', area: 'surface_ruins', pos: [1, 0], tier: 1,
-      desc: 'A roofless hall. Two bandits dead at the entrance, very recently. Whoever is doing this is good.',
+      desc: 'What was once the great hall now lies open to wind and crow, its roof beams rotted to splinters years ago and its floor mosaics worn to suggestion. Two bandits sprawl at the threshold, throats opened by a hand that took its time and made its work efficient. The killer left coin in the pouches and weapons in the sheaths — only the warning has been taken. Whoever does this works for someone who wants the bandits afraid, not poorer.',
       exits: { west: 'ruins_1', east: 'ruins_3', south: 'ruins_6' },
       items: ['silver_coin', 'silver_coin', 'ration'],
       insp: [
@@ -136,15 +139,15 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'ruins_3', name: 'Watchtower Stairs', area: 'surface_ruins', pos: [2, 0], tier: 1,
-      desc: 'Crumbling stairs to a half-broken tower. A young woman in dark leather sits at the top, cleaning her dagger.',
+      desc: 'A spiral of stair clings to the inside of a half-broken watchtower, each step lipped with moss and the patient damage of weather. At the top, where the roof should be, a young woman in dark leather sits cross-legged in the empty doorframe with the patience of a person who has waited longer than this. She cleans her dagger with a folded cloth, glances at you once, and does not bother to stand. Whatever she\'s seen of you, she has already decided about.',
       exits: { west: 'ruins_2', east: 'ruins_4', south: 'ruins_7' },
       npcs: ['ada_recruit'],
       insp: [
         flavor('view', 'From here you see the gate-tower. Their captain — Vex — is in there.')
       ] }),
 
-  R({ id: 'ruins_4', name: 'Tower Top', area: 'surface_ruins', pos: [3, 0], tier: 1,
-      desc: 'The tower opens to ragged sky. A bandit lookout, dead, hangs from the parapet.',
+  R({ id: 'ruins_4', name: 'Tower Top', area: 'surface_ruins', pos: [3, -1], tier: 1,
+      desc: 'The tower opens to ragged sky and to all directions at once: the sunken forest behind you, the long bowl of the keep below, the silver thread of road that no caravan has used in three lifetimes. A bandit lookout slumps over the parapet, throat opened, his half-written warning letter still pinned beneath an arrowhead. The arrows lodged in the masonry are old, and new ones are lodged among them. The siege never quite ended; it only changed sides.',
       exits: { west: 'ruins_3', south: 'ruins_8' },
       items: ['gold_coin'],
       enemies: ['bandit_a'],
@@ -154,16 +157,16 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'ruins_5', name: 'Roofless Chapel', area: 'surface_ruins', pos: [0, 1], tier: 1,
-      desc: 'A chapel without a roof. The icons have been defaced and re-blessed and defaced again.',
+      desc: 'A chapel that has lost its roof and most of its certainties. Three different orders\' marks have been carved over each other on the altar — the lion-and-key of old Quartzlight, the sun-and-spear of the Vesper rite, and beneath both a circle that no living priest would recognize. Each was defaced by the next, and then the defacer was defaced in turn. Someone has been here recently with a chisel, trying to put one of them back.',
       exits: { north: 'ruins_1', east: 'ruins_6' },
-      items: ['potion'],
+      items: ['potion', { id: 'silver_coin', hidden: true }],
       insp: [
         buff('icon', 'You re-bless what you can. The room hums faintly. (+1 mdef permanent.)', 'mdef', 1),
         flavor('altar', 'Three different gods\' marks here. None remembered.')
       ] }),
 
   R({ id: 'ruins_6', name: 'Bandit Stores', area: 'surface_ruins', pos: [1, 1], tier: 1,
-      desc: 'Stolen sacks and stacked crates. The bandits did not survive long enough to enjoy this.',
+      desc: 'A stone-walled storeroom turned cache, stuffed with sacks of grain and tallow, ironbound crates of mixed coin, and a few oddments still bearing the noble crests they were lifted from. The bandits had built themselves a thieves\' winter and then run out of winters. Tracks in the dust suggest they were ambushed mid-inventory; the ledger lies open, the last entry an unfinished line.',
       exits: { north: 'ruins_2', west: 'ruins_5', east: 'ruins_7', south: 'ruins_9' },
       items: ['ration', 'gold_coin'],
       enemies: ['goblin'],
@@ -173,10 +176,10 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'ruins_7', name: 'Bandit Barracks', area: 'surface_ruins', pos: [2, 1], tier: 1,
-      desc: 'Cots and braziers. Three bandits dead in their armor. Ada\'s work, probably.',
+      desc: 'Cots lined under low arches, smouldering braziers, the smell of woodsmoke and unwashed leather. Three bandits lie dead in their armor — wounds clean, throats first, the kind of work a scout learns when a town stops being a town. Their dice are still on the table mid-game; one of them was winning. The kettle on the brazier has boiled dry, and the silence of the room is the silence after a held breath.',
       exits: { north: 'ruins_3', west: 'ruins_6', east: 'ruins_8', south: 'ruins_10' },
       enemies: ['bandit'],
-      items: ['shortsword'],
+      items: ['shortsword', { id: 'ration', hidden: true }],
       insp: [
         flavor('cots', 'Slept in last night. Will not be slept in tonight.'),
         reveal('locker', 'A footlocker. Inside: a healing potion and a sealed envelope.', 'potion')
@@ -192,8 +195,8 @@ const ALL: Room[] = [
         flavor('banner', 'A bandit banner. Crude. They were proud, and brief.')
       ] }),
 
-  R({ id: 'ruins_9', name: 'Cellar of the Cursed Knight', area: 'surface_ruins', pos: [1, 2], tier: 2,
-      desc: 'A cold cellar. The bandits did not come down here. A figure in rusted plate stands motionless in the center.',
+  R({ id: 'ruins_9', name: 'Cellar of the Cursed Knight', area: 'surface_ruins', pos: [0, 2], tier: 2,
+      desc: 'A cold cellar that smells of old iron and older grief. The bandits, sensibly, did not come down here. A figure in rusted plate stands motionless in the center, helmet bowed as if in prayer to a floor that has long since forgotten what shape a knight kneels in. The plate has fused to him — rust runs into the skin beneath the gorget and the skin gives no objection — and the inscription on the far wall names him as Sir Edrus, who would not surrender, and was not surrendered to.',
       exits: { north: 'ruins_6' },
       enemies: ['mb_cursed_knight'],
       insp: [
@@ -211,8 +214,8 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'ruins_boss', name: 'Gate-Tower', area: 'surface_ruins', pos: [3, 2], tier: 1,
-      desc: 'A tall man in leathers and chain stands before the inner door, bandit archers behind him. "Lost?" he says.',
-      clearedDesc: 'The gate-tower stands silent. Vex and his bandits lie where they fell. The inner door is no longer barred.',
+      desc: 'The gate-tower rises above the inner ward, its murder-holes still functional, its iron-banded door scarred by a hundred small assaults and one large one. A tall man in mottled leathers and dark chain stands before the door with the absolute stillness of a person who has done this many times. Three bandit archers wait behind him at the parapets, bows half-drawn. He looks you up and down and finds you unsurprising. "Lost?" he says, and the question is not a question.',
+      clearedDesc: 'The gate-tower stands silent. Vex lies where he fell, beside his bandits and his unfinished words; the contract that paid him for this is still folded in his coat. The inner door is no longer barred. Beyond it, the path to Quartzlight is, for the first time in two years, open.',
       exits: { north: 'ruins_8', west: 'ruins_10', south: 'ql_gate' },
       enemies: ['boss_vex'],
       insp: [
@@ -221,7 +224,7 @@ const ALL: Room[] = [
 
   // ═══ Area 3: Quartzlight Outpost (4 rooms, hub) ═════════════════════════
   R({ id: 'ql_gate', name: 'Quartzlight Gate', area: 'quartzlight', pos: [0, 0], tier: 1,
-      desc: 'A free outpost cut into the cliffside. Lamps burn steady without oil. You hear talk and steel.',
+      desc: 'A free outpost cut directly into the cliffside, its arches hewn from the same pale stone that gives the place its name. Quartz lanterns burn at every threshold without lamp-oil or tending, a courtesy of the cliff itself — locals will tell you the rock here remembers fire, and the fire returns the favor. You hear voices, and the steady ring of a hammer on iron, and somewhere a child laughing as if children have not yet been told what country they live in.',
       exits: { north: 'ruins_boss', east: 'ql_market', south: 'ql_inn' },
       save: 'outpost',
       insp: [
@@ -230,7 +233,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'ql_market', name: 'Quartzlight Market', area: 'quartzlight', pos: [1, 0], tier: 1,
-      desc: 'A small market. Pell at one stall, Sage Oma at another, the Wandering Bard at a corner table.',
+      desc: 'A market of three stalls and a corner table — modest enough to fit beneath a single carved overhang, generous enough to feel like a city in a country where cities have stopped happening. Pell the merchant stands at one stall, weighing things; Sage Oma at another, weighing words; the Wandering Bard sits at a corner table with a battered lyre and a half-cup of something brown, watching new arrivals the way an old soldier watches new arrivals. Above all three, a tapestry of the lions of Quartzlight, mended a hundred times, still weeps stitched tears.',
       exits: { west: 'ql_gate', east: 'lib_1', south: 'ql_smithyard' },
       save: 'outpost',
       npcs: ['merchant_pell', 'sage_oma', 'bard'],
@@ -240,7 +243,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'ql_inn', name: 'The Mended Hearth', area: 'quartzlight', pos: [0, 1], tier: 1,
-      desc: 'A common room with three tables, two empty. Lin the innkeeper smiles like he hasn\'t slept in a year.',
+      desc: 'A common room with three tables, two empty, and a fireplace that has been repaired with stones taken from the keep — patches of pale quartz set among older grey. Lin the innkeeper polishes a cup that did not need polishing and smiles in the way of a man who has not slept properly in a year and has decided to be cheerful about it anyway. The sign above the door, "The Mended Hearth," is itself a mended sign; you can still see the original name "The Lion-and-Crown" beneath the new paint, ghosting up through.',
       exits: { north: 'ql_gate' },
       save: 'outpost',
       npcs: ['inn_keeper'],
@@ -249,7 +252,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'ql_smithyard', name: 'Smithyard', area: 'quartzlight', pos: [1, 1], tier: 1,
-      desc: 'Marn the smith works under an awning of patched canvas. The Cartographer keeps a stall nearby, full of half-drawn maps.',
+      desc: 'Marn the smith works beneath an awning of patched canvas, his forge a small bellows-and-hearth affair set into a niche of the cliff. He hammers in the long, level rhythm of someone who is not in a hurry and never has been; this is not the impatient ring of a war smithy. Across from him, the Cartographer keeps a stall heaped with half-drawn maps — the spaces left blank are deliberate, he\'ll tell you, because they have to be earned by feet, and the feet have to come back.',
       exits: { north: 'ql_market' },
       save: 'outpost',
       npcs: ['ql_smith', 'cartographer'],
@@ -260,16 +263,17 @@ const ALL: Room[] = [
 
   // ═══ Area 4: Library Wing (14 rooms, tier 2, Custodian boss + cursed knight side) ═══
   R({ id: 'lib_1', name: 'Library Threshold', area: 'library_wing', pos: [0, 0], tier: 2,
-      desc: 'Doors of black wood, carved with sigils, stand open. They were forced open.',
+      desc: 'Doors of black wood stand open before you, taller than two men and carved with binding sigils so dense the wood is almost mathematics. They were not opened — they were forced, and they were forced from the inside. The wards still smell faintly of ash and ink. Whatever was kept here was kept until it stopped being kept; what reads in a library now reads alone.',
       exits: { west: 'ql_market', east: 'lib_2', south: 'lib_10' },
       enemies: ['skeleton'],
+      items: [{ id: 'mana_potion', hidden: true }],
       insp: [
         flavor('sigils', 'Wards. Broken. Whatever came through tore them apart from the inside.'),
         lore('mosaic', 'A mosaic of a sundered sky. You feel something shift.', 'the_sundering')
       ] }),
 
   R({ id: 'lib_2', name: 'Reading Hall', area: 'library_wing', pos: [1, 0], tier: 2,
-      desc: 'Reading desks, all overturned. A woman in spell-stained robes is shelving books that should have burned.',
+      desc: 'Reading desks lie overturned, as though every scholar in the hall stood up at once and the chairs went with them. In the wreckage, a woman in spell-stained robes works methodically — Mira, the last of the librarians, reshelving books that should have burned, that did burn, and that have somehow survived their burning. She does not look up when you enter; she does not have the time. The bindings she sets on the shelves still smoke faintly, but the smoke is the cold kind, the kind that comes out of a thing that has remembered what it was.',
       exits: { west: 'lib_1', east: 'lib_5', south: 'lib_3' },
       items: ['scroll_lore'],
       npcs: ['mira_recruit'],
@@ -290,7 +294,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'lib_4', name: 'Cloister', area: 'library_wing', pos: [2, 1], tier: 2,
-      desc: 'A small cloister. Brother Tomas kneels at a defaced icon. He does not look up at first.',
+      desc: 'A small cloister with a stone bench worn shiny by generations of robed knees, and an icon defaced by hands that did not know what they were undoing. Brother Tomas kneels there, head bowed, hammer and chisel laid carefully beside him; he is not destroying the icon further, he is patiently restoring it, line by line. He does not look up at first. When he does, his eyes are tired in the specific way of a man who keeps the hours of dawn, of midday, of vesper, and has done so even after the order he kept them for ceased to exist.',
       exits: { north: 'lib_5', west: 'lib_3', east: 'lib_8', south: 'lib_7' },
       npcs: ['tomas_recruit'],
       insp: [
@@ -307,7 +311,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'lib_boss', name: 'Custodian\'s Cell', area: 'library_wing', pos: [3, 0], tier: 2,
-      desc: 'A figure of ink and chain. It does not have a face. It is reading.',
+      desc: 'A long, low cell of black stone, the walls bristling with iron rings to which great chains are still bolted. The chains run inward and converge on a figure of moving ink and shifting plate — the Custodian, the library\'s old archivist made over into its old archivist\'s prison. It does not have a face, but it has a posture, and the posture is reading. Pages it has finished lie stacked behind it; the pages are blank now, the words consumed. It does not stop reading when you arrive. It merely turns one more page.',
       exits: { west: 'lib_5', east: 'lib_12', south: 'lib_8' },
       enemies: ['boss_custodian'], items: ['oak_staff'],
       insp: [
@@ -324,7 +328,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'lib_7', name: 'Librarian\'s Quarters', area: 'library_wing', pos: [2, 2], tier: 2,
-      desc: 'A small bedroom for someone who lived among books. The bed is made. The cup is full.',
+      desc: 'A narrow chamber that belonged to someone who lived among books rather than visiting them — Catharine, the last head librarian, judging by the engravings on the small desk. The bed is made. The cup on the bedside table is full and the water in it has not evaporated, which is the kind of detail you notice once and try not to think about. On the desk, a journal is left open to its final entry: I will go down with the others.',
       exits: { north: 'lib_4', west: 'lib_6', east: 'lib_9' },
       items: ['journal'],
       insp: [
@@ -354,6 +358,7 @@ const ALL: Room[] = [
       desc: 'A long hall of card catalogs. The cards have rearranged themselves into a single name.',
       exits: { north: 'lib_1', east: 'lib_3', south: 'lib_11' },
       enemies: ['wight'],
+      items: [{ id: 'gold_coin', hidden: true }, { id: 'silver_coin', hidden: true }],
       insp: [
         lore('cards', 'The name spelled out is your own.', 'the_called'),
         flavor('drawers', 'Drawers slowly open and close on their own.')
@@ -368,7 +373,7 @@ const ALL: Room[] = [
         flavor('shelves', 'Some of these books have hands inside them.')
       ] }),
 
-  R({ id: 'lib_12', name: 'East Annex', area: 'library_wing', pos: [4, 0], tier: 2,
+  R({ id: 'lib_12', name: 'East Annex', area: 'library_wing', pos: [4, -1], tier: 2,
       desc: 'A small annex used for storage. Boxes labeled in red ink.',
       exits: { west: 'lib_boss', south: 'lib_13' },
       items: ['potion', 'mana_potion'],
@@ -385,16 +390,17 @@ const ALL: Room[] = [
 
   // ═══ Area 5: The Crypts (14 rooms, tier 2-3, Mother of Bones boss + Crypt Warden miniboss) ═══
   R({ id: 'crypt_1', name: 'Crypt Threshold', area: 'crypts', pos: [0, 0], tier: 2,
-      desc: 'A vault of stone sarcophagi. The lids of two have been broken open from within.',
+      desc: 'A vaulted antechamber lined with stone sarcophagi, each carved with the family crest of a noble house that has not produced a living member in decades. Two of the lids have been broken open — pushed up from within, not pried from without, the difference written in the angle of the cracked stone. The dust on the floor remembers footprints leading out, and only out. Whatever was inside these is somewhere ahead of you now, and has been for a long time.',
       exits: { north: 'lib_13', east: 'crypt_2' },
       enemies: ['skeleton'],
+      items: [{ id: 'ration', hidden: true }, { id: 'silver_coin', hidden: true }],
       insp: [
         flavor('lids', 'They were pushed up, not pulled. From inside.'),
         gold('sarcophagus', 'A sarcophagus, cracked: a few coins, an old ring.', 30)
       ] }),
 
   R({ id: 'crypt_2', name: 'Bone Hall', area: 'crypts', pos: [1, 0], tier: 2,
-      desc: 'A long hall walled in bone. Femurs forming arches. Skulls in lattices.',
+      desc: 'A long hall whose walls have been finished, floor to ceiling, in human bone — femurs ribbed into arches, skulls fitted into lattices like masonry that has been told it is masonry. The work is precise enough to feel devotional, and the latticework is still being added to: at the far end, a small alcove has been freshly bricked with vertebrae set carefully into mortar that has not finished setting. The dead, here, are being maintained.',
       exits: { west: 'crypt_1', east: 'crypt_3', south: 'crypt_5' },
       enemies: ['skeleton', 'skel_archer'],
       insp: [
@@ -416,6 +422,7 @@ const ALL: Room[] = [
       desc: 'A small shrine, lamp lit from no oil. Someone keeps this room.',
       exits: { west: 'crypt_3', south: 'crypt_7' },
       save: 'shrine',
+      items: [{ id: 'potion_g', hidden: true }],
       insp: [
         buff('shrine', 'You kneel. The cold is gentler here. (+5 max HP permanent.)', 'maxHp', 5),
         flavor('lamp', 'The lamp burns when nothing burns it. Like Quartzlight\'s.')
@@ -501,7 +508,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'crypt_boss', name: 'Mother\'s Hall', area: 'crypts', pos: [3, 4], tier: 3,
-      desc: 'A vast chamber. A woman of bone sits at its center, weeping bones. She does not stop weeping when you arrive.',
+      desc: 'A vast circular chamber, the ceiling lost to dark, the floor mosaic worn unreadable except for the suggestion of six small figures around a central seventh. At its center sits a woman composed entirely of bone — vertebrae for spine, small teeth for tears — weeping, and the tears that fall are not water but more bone, accreting in heaps around her hem. She does not stop weeping when you arrive. She has not stopped since the Sundering, when she lost her daughters to it, and she has been collecting whatever pieces of them the dark gives back.',
       exits: { north: 'crypt_13', south: 'cata_1' },
       enemies: ['boss_mother'],
       insp: [
@@ -521,12 +528,13 @@ const ALL: Room[] = [
       desc: 'A passage narrow enough that you could touch both walls if you wanted to. You don\'t want to.',
       exits: { west: 'cata_1', east: 'cata_3', south: 'cata_5' },
       enemies: ['shadow'],
+      items: [{ id: 'gold_coin', hidden: true }],
       insp: [
         damage('wall', 'You touch the wall by accident. It responds. (-2 HP)', 2, 'wall')
       ] }),
 
-  R({ id: 'cata_3', name: 'Catacomb Shrine', area: 'catacombs', pos: [2, 0], tier: 3,
-      desc: 'A shrine to the unnamed dead. The lamp burns blue here.',
+  R({ id: 'cata_3', name: 'Catacomb Shrine', area: 'catacombs', pos: [3, 0], tier: 3,
+      desc: 'A shrine no larger than a closet, dedicated to the dead who never had names — paupers, foundlings, soldiers who fell where no one knew them. A single lamp burns above the altar, and its flame is blue and gives no heat; cup your hand near it and the cold deepens. A small bowl is set out for offerings, and recent ones lie in it: a copper coin, a button, a tooth.',
       exits: { west: 'cata_2', south: 'cata_6' },
       save: 'shrine',
       insp: [
@@ -546,7 +554,7 @@ const ALL: Room[] = [
       desc: 'Niches in the walls hold the slumped, still-shrouded dead.',
       exits: { north: 'cata_2', west: 'cata_4', east: 'cata_6', south: 'cata_8' },
       enemies: ['undead_priest'],
-      items: ['gold_coin'],
+      items: ['gold_coin', { id: 'gem', hidden: true }],
       insp: [
         flavor('shroud', 'A shroud shifts as you pass. You don\'t look back.'),
         gold('niche', 'Coins set in a niche, an old offering.', 30)
@@ -561,8 +569,8 @@ const ALL: Room[] = [
         damage('movement', 'Something inside the pile shifts. (-3 HP)', 3, 'bones')
       ] }),
 
-  R({ id: 'cata_7', name: 'Forgotten Cell', area: 'catacombs', pos: [0, 2], tier: 3,
-      desc: 'A monk\'s cell, sealed for centuries. The body is still here.',
+  R({ id: 'cata_7', name: 'Forgotten Cell', area: 'catacombs', pos: [-1, 2], tier: 3,
+      desc: 'A monk\'s cell, the door sealed from the outside with a brick-and-mortar job done in haste centuries ago. The body is still here, slumped against the inner wall, robes intact, posture peaceful — he chose to be sealed in, and chose not to make trouble of it. On the writing slab beside him, in a careful hand, is his last note: I would not flee. I do not regret. I do not forgive. The "not" in the third sentence has been pressed deeper than the others.',
       exits: { north: 'cata_4', east: 'cata_8' },
       items: ['scroll_lore'],
       insp: [
@@ -583,6 +591,7 @@ const ALL: Room[] = [
       desc: 'A crossing where four passages meet. Bones piled neatly at the center of each entry.',
       exits: { north: 'cata_6', west: 'cata_8', south: 'cata_11' },
       enemies: ['ossuary_g'],
+      items: [{ id: 'potion_g', hidden: true }],
       insp: [
         flavor('piles', 'The piles are equal in size. Someone counts.'),
         gold('pile', 'A bone pile, hidden coins.', 40)
@@ -605,7 +614,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'cata_boss', name: 'Wyrm\'s Den', area: 'catacombs', pos: [2, 4], tier: 3,
-      desc: 'A vast cavern. Bones of the dead, and bones of the things that came to eat them, ring the walls. A long shape stirs.',
+      desc: 'A cavern so vast its ceiling is not a ceiling but a darker shade of dark. The walls are ringed in bones of two kinds: the dead the catacombs were built for, and the bones of things that came to eat them, equally picked, equally arranged. A long shape stirs in the bone-litter at the far end of the chamber, longer than the chamber should permit, and you understand all at once that the Gravewyrm did not move in here after Quartzlight fell. The Gravewyrm was here first. The keep was built around it as a courtesy.',
       exits: { north: 'cata_11', south: 'cave_1' },
       enemies: ['boss_gravewyrm'],
       insp: [
@@ -614,7 +623,7 @@ const ALL: Room[] = [
 
   // ═══ Area 7: Deepcaves (15 rooms, tier 3-4, Echo boss + Cave Tyrant miniboss + Kael recruit) ═══
   R({ id: 'cave_1', name: 'Cave Mouth', area: 'deepcaves', pos: [0, 0], tier: 3,
-      desc: 'The catacombs open into natural cavern. Glowing spores drift like slow snow.',
+      desc: 'The worked stone of the catacombs gives way, without ceremony, to natural cavern — limestone teeth above, a soft luminous floor of pale moss below. Glowing spores drift through the air like slow, deliberate snow, settling on shoulders, hair, the corners of mouths. They are warm. They follow. They are also, very faintly, watching.',
       exits: { north: 'cata_boss', east: 'cave_2', south: 'cave_5' },
       insp: [
         flavor('spores', 'The spores are warm. They follow you.'),
@@ -625,6 +634,7 @@ const ALL: Room[] = [
       desc: 'A pool of warm, still water lit from below. Drinking it is dangerous. Resting nearby is restorative.',
       exits: { west: 'cave_1', east: 'cave_3', south: 'cave_6' },
       save: 'shrine',
+      items: [{ id: 'ether', hidden: true }],
       insp: [
         buff('water', 'You taste the water. (+5 max HP permanent.)', 'maxHp', 5),
         damage('drink', 'You drink deeply. The water remembers something. (-3 HP, but a clear head.)', 3, 'spring'),
@@ -641,8 +651,8 @@ const ALL: Room[] = [
         damage('flower', 'A black flower opens at your touch. Poison. (-4 HP)', 4, 'spore')
       ] }),
 
-  R({ id: 'cave_4', name: 'Hunter\'s Camp', area: 'deepcaves', pos: [3, 0], tier: 3,
-      desc: 'A small camp at a juncture of caves. Kael the Hunter sits with his bow across his knees.',
+  R({ id: 'cave_4', name: 'Hunter\'s Camp', area: 'deepcaves', pos: [3, -1], tier: 3,
+      desc: 'A camp set in a natural alcove where three cave passages meet — strategic, defensible, easily abandoned. Kael the Hunter sits at its center with his bow across his knees and the patience of a man who has buried half his clan and is not done yet. A small smokeless fire (he knows the trick) heats a kettle of stew. Notches mark the wall behind him in groups of seven, each set scored over by a single diagonal line.',
       exits: { west: 'cave_3', south: 'cave_8' },
       npcs: ['kael_recruit'],
       insp: [
@@ -654,6 +664,7 @@ const ALL: Room[] = [
       desc: 'A descending cavern, the air growing colder.',
       exits: { north: 'cave_1', east: 'cave_6', south: 'cave_9' },
       enemies: ['cave_bear'],
+      items: [{ id: 'mana_potion', hidden: true }],
       insp: [
         flavor('cold', 'The cold is from below, not above.')
       ] }),
@@ -662,6 +673,7 @@ const ALL: Room[] = [
       desc: 'A long hall under a ceiling of bioluminescent fungi. Beautiful, in its way.',
       exits: { north: 'cave_2', west: 'cave_5', east: 'cave_7', south: 'cave_10' },
       enemies: ['centipede'],
+      items: [{ id: 'antidote', hidden: true }],
       insp: [
         gold('cap', 'You knock down a cap. Coins were nesting in it.', 35),
         flavor('light', 'The light is gentle. You feel the urge to lie down. You don\'t.')
@@ -684,7 +696,7 @@ const ALL: Room[] = [
         gold('cache', 'A trail cache: coins, an antidote.', 40)
       ] }),
 
-  R({ id: 'cave_9', name: 'Tyrant\'s Lair', area: 'deepcaves', pos: [0, 2], tier: 4,
+  R({ id: 'cave_9', name: 'Tyrant\'s Lair', area: 'deepcaves', pos: [-1, 2], tier: 4,
       desc: 'A side cavern strewn with bones too large to be human. Something heavy moves at the back.',
       exits: { north: 'cave_5', east: 'cave_10' },
       enemies: ['mb_cave_tyrant'],
@@ -704,7 +716,7 @@ const ALL: Room[] = [
   R({ id: 'cave_11', name: 'Crystal Hall', area: 'deepcaves', pos: [2, 2], tier: 4,
       desc: 'A hall whose walls are studded with quartz. Light multiplies endlessly.',
       exits: { north: 'cave_7', west: 'cave_10', east: 'cave_12', south: 'cave_14' },
-      items: ['gem'],
+      items: ['gem', { id: 'diamond', hidden: true }],
       insp: [
         gold('crystal', 'You break a crystal free.', 50),
         damage('reflection', 'Your reflection in a crystal moves before you do. (-3 HP)', 3, 'reflection')
@@ -735,7 +747,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'cave_boss', name: 'Echo\'s Pool', area: 'deepcaves', pos: [2, 4], tier: 4,
-      desc: 'A black pool. From it rises a shape that is almost you. Almost.',
+      desc: 'A black pool fills the floor of a high natural chapel, its surface so still it appears solid until your boots\' echoes ring it into ripples. From the pool rises a shape that is almost yours — the same height, the same posture, the same small habitual tilt of the head — but its features are a blur where features should be, an absence in the shape of intention. The Echo of the Deep has been remembering every visitor who entered this cavern for two thousand years, and the weight of that remembering shows in the way it moves.',
       exits: { north: 'cave_14', south: 'forge_1' },
       enemies: ['boss_echo'],
       insp: [
@@ -744,7 +756,7 @@ const ALL: Room[] = [
 
   // ═══ Area 8: Forge Hold (8 rooms, tier 4, Forsaken Smith boss + Iron Twins miniboss + Garrick) ═══
   R({ id: 'forge_1', name: 'Forge Gate', area: 'forge_hold', pos: [0, 0], tier: 4,
-      desc: 'A great iron gate, half-open. Beyond, the smell of cold smoke and old iron.',
+      desc: 'A great iron gate, dwarf-built and dwarf-proud, stands half-open before you. It is the kind of door that was designed to never need to open at all — its bolts could have held against an army, and once did, for six gates of the original seven. Beyond, the smell that hits you is the smell of cold smoke and old iron, the smell of a workshop where the last hammer fell mid-blow and the heat has been waiting ever since for someone to come back.',
       exits: { north: 'cave_boss', east: 'forge_2', south: 'forge_3' },
       save: 'outpost',
       insp: [
@@ -753,20 +765,21 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'forge_2', name: 'Hall of Anvils', area: 'forge_hold', pos: [1, 0], tier: 4,
-      desc: 'A hall where every dwarf in the hold once worked. Anvils still warm to the touch.',
+      desc: 'A long hall where, on a working day, every smith of Forge Hold once stood at his own anvil and the air rang with seven hundred hammers in seven hundred slightly different times. The anvils are still here, arranged in their disciplined rows; they are warm to the touch and have been warm for seven hundred years, refusing the cold the way good iron refuses anything. Bellows hang motionless above each one. The hold did not go quiet because it stopped caring. It went quiet because the only smiths left are the ones who cannot tell living from forging.',
       exits: { west: 'forge_1', east: 'forge_4', south: 'forge_5' },
       enemies: ['forge_remnant'],
-      items: ['gold_coin'],
+      items: ['gold_coin', { id: 'ether', hidden: true }],
       insp: [
         flavor('anvils', 'The anvils are warm. They have not been cold in seven hundred years.'),
         gold('toolbox', 'A toolbox kicked under a workbench: small change.', 35)
       ] }),
 
   R({ id: 'forge_3', name: 'Garrick\'s Chamber', area: 'forge_hold', pos: [0, 1], tier: 4,
-      desc: 'A small room. A man in heavy plate sits at a half-set table, eating slowly.',
+      desc: 'A small room with a low ceiling and a single oil lamp, half-converted into a barracks of one. A man in heavy iron-clad plate — Garrick the Reaver, last of the gate-wardens — sits at a table set for two and eats slowly, methodically, the way a man eats who knows he will eat alone tomorrow as well. He does not stop chewing when you enter. The second place at the table has not been cleared in years; the cup is dust, the plate is dust, the chair is exactly the angle it was pushed back to.',
       exits: { north: 'forge_1', east: 'forge_5' },
       npcs: ['garrick_recruit', 'forge_innkeeper'],
       save: 'outpost',
+      items: [{ id: 'gold_coin', hidden: true }],
       insp: [
         flavor('garrick', 'Garrick eats. He does not stop eating when you arrive.'),
         flavor('table', 'The table is set for two. The other place has been empty for a long time.')
@@ -786,6 +799,7 @@ const ALL: Room[] = [
       desc: 'A side forge converted to study. The Deep Sage, who would not climb to Quartzlight, sits here.',
       exits: { north: 'forge_2', west: 'forge_3', east: 'forge_6', south: 'forge_7' },
       npcs: ['deep_sage', 'brokk_smith'],
+      items: [{ id: 'mana_potion', hidden: true }],
       insp: [
         flavor('books', 'Books and broken hammers. Brokk is patient. The Deep Sage less so.')
       ] }),
@@ -808,7 +822,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'forge_boss', name: 'The Anvil', area: 'forge_hold', pos: [1, 3], tier: 4,
-      desc: 'A vast forge dominated by a single anvil. The Forsaken Smith stands before it, hammer raised, waiting.',
+      desc: 'The Forge-Master\'s great forge, the heart of Forge Hold and the largest workspace ever cut from this rock. At its center stands a single anvil the size of a horse — and standing before it, hammer eternally raised, the Forsaken Smith waits. He is the Forge-Master, and he is the anvil, and he is the hammer too. He would not finish his last commission while the hold fell around him, so the hold made sure his last commission would not finish him. He has been about to strike for seven hundred years. The strike is for you.',
       exits: { north: 'forge_7', south: 'vault_1' },
       enemies: ['boss_smith'],
       insp: [
@@ -818,7 +832,7 @@ const ALL: Room[] = [
 
   // ═══ Area 9: Vault Complex (12 rooms, tier 4-5, Vault Sentinel boss + Vault Wraith miniboss) ═══
   R({ id: 'vault_1', name: 'Vault Threshold', area: 'vault_complex', pos: [0, 0], tier: 4,
-      desc: 'A round chamber. Reliefs of impossibly tall figures bearing crowns ring the walls.',
+      desc: 'A round antechamber, its walls ringed in carved reliefs of impossibly tall figures bearing crowns. The crowns sit awkwardly on the figures, because the figures are not human; the carvings have been re-cut over much older reliefs, the original lines still visible at the edges where the human reworking failed to fully overwrite the shapes beneath. Whatever the Vault remembers, it does not remember being built by Quartzlight.',
       exits: { north: 'forge_boss', east: 'vault_2' },
       enemies: ['drowned'],
       insp: [
@@ -856,7 +870,7 @@ const ALL: Room[] = [
   R({ id: 'vault_5', name: 'Treasury Hall', area: 'vault_complex', pos: [1, 1], tier: 5,
       desc: 'Display cases of jewels, mostly empty. Mostly.',
       exits: { north: 'vault_2', east: 'vault_6', south: 'vault_8' },
-      items: ['gem'],
+      items: ['gem', { id: 'gem', hidden: true }],
       enemies: ['vault_w'],
       insp: [
         reveal('case', 'A case still sealed: a fine gem.', 'gem'),
@@ -864,7 +878,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'vault_6', name: 'Crowns of the Dead', area: 'vault_complex', pos: [2, 1], tier: 5,
-      desc: 'A hall of crowns on velvet. None of them fit anyone alive.',
+      desc: 'A long hall of black velvet plinths, each crowned with — a crown. Some are gold, some bronze, some quartz wired with starless wire; each is labeled with the name of the king or queen it last sat on, and most of the names are forgotten beyond record. A few labels are shockingly recent. Try one on, the room seems to suggest. None of them, the room knows, would fit anyone alive.',
       exits: { north: 'vault_3', west: 'vault_5', east: 'vault_7', south: 'vault_9' },
       items: ['crown'],
       insp: [
@@ -890,9 +904,10 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'vault_9', name: 'Mirror Hall', area: 'vault_complex', pos: [2, 2], tier: 5,
-      desc: 'A hall of full-length mirrors. The mirrors do not show you.',
+      desc: 'A long hall of full-length silver mirrors set in pairs facing each other, an infinity built into the architecture. The mirrors do not show you. They show a version of the hall that is dustier, or cleaner, or burning, or perfect, and through that version a figure that walks at your pace but never quite at your bearing. The longer you look, the more committed the figure becomes to its difference from you.',
       exits: { north: 'vault_6', west: 'vault_8', east: 'vault_10', south: 'vault_11' },
       enemies: ['shadow'],
+      items: [{ id: 'mirror_shard', hidden: true }],
       insp: [
         damage('mirror', 'You look. Something looks back. (-2 speed permanent unless mended.)', 4, 'mirror'),
         debuff('mirror_curse', 'A cursed mirror leaves a mark. (-2 speed permanent.)', 'speed', 2)
@@ -915,7 +930,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'vault_boss', name: 'The Sentinel\'s Hall', area: 'vault_complex', pos: [3, 3], tier: 5,
-      desc: 'A vast vault. The Vault Sentinel stands at its center, motionless until it isn\'t.',
+      desc: 'The deepest hall of the Vault complex, its ceiling lost in dark, its floor inlaid with concentric circles of pale metal. At the exact center stands the Vault Sentinel — a figure as tall as two men, plate seamless, eyes covered, hands resting on a sword whose tip touches the floor in a way that suggests it has not moved in centuries. It does not breathe, and it will not breathe; it merely persists. It will continue to persist until something makes persisting impossible.',
       exits: { north: 'vault_10', west: 'vault_11', south: 'throne_1' },
       enemies: ['boss_sentinel'],
       insp: [
@@ -924,7 +939,7 @@ const ALL: Room[] = [
 
   // ═══ Area 10: Throne Quarter (9 rooms, tier 5, Lich boss) ═══
   R({ id: 'throne_1', name: 'Throne Approach', area: 'throne_quarter', pos: [0, 0], tier: 5,
-      desc: 'A long carpet, faded to dried-blood color, leads inward. Banners hang in tatters.',
+      desc: 'A long carpet runs from the entry inward — what was once court-red, faded now to the color of dried blood and dust. Banners hang in tatters from the high beams, their devices reduced to fragmentary heraldry: half a lion here, a single crowned cipher there. Generations of courtiers walked this carpet to be admitted; generations of supplicants knelt at its end and waited to be acknowledged. None of them, it turns out, were ever quite acknowledged enough.',
       exits: { north: 'vault_boss', east: 'throne_2', south: 'throne_5' },
       enemies: ['throne_g'],
       insp: [
@@ -943,7 +958,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'throne_3', name: 'Lich\'s Laboratory', area: 'throne_quarter', pos: [2, 0], tier: 5,
-      desc: 'Tables of cracked glass and obsidian. Jars of preserved organs. Diagrams binding souls to crystal.',
+      desc: 'A long working chamber, the tables of cracked glass and obsidian, the air faintly sweet with the chemistry of preservation. Shelves climb the walls, every jar labeled in a meticulous hand and every jar containing something that once belonged to someone: an eye still tracking, a heart still ticking, a hand still curled around a coin it would not release in life. The diagrams chalked across one wall describe a process for binding souls to crystal lattices; the diagrams have been refined, refined again, and refined a third time, the final version annotated me — done.',
       exits: { west: 'throne_2', east: 'throne_4', south: 'throne_7' },
       items: ['phylactery', 'potion_g'],
       insp: [
@@ -953,7 +968,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'throne_4', name: 'Lich\'s Sanctum', area: 'throne_quarter', pos: [3, 0], tier: 5,
-      desc: 'A circle of standing stones, etched with star-charts of dead heavens. The Lich, robed and silent, stands at center. Its gaze finds you.',
+      desc: 'A great circle of standing stones, set into the floor in a pattern that has nothing to do with the room\'s geometry — the stones align with stars, but the stars they align with are the stars of a sky no astronomer alive could verify. The Lich stands at the circle\'s center, robed in dark cloth that holds shape without a body to hold, hood lifted just enough to find you. The face beneath is not gone. It is simply the face of someone who has been deciding, for two hundred years, not to die yet.',
       exits: { west: 'throne_3', south: 'throne_8' },
       enemies: ['boss_lich'],
       insp: [
@@ -963,7 +978,7 @@ const ALL: Room[] = [
   R({ id: 'throne_5', name: 'Servants\' Wing', area: 'throne_quarter', pos: [0, 1], tier: 5,
       desc: 'Dormitories for those who once kept the throne quarter. The beds are made.',
       exits: { north: 'throne_1', east: 'throne_6' },
-      items: ['ration', 'potion'],
+      items: ['ration', 'potion', { id: 'gold_coin', hidden: true }],
       enemies: ['royal_rev'],
       insp: [
         flavor('beds', 'The beds are made by hands that did not survive making them.'),
@@ -996,7 +1011,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'throne_9', name: 'Broken Throne', area: 'throne_quarter', pos: [1, 2], tier: 5,
-      desc: 'The throne itself, halved. A figure sits in the half that remains.',
+      desc: 'The throne itself, halved by some impossibly precise cut — the right arm and seat sheared away cleanly, the left arm and back still standing. A figure sits in what remains, leaning to compensate, wearing crown and robes and the unmistakable mass of a king who has not, technically, stopped reigning. He did not flee when the Sundering came. He sat. He is sitting still, in the loose sense of the word "still."',
       exits: { north: 'throne_6' },
       enemies: ['royal_rev'],
       items: ['throne_blade'],
@@ -1006,7 +1021,7 @@ const ALL: Room[] = [
 
   // ═══ Area 11: Hidden Sanctum (7 rooms, tier 6 postgame, Worldbreaker boss + Whispering One miniboss) ═══
   R({ id: 'sanctum_1', name: 'Beneath the Throne', area: 'hidden_sanctum', pos: [0, 0], tier: 6,
-      desc: 'The bottom of the descent. The dark is older than the keep.',
+      desc: 'The bottom of the descent, where the descent finally agrees to be a floor. The dark here is older than the keep, older than the kingdom, older than the convention of dark being something light can leave; it is the dark a thing settles into when it has decided to wait the surface out. Your torch flickers but does not quite go out — the dark is not, yet, interested in you.',
       exits: { north: 'throne_8', east: 'sanctum_2' },
       enemies: ['shadow_thing'],
       insp: [
@@ -1026,6 +1041,7 @@ const ALL: Room[] = [
       desc: 'A shrine made of starlight, somehow. The lamp here is white.',
       exits: { west: 'sanctum_2', south: 'sanctum_4' },
       save: 'shrine',
+      items: [{ id: 'mana_crystal', hidden: true }, { id: 'phoenix_pearl', hidden: true }],
       insp: [
         buff('shrine', 'You kneel. (+10 max HP permanent.)', 'maxHp', 10),
         lore('starlight', 'The shrine is made of compressed light. It does not belong to any god the world remembers.', 'sanctum_origin')
@@ -1041,7 +1057,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'sanctum_5', name: 'Hermit\'s Cell', area: 'hidden_sanctum', pos: [1, 1], tier: 6,
-      desc: 'A small cell. The Hermit has lived here since before the keep.',
+      desc: 'A small cell carved into the rock by hands that did not have tools, only patience. The Hermit sits cross-legged at its center, robed in something that was once cloth, eyes the gentle grey of polished slate. He has lived in this cell since before the keep above was built, and his only company has been the tally marks on the walls; the marks are uncountable, and grouped in sevens, and the wall has been tallied in layers, the older marks faded almost to suggestion beneath the newer.',
       exits: { east: 'sanctum_4' },
       npcs: ['hermit'],
       items: ['mana_crystal'],
@@ -1059,7 +1075,7 @@ const ALL: Room[] = [
       ] }),
 
   R({ id: 'sanctum_boss', name: 'The Sealed Hall', area: 'hidden_sanctum', pos: [2, 3], tier: 6,
-      desc: 'A vast hall. At its center, the Worldbreaker — older than the Lich, older than the keep, older than the sound of names.',
+      desc: 'A vast hall, perfectly circular, its walls fused glass-smooth from some long-ago heat that no recorded furnace could have produced. At its center is the Worldbreaker — and the Worldbreaker is older than the Lich, older than the keep, older than the convention of naming. It was the Worldbreaker who made the world, the texts say, and it has spent the time since deciding whether the work was worth keeping. It has not yet decided. Your arrival, whether you like it or not, is now part of the decision.',
       exits: { north: 'sanctum_6' },
       enemies: ['boss_worldbreaker'],
       insp: [

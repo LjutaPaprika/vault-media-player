@@ -16,7 +16,7 @@ import {
   isStunned, isSilenced, rollInitiative, tickEffects, physDamage,
   fleeChance, takeEnemyTurn, decidePartyAction
 } from '../data/textAdventure/combat'
-import { renderAreaMap, gridToText } from '../data/textAdventure/map'
+import { renderAreaMap, gridToText, visitedAreas } from '../data/textAdventure/map'
 import type { MapGrid } from '../data/textAdventure/map'
 
 const SAVE_KEY = 'textDungeonSave_v2'
@@ -1255,9 +1255,12 @@ export default function TextDungeon(_props: TextDungeonProps): JSX.Element {
   // ── Render ──
   const currentRoom = rooms[player.room]
   let mapGrid: MapGrid | null = null
+  let otherMaps: MapGrid[] = []
   if (currentRoom) {
     const cleared = new Set(Object.values(rooms).filter(r => r.cleared).map(r => r.id))
     mapGrid = renderAreaMap(currentRoom.area, rooms, player.visitedRooms, player.room, cleared)
+    const areaIds = visitedAreas(rooms, player.visitedRooms).filter(a => a !== currentRoom.area)
+    otherMaps = areaIds.map(a => renderAreaMap(a, rooms, player.visitedRooms, player.room, cleared))
   }
 
   return (
@@ -1273,20 +1276,36 @@ export default function TextDungeon(_props: TextDungeonProps): JSX.Element {
 
       {combat.active && (
         <div className={styles.turnBar}>
-          <span className={styles.turnLabel}>Turn order:</span>
-          {combat.order.slice(combat.turnIndex, combat.turnIndex + 5).map((t, i) => {
-            const c = t.side === 'enemy'
-              ? combat.enemies.find(e => e.id === t.combatantId)
-              : (t.combatantId === player.id ? player : party.find(m => m.id === t.combatantId))
-            if (!c) return null
-            const hpPct = Math.max(0, Math.min(100, (c.hp / c.maxHp) * 100))
-            return (
-              <div key={i} className={`${styles.turnPill} ${t.side === 'enemy' ? styles.turnEnemy : styles.turnAlly}`}>
-                <div className={styles.turnPillName}>{c.name}</div>
-                <div className={styles.turnPillBar}><div className={styles.turnPillFill} style={{ width: `${hpPct}%` }} /></div>
-              </div>
-            )
-          })}
+          <span className={styles.turnLabel}>Turn</span>
+          <div className={styles.turnTrack}>
+            {combat.order.slice(combat.turnIndex, combat.turnIndex + 6).map((t, i) => {
+              const c = t.side === 'enemy'
+                ? combat.enemies.find(e => e.id === t.combatantId)
+                : (t.combatantId === player.id ? player : party.find(m => m.id === t.combatantId))
+              if (!c) return null
+              const hpPct = Math.max(0, Math.min(100, (c.hp / c.maxHp) * 100))
+              const isCurrent = i === 0
+              const sideCls = t.side === 'enemy' ? styles.turnEnemy : styles.turnAlly
+              const curCls = isCurrent ? styles.turnCurrent : styles.turnNext
+              const isPlayerEntry = t.combatantId === player.id
+              const marker = isCurrent ? '▶' : `${i + 1}`
+              return (
+                <div key={i} className={`${styles.turnPill} ${sideCls} ${curCls}`}>
+                  <span className={styles.turnIndex}>{marker}</span>
+                  <span className={styles.turnIcon}>
+                    {t.side === 'enemy' ? '◊' : isPlayerEntry ? '★' : '◆'}
+                  </span>
+                  <div className={styles.turnPillBody}>
+                    <div className={styles.turnPillHead}>
+                      <span className={styles.turnPillName}>{c.name}</span>
+                      <span className={styles.turnPillHp}>{c.hp}/{c.maxHp}</span>
+                    </div>
+                    <div className={styles.turnPillBar}><div className={styles.turnPillFill} style={{ width: `${hpPct}%` }} /></div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -1342,18 +1361,44 @@ export default function TextDungeon(_props: TextDungeonProps): JSX.Element {
               {mapGrid.cells.map((row, ri) => (
                 <div key={ri} className={styles.mapRow}>
                   {row.map((cell, ci) => (
-                    <span key={ci} className={styles[`mapCell_${cell.cls}`]}>{cell.ch}</span>
+                    <span key={ci} className={styles[`mapCell_${cell.cls}`]} title={cell.passageTo ? `Passage to ${cell.passageTo}` : undefined}>{cell.ch}</span>
                   ))}
                 </div>
               ))}
             </pre>
+            {mapGrid.passageDestinations.length > 0 && (
+              <div className={styles.mapPassages}>
+                Passages: {mapGrid.passageDestinations.map(p => p.areaName).join(' · ')}
+              </div>
+            )}
             <div className={styles.mapLegend}>
               <span className={styles.mapCell_me}>@</span> you
               <span className={styles.mapCell_visited}> ■</span> visited
               <span className={styles.mapCell_save}> S</span> save
               <span className={styles.mapCell_boss}> B</span> boss
               <span className={styles.mapCell_hint}> ?</span> hint
+              <span className={styles.mapCell_passage}> →</span> passage
             </div>
+
+            {otherMaps.filter(g => g.cells.length > 0).map(g => (
+              <div key={g.area} className={styles.mapSubMap}>
+                <div className={styles.mapHeader}>{g.areaName}</div>
+                <pre className={styles.mapGrid}>
+                  {g.cells.map((row, ri) => (
+                    <div key={ri} className={styles.mapRow}>
+                      {row.map((cell, ci) => (
+                        <span key={ci} className={styles[`mapCell_${cell.cls}`]} title={cell.passageTo ? `Passage to ${cell.passageTo}` : undefined}>{cell.ch}</span>
+                      ))}
+                    </div>
+                  ))}
+                </pre>
+                {g.passageDestinations.length > 0 && (
+                  <div className={styles.mapPassages}>
+                    Passages: {g.passageDestinations.map(p => p.areaName).join(' · ')}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>

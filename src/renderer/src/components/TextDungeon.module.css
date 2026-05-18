@@ -28,46 +28,115 @@
 
 .turnBar {
   display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-  padding: 6px 10px;
-  background: #050507;
-  border: 1px solid rgba(232, 180, 75, 0.18);
-  border-radius: 4px;
+  gap: 12px;
+  align-items: stretch;
+  padding: 8px 12px;
+  background: linear-gradient(180deg, #0a0a0d 0%, #050507 100%);
+  border: 1px solid rgba(232, 180, 75, 0.22);
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
 .turnLabel {
-  color: rgba(232, 180, 75, 0.7);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  color: rgba(232, 180, 75, 0.85);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  margin-right: 6px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  padding: 2px 0;
+  border-right: 1px dashed rgba(232, 180, 75, 0.18);
+  padding-right: 8px;
+}
+
+.turnTrack {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  flex: 1;
+  flex-wrap: wrap;
 }
 
 .turnPill {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 8px 5px 6px;
+  border-radius: 5px;
   border: 1px solid;
-  min-width: 90px;
   font-family: 'Consolas', monospace;
   font-size: 11px;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  min-width: 130px;
 }
-.turnAlly { border-color: rgba(74, 222, 128, 0.4); background: rgba(74, 222, 128, 0.05); }
-.turnEnemy { border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.05); }
+
+.turnAlly { border-color: rgba(74, 222, 128, 0.4); background: rgba(74, 222, 128, 0.06); }
+.turnEnemy { border-color: rgba(239, 68, 68, 0.45); background: rgba(239, 68, 68, 0.06); }
+
+.turnCurrent {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(232, 180, 75, 0.25);
+  transform: scale(1.04);
+  min-width: 150px;
+}
+.turnCurrent.turnAlly { background: rgba(74, 222, 128, 0.13); }
+.turnCurrent.turnEnemy { background: rgba(239, 68, 68, 0.13); }
+
+.turnNext { opacity: 0.78; }
+.turnNext:hover { opacity: 1; }
+
+.turnIndex {
+  font-weight: 800;
+  color: rgba(232, 180, 75, 0.85);
+  font-size: 12px;
+  min-width: 12px;
+  text-align: center;
+}
+.turnCurrent .turnIndex { color: #e8b44b; font-size: 14px; }
+
+.turnIcon {
+  font-size: 13px;
+  line-height: 1;
+}
+.turnAlly .turnIcon { color: #4ade80; }
+.turnEnemy .turnIcon { color: #ef4444; }
+.turnCurrent .turnIcon { font-size: 16px; }
+
+.turnPillBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.turnPillHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
 
 .turnPillName {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.9);
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.turnPillHp {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .turnPillBar {
-  height: 3px;
-  background: rgba(255, 255, 255, 0.1);
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -75,7 +144,7 @@
 .turnPillFill {
   height: 100%;
   background: #4ade80;
-  transition: width 0.2s;
+  transition: width 0.25s ease;
 }
 
 .turnEnemy .turnPillFill { background: #ef4444; }
@@ -122,6 +191,20 @@
 .mapCell_hint { color: rgba(255, 255, 255, 0.3); }
 .mapCell_connect { color: rgba(74, 222, 128, 0.5); }
 .mapCell_empty { color: rgba(255, 255, 255, 0.06); }
+.mapCell_passage { color: #a78bfa; font-weight: 700; }
+
+.mapSubMap {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  opacity: 0.7;
+}
+
+.mapPassages {
+  font-size: 10px;
+  color: rgba(167, 139, 250, 0.85);
+  padding: 4px 0;
+}
 
 .mapLegend {
   font-size: 10px;
