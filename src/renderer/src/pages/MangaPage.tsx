@@ -18,6 +18,7 @@ function detectUnit(vols: MediaItem[]): { singular: string; plural: string } {
   const titles = vols.map((v) => v.title.toLowerCase())
   if (titles.some((t) => /(?:^|[\s_])ch(apter|\.)/.test(t))) return { singular: 'chapter', plural: 'chapters' }
   if (titles.some((t) => /(?:^|[\s_])vol(ume|\.)/.test(t))) return { singular: 'volume', plural: 'volumes' }
+  if (titles.some((t) => /(?:^|[\s_])issue/.test(t))) return { singular: 'issue', plural: 'issues' }
   return { singular: 'entry', plural: 'entries' }
 }
 
