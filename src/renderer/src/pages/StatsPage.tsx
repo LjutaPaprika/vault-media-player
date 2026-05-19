@@ -65,7 +65,7 @@ function LibraryOverview({ stats }: { stats: LibraryStats }): JSX.Element {
             if (tracks != null && tracks > 0) sub = `${tracks.toLocaleString()} songs`
           } else if (cat === 'arcade') {
             // Mirror the count of games registered in ArcadePage.tsx imports
-            count = 17
+            count = 20
           } else {
             count = stats.counts[cat] ?? 0
           }

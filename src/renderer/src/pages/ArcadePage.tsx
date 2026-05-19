@@ -18,6 +18,9 @@ import Shmup from '../components/Shmup'
 import Pong from '../components/Pong'
 import Wordle from '../components/Wordle'
 import Sokoban from '../components/Sokoban'
+import Reversi from '../components/Reversi'
+import Asteroids from '../components/Asteroids'
+import Pacman from '../components/Pacman'
 import styles from './ArcadePage.module.css'
 
 function fmt(n: number): string {
@@ -55,6 +58,9 @@ export default function ArcadePage(): JSX.Element {
   const [pongRecord, setPongRecord] = useState<{ wins: number; losses: number }>({ wins: 0, losses: 0 })
   const [wordleStreak, setWordleStreak] = useState(0)
   const [sokobanCleared, setSokobanCleared] = useState(0)
+  const [reversiRecord, setReversiRecord] = useState<{ wins: number; losses: number; draws: number }>({ wins: 0, losses: 0, draws: 0 })
+  const [asteroidsHi, setAsteroidsHi] = useState(0)
+  const [pacmanHi, setPacmanHi] = useState(0)
 
   const { files, prestigeCount, shows, paused, togglePause } = useIdleGameStore()
   const mult = prestigeMultiplier(prestigeCount)
@@ -121,6 +127,18 @@ export default function ArcadePage(): JSX.Element {
         const arr = data.bestMoves ?? []
         setSokobanCleared(arr.filter((m) => m > 0).length)
       } catch { /* ignore */ }
+    })
+    window.api.settings.get('reversiRecord', '{}').then(v => {
+      try {
+        const data = JSON.parse(v) as { wins?: number; losses?: number; draws?: number }
+        setReversiRecord({ wins: data.wins ?? 0, losses: data.losses ?? 0, draws: data.draws ?? 0 })
+      } catch { /* ignore */ }
+    })
+    window.api.settings.get('asteroidsHighScore', '0').then(v => {
+      setAsteroidsHi(parseInt(v, 10) || 0)
+    })
+    window.api.settings.get('pacmanHighScore', '0').then(v => {
+      setPacmanHi(parseInt(v, 10) || 0)
     })
   }, [])
 
@@ -261,6 +279,44 @@ export default function ArcadePage(): JSX.Element {
             <span className={styles.cardChevron}>{openCard === 'sokoban' ? '▲' : '▼'}</span>
           </button>
           {openCard === 'sokoban' && <Sokoban />}
+        </div>
+
+        {/* ── Reversi ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardGreen}`} onClick={() => toggleCard('reversi')}>
+            <span className={`${styles.cardTitle} ${styles.titleGreen}`}>⚫ Reversi</span>
+            <span className={styles.cardMeta}>
+              {reversiRecord.wins + reversiRecord.losses + reversiRecord.draws > 0
+                ? `${reversiRecord.wins}W · ${reversiRecord.losses}L · ${reversiRecord.draws}D`
+                : 'Flank to flip the board'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'reversi' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'reversi' && <Reversi />}
+        </div>
+
+        {/* ── Asteroids ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardCyan}`} onClick={() => toggleCard('asteroids')}>
+            <span className={`${styles.cardTitle} ${styles.titleCyan}`}>🚀 Asteroids</span>
+            <span className={styles.cardMeta}>
+              {asteroidsHi > 0 ? `best ${fmt(asteroidsHi)}` : 'Drift, shoot, survive'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'asteroids' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'asteroids' && <Asteroids />}
+        </div>
+
+        {/* ── Pac-Man ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardPurple}`} onClick={() => toggleCard('pacman')}>
+            <span className={`${styles.cardTitle} ${styles.titlePurple}`}>👻 Pac-Man</span>
+            <span className={styles.cardMeta}>
+              {pacmanHi > 0 ? `best ${fmt(pacmanHi)}` : 'Eat pellets, dodge ghosts'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'pacman' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'pacman' && <Pacman />}
         </div>
 
         {/* ── Maze ── */}

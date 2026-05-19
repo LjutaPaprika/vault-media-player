@@ -1,0 +1,99 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.hud {
+  display: flex;
+  gap: 18px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+  align-items: center;
+}
+
+.hud strong {
+  color: #fde047;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.best {
+  margin-left: auto;
+  color: rgba(232, 180, 75, 0.6);
+}
+
+.canvasWrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.canvas {
+  display: block;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 4, 10, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border-radius: 6px;
+  backdrop-filter: blur(3px);
+  padding: 20px;
+  z-index: 2;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #fde047;
+  letter-spacing: 0.04em;
+}
+
+.score {
+  font-size: 13px;
+  color: rgba(232, 180, 75, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}
+
+.btn {
+  padding: 8px 22px;
+  background: linear-gradient(160deg, #ca8a04 0%, #fde047 100%);
+  color: #000;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: transform 0.08s, box-shadow 0.08s;
+  box-shadow: 0 2px 0 #713f12, 0 4px 12px rgba(253, 224, 71, 0.25);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 #713f12, 0 6px 20px rgba(253, 224, 71, 0.4);
+}
+
+.btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 0 #713f12;
+}
