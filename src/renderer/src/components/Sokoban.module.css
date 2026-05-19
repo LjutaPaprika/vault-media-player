@@ -1,0 +1,264 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  user-select: none;
+}
+
+.hud {
+  display: flex;
+  gap: 18px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  font-variant-numeric: tabular-nums;
+  align-items: center;
+}
+
+.hud strong {
+  color: #4ade80;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.best {
+  color: rgba(232, 180, 75, 0.7);
+}
+
+.cleared {
+  margin-left: auto;
+  color: rgba(168, 85, 247, 0.7);
+}
+
+.boardWrap {
+  position: relative;
+  display: inline-block;
+}
+
+.board {
+  position: relative;
+  background: #1a1a1f;
+  border-radius: 6px;
+  border: 1px solid rgba(74, 222, 128, 0.12);
+  overflow: hidden;
+}
+
+.cell {
+  position: absolute;
+  box-sizing: border-box;
+  transition: left 0.08s ease-out, top 0.08s ease-out;
+}
+
+.cell.wall {
+  background: #4a4a52;
+  border: 1px solid #2a2a30;
+}
+
+.cell.floor {
+  background: #0e0e14;
+}
+
+.cell.outside {
+  background: transparent;
+}
+
+.cell.target {
+  background: #0e0e14;
+}
+
+.cell.target::after,
+.cell.boxOnTarget::after,
+.cell.playerOnTarget::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  background: #ef4444;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+}
+
+.cell.box,
+.cell.boxOnTarget {
+  background: #0e0e14;
+}
+
+.cell.box::before,
+.cell.boxOnTarget::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  right: 4px;
+  bottom: 4px;
+  background: linear-gradient(160deg, #c2410c 0%, #f97316 100%);
+  border-radius: 4px;
+  border: 1px solid #7c2d12;
+  z-index: 1;
+}
+
+.cell.boxOnTarget::before {
+  background: linear-gradient(160deg, #15803d 0%, #4ade80 100%);
+  border-color: #14532d;
+}
+
+.cell.player,
+.cell.playerOnTarget {
+  background: #0e0e14;
+}
+
+.cell.player::before,
+.cell.playerOnTarget::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  right: 6px;
+  bottom: 6px;
+  background: radial-gradient(circle, #fde047 0%, #f59e0b 80%);
+  border-radius: 50%;
+  border: 1px solid #92400e;
+  z-index: 2;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 15, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border-radius: 6px;
+  backdrop-filter: blur(3px);
+  padding: 20px;
+  z-index: 5;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #4ade80;
+  letter-spacing: 0.04em;
+}
+
+.score {
+  font-size: 13px;
+  color: rgba(232, 180, 75, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+
+.btnRow {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  padding: 8px 22px;
+  background: linear-gradient(160deg, #16a34a 0%, #4ade80 100%);
+  color: #000;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: transform 0.08s, box-shadow 0.08s;
+  box-shadow: 0 2px 0 #14532d, 0 4px 12px rgba(74, 222, 128, 0.25);
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 0 #14532d, 0 6px 20px rgba(74, 222, 128, 0.4);
+}
+
+.btnSecondary {
+  padding: 8px 18px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.btnSecondary:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.levelRow {
+  display: flex;
+  gap: 6px;
+}
+
+.smallBtn {
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.smallBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.smallBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.jumpLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.04em;
+}
+
+.jumpInput {
+  width: 56px;
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.jumpInput:focus {
+  outline: none;
+  border-color: rgba(74, 222, 128, 0.5);
+}
+
+.hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}

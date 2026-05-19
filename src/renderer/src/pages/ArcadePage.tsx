@@ -15,6 +15,9 @@ import ConnectFour from '../components/ConnectFour'
 import Solitaire from '../components/Solitaire'
 import Tetris from '../components/Tetris'
 import Shmup from '../components/Shmup'
+import Pong from '../components/Pong'
+import Wordle from '../components/Wordle'
+import Sokoban from '../components/Sokoban'
 import styles from './ArcadePage.module.css'
 
 function fmt(n: number): string {
@@ -49,6 +52,9 @@ export default function ArcadePage(): JSX.Element {
   const [solitaireWins, setSolitaireWins] = useState(0)
   const [tetrisHi, setTetrisHi] = useState(0)
   const [shmupHi, setShmupHi] = useState(0)
+  const [pongRecord, setPongRecord] = useState<{ wins: number; losses: number }>({ wins: 0, losses: 0 })
+  const [wordleStreak, setWordleStreak] = useState(0)
+  const [sokobanCleared, setSokobanCleared] = useState(0)
 
   const { files, prestigeCount, shows, paused, togglePause } = useIdleGameStore()
   const mult = prestigeMultiplier(prestigeCount)
@@ -95,6 +101,25 @@ export default function ArcadePage(): JSX.Element {
       try {
         const data = JSON.parse(v) as { wins?: number; losses?: number; draws?: number }
         setConnectFourRecord({ wins: data.wins ?? 0, losses: data.losses ?? 0, draws: data.draws ?? 0 })
+      } catch { /* ignore */ }
+    })
+    window.api.settings.get('pongRecord', '{}').then(v => {
+      try {
+        const data = JSON.parse(v) as { wins?: number; losses?: number }
+        setPongRecord({ wins: data.wins ?? 0, losses: data.losses ?? 0 })
+      } catch { /* ignore */ }
+    })
+    window.api.settings.get('wordleStats', '{}').then(v => {
+      try {
+        const data = JSON.parse(v) as { bestStreak?: number }
+        setWordleStreak(data.bestStreak ?? 0)
+      } catch { /* ignore */ }
+    })
+    window.api.settings.get('sokobanProgress', '{}').then(v => {
+      try {
+        const data = JSON.parse(v) as { bestMoves?: number[] }
+        const arr = data.bestMoves ?? []
+        setSokobanCleared(arr.filter((m) => m > 0).length)
       } catch { /* ignore */ }
     })
   }, [])
@@ -198,6 +223,44 @@ export default function ArcadePage(): JSX.Element {
             <span className={styles.cardChevron}>{openCard === 'breakout' ? '▲' : '▼'}</span>
           </button>
           {openCard === 'breakout' && <Breakout onNewBest={s => setBreakoutBest(s)} />}
+        </div>
+
+        {/* ── Pong ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardRed}`} onClick={() => toggleCard('pong')}>
+            <span className={`${styles.cardTitle} ${styles.titleRed}`}>🏓 Pong</span>
+            <span className={styles.cardMeta}>
+              {pongRecord.wins + pongRecord.losses > 0
+                ? `${pongRecord.wins}W · ${pongRecord.losses}L`
+                : 'Outrally the CPU'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'pong' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'pong' && <Pong />}
+        </div>
+
+        {/* ── Wordle ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardGreen}`} onClick={() => toggleCard('wordle')}>
+            <span className={`${styles.cardTitle} ${styles.titleGreen}`}>🔤 Wordle</span>
+            <span className={styles.cardMeta}>
+              {wordleStreak > 0 ? `best streak ${wordleStreak}` : 'Guess the 5-letter word'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'wordle' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'wordle' && <Wordle />}
+        </div>
+
+        {/* ── Sokoban ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardPurple}`} onClick={() => toggleCard('sokoban')}>
+            <span className={`${styles.cardTitle} ${styles.titlePurple}`}>📦 Sokoban</span>
+            <span className={styles.cardMeta}>
+              {sokobanCleared > 0 ? `${sokobanCleared} / 155 levels cleared` : 'Push boxes onto targets'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'sokoban' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'sokoban' && <Sokoban />}
         </div>
 
         {/* ── Maze ── */}
