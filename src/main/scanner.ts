@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs'
 import { join, extname, basename, dirname } from 'path'
 import { execSync } from 'child_process'
-import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, updateTechInfo, needsTechInfo, setConfig } from './database'
+import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, migrateRenamedPaths, updateTechInfo, needsTechInfo, setConfig } from './database'
 import { probeFile, probeAudioFileSync } from './mediaInfo'
 
 // Returns the set of subdirectory names inside `dir` flagged as hidden by the OS.
@@ -215,9 +215,12 @@ function parseEpisodeInfo(filename: string, season?: number): string | null {
   }
 
   // Filename starts with bare Exx (named-subfolder convention): "E05 - Title.mkv"
-  const leadEMatch = filename.match(/^(E\d+)[-\s]+(.+?)(?:\s*\[[^\]]*\])?\.[^.]+$/i)
+  const leadEMatch = filename.match(/^E(\d+)[-\s]+(.+?)(?:\s*\[[^\]]*\])?\.[^.]+$/i)
   if (leadEMatch) {
-    const badge = leadEMatch[1].toUpperCase()
+    const epNum = String(parseInt(leadEMatch[1], 10)).padStart(2, '0')
+    const badge = season !== undefined
+      ? `S${String(season).padStart(2, '0')}E${epNum}`
+      : `E${epNum}`
     const title = leadEMatch[2].trim()
     if (!title || QUALITY_RE.test(title)) return badge
     return `${badge} · ${title}`
@@ -651,7 +654,7 @@ function cleanMangaTitle(raw: string): string {
   return raw
 }
 
-function scanManga(rootDir: string): number {
+function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): number {
   if (!existsSync(rootDir)) return 0
   let count = 0
   for (const series of readdirSync(rootDir, { withFileTypes: true })) {
@@ -669,7 +672,7 @@ function scanManga(rootDir: string): number {
       const title = files.length === 1 ? series.name : cleanMangaTitle(basename(file, extname(file)))
       checkAndUpsert(filePath, {
         title,
-        category: 'manga',
+        category,
         filePath,
         posterPath: poster
       })
@@ -903,10 +906,14 @@ export function scanLibrary(root: string, ffprobePath = ''): { total: number; up
   total += scanYouTube(m('youtube'), ffprobePath)
   total += scanMusic(m('music'), ffprobePath)
   total += scanBooks(m('books'))
-  total += scanManga(m('manga'))
+  total += scanManga(m('manga'), 'manga')
+  total += scanManga(m('comics'), 'comics')
   total += scanPcGames(g('pc'))
   total += scanRoms(g('roms'))
 
+  // Carry last_opened_at / tech_info from renamed-or-moved files (matched by
+  // basename + mtime) to their new path before orphan cleanup wipes them.
+  migrateRenamedPaths(_foundPaths, new Set(_storedTimes.keys()))
   // Remove DB entries for files that no longer exist on disk
   deleteOrphanedEntries(_foundPaths)
 

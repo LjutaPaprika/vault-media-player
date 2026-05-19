@@ -34,8 +34,18 @@ function groupBySeries(items: MediaItem[]): Map<string, MediaItem[]> {
   return map
 }
 
-export default function MangaPage(): JSX.Element {
-  const { items, loading, error } = useLibrary('manga')
+interface Props {
+  category?: 'manga' | 'comics'
+  pageTitle?: string
+  emptyMessage?: string
+}
+
+export default function MangaPage({
+  category = 'manga',
+  pageTitle = 'Manga',
+  emptyMessage = 'No manga found. Add .cbz, .cbr, .epub or .pdf files to media/manga/ and scan your library.'
+}: Props = {}): JSX.Element {
+  const { items, loading, error } = useLibrary(category)
   const { contentResetKey }       = useAppStore()
   const [query,           setQuery]           = useState('')
   const [selectedSeries,  setSelectedSeries]  = useState<string | null>(null)
@@ -120,7 +130,7 @@ export default function MangaPage(): JSX.Element {
   })
 
   return (
-    <PageShell title="Manga" searchValue={query} onSearch={setQuery}>
+    <PageShell title={pageTitle} searchValue={query} onSearch={setQuery}>
       {loading && <p style={{ color: 'var(--text-muted)' }}>Loading...</p>}
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
       {!loading && !error && (
@@ -140,7 +150,7 @@ export default function MangaPage(): JSX.Element {
               setSelectedSeries(name)
             }
           }}
-          emptyMessage="No manga found. Add .cbz, .cbr, .epub or .pdf files to media/manga/ and scan your library."
+          emptyMessage={emptyMessage}
         />
       )}
     </PageShell>

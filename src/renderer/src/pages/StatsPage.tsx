@@ -26,13 +26,13 @@ function epochAgo(epoch: number): string {
 
 const CATEGORY_LABEL: Record<string, string> = {
   movies: 'Movies', tv: 'TV Shows', anime: 'Anime',
-  music: 'Playlists', books: 'Books', manga: 'Manga', games: 'Games',
+  music: 'Playlists', books: 'Books', manga: 'Manga', comics: 'Comics', games: 'Games',
   youtube: 'YouTube', arcade: 'Arcade'
 }
 
 const CATEGORY_ICON: Record<string, string> = {
   movies: '🎬', tv: '📺', anime: '⛩️',
-  music: '🎵', books: '📖', manga: '📚', games: '🎮',
+  music: '🎵', books: '📖', manga: '📚', comics: '💥', games: '🎮',
   youtube: '▶️', arcade: '🕹️'
 }
 
@@ -44,7 +44,7 @@ const PLATFORM_LABEL: Record<string, string> = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-const CARD_ORDER = ['movies', 'tv', 'anime', 'music', 'manga', 'books', 'games', 'youtube', 'arcade']
+const CARD_ORDER = ['movies', 'tv', 'anime', 'music', 'manga', 'comics', 'books', 'games', 'youtube', 'arcade']
 
 function LibraryOverview({ stats, arcadeStats }: { stats: LibraryStats; arcadeStats: { snakeBest: number } | null }): JSX.Element {
   return (
@@ -56,7 +56,7 @@ function LibraryOverview({ stats, arcadeStats }: { stats: LibraryStats; arcadeSt
           let count: number
           let sub: string | null = null
 
-          if (cat === 'tv' || cat === 'anime' || cat === 'manga') {
+          if (cat === 'tv' || cat === 'anime' || cat === 'manga' || cat === 'comics') {
             // Show series count (distinct shows / series), not episode/chapter count
             count = stats.seriesCounts[cat] ?? 0
           } else if (cat === 'music') {

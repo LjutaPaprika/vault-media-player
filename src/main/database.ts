@@ -224,6 +224,52 @@ export function getStoredFileTimes(): Map<string, number> {
   return new Map(rows.map((r) => [r.file_path, r.file_modified]))
 }
 
+// Same file renamed or moved on disk → its old DB row is about to become an
+// orphan and the new path was just inserted with no last_opened_at / tech_info.
+// Match orphans to new rows by (basename, file_modified) and carry per-file
+// state across. Run before deleteOrphanedEntries so the orphan row is then
+// cleaned up normally.
+export function migrateRenamedPaths(foundPaths: Set<string>, storedPaths: Set<string>): void {
+  const db = getDb()
+  const orphans = [...storedPaths].filter((p) => !foundPaths.has(p))
+  const fresh = [...foundPaths].filter((p) => !storedPaths.has(p))
+  if (orphans.length === 0 || fresh.length === 0) return
+
+  const basename = (p: string): string => {
+    const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'))
+    return i >= 0 ? p.slice(i + 1) : p
+  }
+
+  type Row = { file_path: string; file_modified: number; last_opened_at: number | null; tech_info: string | null }
+  const orphanRows = db
+    .prepare(`SELECT file_path, file_modified, last_opened_at, tech_info FROM media_items WHERE file_path IN (${orphans.map(() => '?').join(',')})`)
+    .all(...orphans) as Row[]
+  const freshRows = db
+    .prepare(`SELECT file_path, file_modified FROM media_items WHERE file_path IN (${fresh.map(() => '?').join(',')})`)
+    .all(...fresh) as { file_path: string; file_modified: number }[]
+
+  const orphansByKey = new Map<string, Row[]>()
+  for (const r of orphanRows) {
+    const key = `${basename(r.file_path)}|${r.file_modified}`
+    const arr = orphansByKey.get(key) ?? []
+    arr.push(r)
+    orphansByKey.set(key, arr)
+  }
+
+  const update = db.prepare('UPDATE media_items SET last_opened_at = ?, tech_info = COALESCE(?, tech_info) WHERE file_path = ?')
+  db.transaction(() => {
+    for (const f of freshRows) {
+      const key = `${basename(f.file_path)}|${f.file_modified}`
+      const candidates = orphansByKey.get(key)
+      if (!candidates || candidates.length !== 1) continue // ambiguous or no match → skip
+      const o = candidates[0]
+      if (o.last_opened_at === null && o.tech_info === null) continue
+      update.run(o.last_opened_at, o.tech_info, f.file_path)
+      orphansByKey.delete(key) // consume so the same orphan can't be claimed twice
+    }
+  })()
+}
+
 export function deleteOrphanedEntries(foundPaths: Set<string>): void {
   const all = getDb()
     .prepare('SELECT file_path FROM media_items')
@@ -383,12 +429,14 @@ export function getStats(): LibraryStats {
   const seriesCounts: Record<string, number> = {}
   for (const r of seriesRows) seriesCounts[r.category] = r.count
 
-  // Manga: each chapter has its own title, so we count distinct parent directories in JS
-  const mangaPaths = db
-    .prepare("SELECT file_path FROM media_items WHERE category = 'manga'")
-    .all() as { file_path: string }[]
-  if (mangaPaths.length > 0) {
-    seriesCounts.manga = new Set(mangaPaths.map((r) => dirname(r.file_path))).size
+  // Manga / Comics: each chapter has its own title, so we count distinct parent directories in JS
+  for (const cat of ['manga', 'comics'] as const) {
+    const paths = db
+      .prepare("SELECT file_path FROM media_items WHERE category = ?")
+      .all(cat) as { file_path: string }[]
+    if (paths.length > 0) {
+      seriesCounts[cat] = new Set(paths.map((r) => dirname(r.file_path))).size
+    }
   }
 
   const platforms = db

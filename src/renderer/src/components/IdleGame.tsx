@@ -60,9 +60,12 @@ export default function IdleGame(): JSX.Element {
       // Clear
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      // Spawn new particles
-      spawnAccumRef.current += passiveRate / 60
-      while (spawnAccumRef.current >= 1 && passiveRate > 0) {
+      // Spawn new particles. Cap the visual spawn rate so the canvas stays
+      // readable at high passive rates — above ~120/s the text starts to
+      // overlap into an illegible green smear.
+      const visualRate = Math.min(passiveRate, 120)
+      spawnAccumRef.current += visualRate / 60
+      while (spawnAccumRef.current >= 1 && visualRate > 0) {
         spawnAccumRef.current -= 1
         const label = FILE_PATHS[Math.floor(Math.random() * FILE_PATHS.length)]
         particlesRef.current.push({
@@ -74,8 +77,8 @@ export default function IdleGame(): JSX.Element {
           label
         })
       }
-      if (particlesRef.current.length > 80) {
-        particlesRef.current = particlesRef.current.slice(-80)
+      if (particlesRef.current.length > 40) {
+        particlesRef.current = particlesRef.current.slice(-40)
       }
 
       // Update and draw particles

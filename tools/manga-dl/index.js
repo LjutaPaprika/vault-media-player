@@ -38,6 +38,7 @@ const CONTENT_SELECTORS = [
   '.chapter-content',
   '.reading-content',
   '#chapter-content',
+  '.pinbin-category',  // readallcomics.com (Western graphic novels)
   'article',
 ]
 
@@ -54,10 +55,15 @@ function sanitize(name) {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/\s+/g, ' ').trim()
 }
 
-// Extract chapter number from a title or URL for numeric sorting
+// Extract chapter number from a title or URL for numeric sorting.
+// Returns a composite where the integer part is the chapter/volume number and
+// the fractional part is a "Part N" suffix (so "vol 09 Part 1" < "Part 2" < "Part 3").
 function chapterNumber(str) {
   const m = str.match(/chapter[\s_-]*(\d+(?:\.\d+)?)/i) || str.match(/(\d+(?:\.\d+)?)/)
-  return m ? parseFloat(m[1]) : 0
+  const main = m ? parseFloat(m[1]) : 0
+  const partMatch = str.match(/part[\s_-]*(\d+)/i)
+  const part = partMatch ? parseInt(partMatch[1], 10) / 100 : 0
+  return main + part
 }
 
 async function httpGet(url, referer) {
@@ -79,10 +85,11 @@ async function getBuffer(url, referer) {
 
 // ── Scraping ──────────────────────────────────────────────────────────────────
 
-function extractChapters(html, baseUrl) {
+function extractChapters(html, baseUrl, urlMatchRe = null) {
   const root = parseHtml(html)
   const seen = new Set()
   const chapters = []
+  const matcher = urlMatchRe ?? /chapter/
 
   for (const a of root.querySelectorAll('a[href]')) {
     const href = a.getAttribute('href') || ''
@@ -94,11 +101,11 @@ function extractChapters(html, baseUrl) {
       continue
     }
 
-    // Check the URL PATH for "chapter" — not the full URL, which may include
-    // the word "chapter" in the domain name (e.g. chainsawmanchapter.com).
-    // Also skip taxonomy/category/tag archive pages that contain "chapter" in their path.
+    // Check the URL PATH against the matcher — not the full URL, which may
+    // include the matched word in the domain name (e.g. chainsawmanchapter.com).
+    // Skip taxonomy/category/tag archive pages.
     const pathname = new URL(absUrl).pathname
-    if (!pathname.includes('chapter')) continue
+    if (!matcher.test(pathname)) continue
     if (/\/(category|tag|archive|feed)\//i.test(pathname)) continue
 
     // Strip anchors/query strings for dedup
@@ -233,6 +240,7 @@ async function main() {
       name:      { type: 'string',  short: 'n', default: '' },
       reverse:   { type: 'boolean',             default: false },
       'dry-run': { type: 'boolean',             default: false },
+      'url-match': { type: 'string',            default: '' },
     },
     allowPositionals: true,
   })
@@ -270,9 +278,10 @@ async function main() {
   }
 
   const isSitemap = seriesUrl.endsWith('.xml') || seriesUrl.includes('sitemap')
+  const urlMatchRe = values['url-match'] ? new RegExp(values['url-match'], 'i') : null
   let chapters = isSitemap
     ? extractChaptersFromSitemap(rawText, seriesUrl)
-    : extractChapters(rawText, seriesUrl)
+    : extractChapters(rawText, seriesUrl, urlMatchRe)
 
   if (chapters.length === 0) {
     console.error('No chapters found. The site structure may not be supported yet.')
