@@ -46,7 +46,7 @@ const PLATFORM_LABEL: Record<string, string> = {
 
 const CARD_ORDER = ['movies', 'tv', 'anime', 'music', 'manga', 'comics', 'books', 'games', 'youtube', 'arcade']
 
-function LibraryOverview({ stats, arcadeStats }: { stats: LibraryStats; arcadeStats: { snakeBest: number } | null }): JSX.Element {
+function LibraryOverview({ stats }: { stats: LibraryStats }): JSX.Element {
   return (
     <section className={`${styles.section} ${styles.sectionFull}`}>
       <h2 className={styles.sectionTitle}>Library Overview</h2>
@@ -64,7 +64,8 @@ function LibraryOverview({ stats, arcadeStats }: { stats: LibraryStats; arcadeSt
             const tracks = stats.storage?.musicTrackCount
             if (tracks != null && tracks > 0) sub = `${tracks.toLocaleString()} songs`
           } else if (cat === 'arcade') {
-            count = arcadeStats?.snakeBest > 0 ? 1 : 0
+            // Mirror the count of games registered in ArcadePage.tsx imports
+            count = 14
           } else {
             count = stats.counts[cat] ?? 0
           }
@@ -279,16 +280,11 @@ export default function StatsPage(): JSX.Element {
   const [stats, setStats] = useState<LibraryStats | null>(null)
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
-  const [arcadeStats, setArcadeStats] = useState<{ snakeBest: number } | null>(null)
 
   useEffect(() => {
     window.api.library.getStats().then(setStats)
     window.api.system.getInfo().then(setSysInfo)
     window.api.system.getAppInfo().then(setAppInfo)
-
-    window.api.settings.get('snakeHighScore', '0').then(snakeStr => {
-      setArcadeStats({ snakeBest: parseInt(snakeStr, 10) || 0 })
-    })
   }, [])
 
   if (!stats) {
@@ -302,7 +298,7 @@ export default function StatsPage(): JSX.Element {
   return (
     <PageShell title="Stats">
       <div className={styles.layout}>
-        <LibraryOverview stats={stats} arcadeStats={arcadeStats} />
+        <LibraryOverview stats={stats} />
         <StorageSection storage={stats.storage} driveInfo={appInfo?.driveInfo ?? null} />
         <RecentlyOpened items={stats.recentlyOpened} />
         <PlatformsSection platforms={stats.platforms} />
