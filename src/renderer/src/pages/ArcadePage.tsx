@@ -245,8 +245,8 @@ export default function ArcadePage(): JSX.Element {
 
         {/* ── Pong ── */}
         <div className={styles.card}>
-          <button className={`${styles.cardHeader} ${styles.cardRed}`} onClick={() => toggleCard('pong')}>
-            <span className={`${styles.cardTitle} ${styles.titleRed}`}>🏓 Pong</span>
+          <button className={`${styles.cardHeader} ${styles.cardBlue}`} onClick={() => toggleCard('pong')}>
+            <span className={`${styles.cardTitle} ${styles.titleBlue}`}>🏓 Pong</span>
             <span className={styles.cardMeta}>
               {pongRecord.wins + pongRecord.losses > 0
                 ? `${pongRecord.wins}W · ${pongRecord.losses}L`
@@ -271,8 +271,8 @@ export default function ArcadePage(): JSX.Element {
 
         {/* ── Sokoban ── */}
         <div className={styles.card}>
-          <button className={`${styles.cardHeader} ${styles.cardPurple}`} onClick={() => toggleCard('sokoban')}>
-            <span className={`${styles.cardTitle} ${styles.titlePurple}`}>📦 Sokoban</span>
+          <button className={`${styles.cardHeader} ${styles.cardRed}`} onClick={() => toggleCard('sokoban')}>
+            <span className={`${styles.cardTitle} ${styles.titleRed}`}>📦 Sokoban</span>
             <span className={styles.cardMeta}>
               {sokobanCleared > 0 ? `${sokobanCleared} / 155 levels cleared` : 'Push boxes onto targets'}
             </span>
@@ -283,8 +283,8 @@ export default function ArcadePage(): JSX.Element {
 
         {/* ── Reversi ── */}
         <div className={styles.card}>
-          <button className={`${styles.cardHeader} ${styles.cardGreen}`} onClick={() => toggleCard('reversi')}>
-            <span className={`${styles.cardTitle} ${styles.titleGreen}`}>⚫ Reversi</span>
+          <button className={`${styles.cardHeader} ${styles.cardPurple}`} onClick={() => toggleCard('reversi')}>
+            <span className={`${styles.cardTitle} ${styles.titlePurple}`}>⚫ Reversi</span>
             <span className={styles.cardMeta}>
               {reversiRecord.wins + reversiRecord.losses + reversiRecord.draws > 0
                 ? `${reversiRecord.wins}W · ${reversiRecord.losses}L · ${reversiRecord.draws}D`
@@ -309,8 +309,8 @@ export default function ArcadePage(): JSX.Element {
 
         {/* ── Pac-Man ── */}
         <div className={styles.card}>
-          <button className={`${styles.cardHeader} ${styles.cardPurple}`} onClick={() => toggleCard('pacman')}>
-            <span className={`${styles.cardTitle} ${styles.titlePurple}`}>👻 Pac-Man</span>
+          <button className={`${styles.cardHeader} ${styles.cardOrange}`} onClick={() => toggleCard('pacman')}>
+            <span className={`${styles.cardTitle} ${styles.titleOrange}`}>👻 Pac-Man</span>
             <span className={styles.cardMeta}>
               {pacmanHi > 0 ? `best ${fmt(pacmanHi)}` : 'Eat pellets, dodge ghosts'}
             </span>
@@ -340,8 +340,8 @@ export default function ArcadePage(): JSX.Element {
 
         {/* ── Text Dungeon ── */}
         <div className={styles.card}>
-          <button className={`${styles.cardHeader} ${styles.cardGreen}`} onClick={() => toggleCard('dungeon')}>
-            <span className={`${styles.cardTitle} ${styles.titleGreen}`}>📜 Text Dungeon</span>
+          <button className={`${styles.cardHeader} ${styles.cardRed}`} onClick={() => toggleCard('dungeon')}>
+            <span className={`${styles.cardTitle} ${styles.titleRed}`}>📜 Text Dungeon</span>
             <span className={styles.cardMeta}>
               {dungeonBest > 0 ? `best ${dungeonBest}` : 'Adventure awaits'}
             </span>
@@ -352,8 +352,8 @@ export default function ArcadePage(): JSX.Element {
 
         {/* ── Tower Defense ── */}
         <div className={styles.card}>
-          <button className={`${styles.cardHeader} ${styles.cardBlue}`} onClick={() => toggleCard('towerdefense')}>
-            <span className={`${styles.cardTitle} ${styles.titleBlue}`}>🗼 Tower Defense</span>
+          <button className={`${styles.cardHeader} ${styles.cardGreen}`} onClick={() => toggleCard('towerdefense')}>
+            <span className={`${styles.cardTitle} ${styles.titleGreen}`}>🗼 Tower Defense</span>
             <span className={styles.cardMeta}>
               {towerDefenseBest > 0 ? `best ${towerDefenseBest}` : 'Hold the line'}
             </span>
@@ -364,8 +364,8 @@ export default function ArcadePage(): JSX.Element {
 
         {/* ── Sliding Puzzle ── */}
         <div className={styles.card}>
-          <button className={`${styles.cardHeader} ${styles.cardCyan}`} onClick={() => toggleCard('slidingpuzzle')}>
-            <span className={`${styles.cardTitle} ${styles.titleCyan}`}>🔢 Sliding Puzzle</span>
+          <button className={`${styles.cardHeader} ${styles.cardPurple}`} onClick={() => toggleCard('slidingpuzzle')}>
+            <span className={`${styles.cardTitle} ${styles.titlePurple}`}>🔢 Sliding Puzzle</span>
             <span className={styles.cardMeta}>
               {slidingPuzzleBest['3'] ? `best 3×3: ${slidingPuzzleBest['3']} moves` : 'Slide tiles into order'}
             </span>
@@ -414,8 +414,8 @@ export default function ArcadePage(): JSX.Element {
 
         {/* ── Shoot 'em Up ── */}
         <div className={styles.card}>
-          <button className={`${styles.cardHeader} ${styles.cardBlue}`} onClick={() => toggleCard('shmup')}>
-            <span className={`${styles.cardTitle} ${styles.titleBlue}`}>✦ Shoot 'em Up</span>
+          <button className={`${styles.cardHeader} ${styles.cardOrange}`} onClick={() => toggleCard('shmup')}>
+            <span className={`${styles.cardTitle} ${styles.titleOrange}`}>✦ Shoot 'em Up</span>
             <span className={styles.cardMeta}>
               {shmupHi > 0 ? `best ${fmt(shmupHi)}` : 'Hold the line — in space'}
             </span>

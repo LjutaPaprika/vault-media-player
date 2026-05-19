@@ -97,3 +97,29 @@
   transform: translateY(1px);
   box-shadow: 0 0 0 #713f12;
 }
+
+.countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.countdownNum {
+  font-size: 80px;
+  font-weight: 900;
+  color: #fde047;
+  text-shadow: 0 0 18px rgba(253, 224, 71, 0.7), 0 4px 0 rgba(0, 0, 0, 0.45);
+  letter-spacing: 0.02em;
+  animation: countdownPop 1s ease-out;
+}
+
+@keyframes countdownPop {
+  0%   { transform: scale(1.6); opacity: 0; }
+  25%  { transform: scale(1.0); opacity: 1; }
+  90%  { transform: scale(1.0); opacity: 1; }
+  100% { transform: scale(0.6); opacity: 0; }
+}

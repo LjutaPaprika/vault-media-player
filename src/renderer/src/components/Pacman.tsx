@@ -2,39 +2,55 @@ import { useEffect, useRef, useState } from 'react'
 import styles from './Pacman.module.css'
 
 const SAVE_KEY = 'pacmanHighScore'
-const CELL = 22
+const CELL = 18
 const LIVES_INITIAL = 3
-const POWER_DURATION = 360       // frames (~6s @ 60fps)
-const PACMAN_SPEED = 0.12        // cells per frame
-const GHOST_SPEED = 0.10
-const GHOST_FRIGHTENED_SPEED = 0.06
+const POWER_DURATION = 420       // frames (~7s @ 60fps)
+const PACMAN_SPEED = 0.075       // cells per frame — authentic arcade pace
+const GHOST_SPEED = 0.07
+const GHOST_FRIGHTENED_SPEED = 0.045
 const PELLET_SCORE = 10
 const POWER_SCORE = 50
 const GHOST_SCORE_BASE = 200      // 200, 400, 800, 1600 for consecutive eats
+const COUNTDOWN_FRAMES = 180      // 3 seconds at 60fps
 
-// Simplified Pac-Man-style maze. 19 wide x 17 tall.
+// Authentic Pac-Man maze (28 cols x 31 rows). Adapted from the canonical
+// arcade layout. Tunnel wrap is row 14.
 //   # wall    . pellet    o power pellet
 //   - ghost-house door (ghosts pass, pacman can't from outside)
 //   P pacman spawn       G ghost spawn (becomes floor)
 //   (space) corridor with no pellet
 const MAZE_RAW = [
-  '###################',
-  '#........#........#',
-  '#o##.###.#.###.##o#',
-  '#.................#',
-  '#.##.#.#####.#.##.#',
-  '#....#...#...#....#',
-  '####.### # ###.####',
-  '   #.#       #.#   ',
-  '####.# ##-## #.####',
-  '    .  #GGG#  .    ',
-  '####.# ##### #.####',
-  '   #.#       #.#   ',
-  '####.# ##### #.####',
-  '#........#........#',
-  '#.##.###.#.###.##.#',
-  '#o.#.....P.....#.o#',
-  '###################'
+  '############################',
+  '#............##............#',
+  '#.####.#####.##.#####.####.#',
+  '#o####.#####.##.#####.####o#',
+  '#.####.#####.##.#####.####.#',
+  '#..........................#',
+  '#.####.##.########.##.####.#',
+  '#.####.##.########.##.####.#',
+  '#......##....##....##......#',
+  '######.##### ## #####.######',
+  '     #.##### ## #####.#     ',
+  '     #.##          ##.#     ',
+  '     #.## ###--### ##.#     ',
+  '######.## #      # ##.######',
+  '      .   #GGGGGG#   .      ',
+  '######.## #      # ##.######',
+  '     #.## ######## ##.#     ',
+  '     #.##          ##.#     ',
+  '     #.## ######## ##.#     ',
+  '######.## ######## ##.######',
+  '#............##............#',
+  '#.####.#####.##.#####.####.#',
+  '#.####.#####.##.#####.####.#',
+  '#o..##.......P .......##..o#',
+  '###.##.##.########.##.##.###',
+  '###.##.##.########.##.##.###',
+  '#......##....##....##......#',
+  '#.##########.##.##########.#',
+  '#.##########.##.##########.#',
+  '#..........................#',
+  '############################'
 ]
 
 const ROWS = MAZE_RAW.length
@@ -43,7 +59,7 @@ const W = COLS * CELL
 const H = ROWS * CELL
 
 type Dir = 'up' | 'down' | 'left' | 'right' | 'none'
-type Phase = 'idle' | 'playing' | 'won' | 'lost' | 'death'
+type Phase = 'idle' | 'countdown' | 'playing' | 'won' | 'lost' | 'death'
 
 interface Pacman {
   x: number; y: number             // cell coordinates (float)
@@ -130,6 +146,8 @@ export default function Pacman(): JSX.Element {
   const ghostEatStreakRef = useRef(0)
   const frameRef = useRef(0)
   const deathTimerRef = useRef(0)
+  const countdownRef = useRef(0)
+  const [countdownN, setCountdownN] = useState(3)
   const keysRef = useRef<Set<string>>(new Set())
   const rafRef = useRef<number | null>(null)
 
@@ -200,8 +218,10 @@ export default function Pacman(): JSX.Element {
 
   function startGame(): void {
     initLevel(true)
-    phaseRef.current = 'playing'
-    setPhase('playing')
+    countdownRef.current = COUNTDOWN_FRAMES
+    setCountdownN(3)
+    phaseRef.current = 'countdown'
+    setPhase('countdown')
     startLoop()
   }
 
@@ -210,7 +230,7 @@ export default function Pacman(): JSX.Element {
     const loop = (): void => {
       step()
       draw()
-      if (phaseRef.current === 'playing' || phaseRef.current === 'death') {
+      if (phaseRef.current === 'playing' || phaseRef.current === 'death' || phaseRef.current === 'countdown') {
         rafRef.current = requestAnimationFrame(loop)
       }
     }
@@ -289,6 +309,16 @@ export default function Pacman(): JSX.Element {
   }
 
   function step(): void {
+    if (phaseRef.current === 'countdown') {
+      countdownRef.current--
+      const n = Math.ceil(countdownRef.current / 60)
+      if (n !== countdownN) setCountdownN(n)
+      if (countdownRef.current <= 0) {
+        phaseRef.current = 'playing'
+        setPhase('playing')
+      }
+      return
+    }
     if (phaseRef.current === 'death') {
       deathTimerRef.current--
       if (deathTimerRef.current <= 0) {
@@ -303,8 +333,10 @@ export default function Pacman(): JSX.Element {
           g.dir = 'up'
           g.state = 'normal'
         }
-        phaseRef.current = 'playing'
-        setPhase('playing')
+        countdownRef.current = COUNTDOWN_FRAMES
+        setCountdownN(3)
+        phaseRef.current = 'countdown'
+        setPhase('countdown')
       }
       return
     }
@@ -371,6 +403,10 @@ export default function Pacman(): JSX.Element {
       levelRef.current++
       setLevel(levelRef.current)
       initLevel(false)
+      countdownRef.current = COUNTDOWN_FRAMES
+      setCountdownN(3)
+      phaseRef.current = 'countdown'
+      setPhase('countdown')
       return
     }
 
@@ -550,6 +586,13 @@ export default function Pacman(): JSX.Element {
       </div>
       <div className={styles.canvasWrap}>
         <canvas ref={canvasRef} width={W} height={H} className={styles.canvas} />
+        {phase === 'countdown' && (
+          <div className={styles.countdown}>
+            <span key={countdownN} className={styles.countdownNum}>
+              {countdownN > 0 ? countdownN : 'GO!'}
+            </span>
+          </div>
+        )}
         {(phase === 'idle' || phase === 'lost') && (
           <div className={styles.overlay}>
             {phase === 'idle' && <span className={styles.title}>👻 Pac-Man</span>}
