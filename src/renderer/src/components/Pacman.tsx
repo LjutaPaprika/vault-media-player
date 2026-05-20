@@ -5,9 +5,9 @@ const SAVE_KEY = 'pacmanHighScore'
 const CELL = 18
 const LIVES_INITIAL = 3
 const POWER_DURATION = 420       // frames (~7s @ 60fps)
-const PACMAN_SPEED = 0.075       // cells per frame — authentic arcade pace
-const GHOST_SPEED = 0.07
-const GHOST_FRIGHTENED_SPEED = 0.045
+const PACMAN_SPEED = 0.11        // cells per frame — authentic arcade pace
+const GHOST_SPEED = 0.10
+const GHOST_FRIGHTENED_SPEED = 0.06
 const PELLET_SCORE = 10
 const POWER_SCORE = 50
 const GHOST_SCORE_BASE = 200      // 200, 400, 800, 1600 for consecutive eats
@@ -70,12 +70,71 @@ interface Pacman {
 interface Ghost {
   x: number; y: number
   dir: Dir
-  homeX: number; homeY: number     // scatter target
+  homeX: number; homeY: number     // scatter target corner
   spawnX: number; spawnY: number
   color: string
-  state: 'normal' | 'frightened' | 'eaten'  // eaten = returning to spawn
-  releaseFrame: number             // when to leave the ghost house
+  state: 'normal' | 'frightened' | 'eaten'
+  releaseFrame: number
+  personality: 'blinky' | 'pinky' | 'inky' | 'clyde'
+  inHouse: boolean
+  pendingReverse: boolean          // arcade: forced reversal on mode change
 }
+
+type Mode = 'scatter' | 'chase'
+
+// Arcade phase schedule (Level 1): scatter 7s, chase 20s, scatter 7s,
+// chase 20s, scatter 5s, chase 20s, scatter 5s, chase forever.
+// Each entry is { mode, frames } at 60fps.
+const PHASE_SCHEDULE: { mode: Mode; frames: number }[] = [
+  { mode: 'scatter', frames: 7 * 60 },
+  { mode: 'chase',   frames: 20 * 60 },
+  { mode: 'scatter', frames: 7 * 60 },
+  { mode: 'chase',   frames: 20 * 60 },
+  { mode: 'scatter', frames: 5 * 60 },
+  { mode: 'chase',   frames: 20 * 60 },
+  { mode: 'scatter', frames: 5 * 60 },
+  { mode: 'chase',   frames: Infinity }
+]
+
+// Canonical arcade ghost house exit tile (just above the door)
+const HOUSE_EXIT_X = 13
+const HOUSE_EXIT_Y = 11
+
+// Precomputed BFS direction map: from each open tile, which direction takes
+// you one step closer (along the shortest path) to (HOUSE_EXIT_X, HOUSE_EXIT_Y).
+// Used by eaten ghosts (eyes) so they can never get stuck on a local minimum.
+function buildEyesDirMap(): (string | null)[][] {
+  const map: (string | null)[][] = []
+  for (let r = 0; r < ROWS; r++) map.push(new Array(COLS).fill(null))
+  // BFS outward from the exit. For each visited neighbor, record the
+  // direction FROM that neighbor that leads back toward the exit.
+  const queue: [number, number][] = [[HOUSE_EXIT_Y, HOUSE_EXIT_X]]
+  map[HOUSE_EXIT_Y][HOUSE_EXIT_X] = 'none'
+  const moves: [number, number, string][] = [
+    [-1, 0, 'down'],   // neighbor above; from there, go down to reach us
+    [1, 0, 'up'],
+    [0, -1, 'right'],
+    [0, 1, 'left']
+  ]
+  while (queue.length > 0) {
+    const [r, c] = queue.shift()!
+    for (const [dr, dc, dirFromNeighbor] of moves) {
+      const nr = r + dr
+      let nc = c + dc
+      if (nc < 0) nc = COLS - 1
+      if (nc >= COLS) nc = 0
+      if (nr < 0 || nr >= ROWS) continue
+      const cell = MAZE_RAW[nr][nc]
+      if (cell === '#' || cell === '-') continue
+      if (map[nr][nc] !== null) continue
+      map[nr][nc] = dirFromNeighbor
+      queue.push([nr, nc])
+    }
+  }
+  return map
+}
+
+const EYES_DIR_MAP = buildEyesDirMap()
 
 const DIR_VEC: Record<Dir, [number, number]> = {
   up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0], none: [0, 0]
@@ -145,6 +204,10 @@ export default function Pacman(): JSX.Element {
   const powerFramesRef = useRef(0)
   const ghostEatStreakRef = useRef(0)
   const frameRef = useRef(0)
+  const phaseIdxRef = useRef(0)
+  const phaseTimerRef = useRef(0)
+  const modeRef = useRef<Mode>('scatter')
+  const pacCardinalRef = useRef<Dir>('left')   // last non-'none' direction
   const deathTimerRef = useRef(0)
   const countdownRef = useRef(0)
   const [countdownN, setCountdownN] = useState(3)
@@ -187,25 +250,43 @@ export default function Pacman(): JSX.Element {
     gridRef.current = buildInitialGrid()
     const spawns = spawnPositions(gridRef.current)
     pacmanRef.current = { x: spawns.pacman.x, y: spawns.pacman.y, dir: 'none', nextDir: 'none', mouth: 0 }
-    const colors = ['#ef4444', '#f97316', '#22d3ee', '#ec4899']
-    const homes: [number, number][] = [[1, 1], [COLS - 2, 1], [1, ROWS - 2], [COLS - 2, ROWS - 2]]
-    ghostsRef.current = spawns.ghosts.slice(0, 4).map((g, i) => ({
-      x: g.x,
-      y: g.y,
-      dir: 'up',
-      homeX: homes[i][0],
-      homeY: homes[i][1],
-      spawnX: g.x,
-      spawnY: g.y,
-      color: colors[i % colors.length],
-      state: 'normal',
-      releaseFrame: 30 + i * 90    // staggered release
-    }))
+    // Blinky (red), Pinky (pink), Inky (cyan), Clyde (orange)
+    const colors = ['#ef4444', '#f9a8d4', '#22d3ee', '#fb923c']
+    const personalities: Ghost['personality'][] = ['blinky', 'pinky', 'inky', 'clyde']
+    const homes: [number, number][] = [
+      [COLS - 2, 0],   // Blinky: top-right corner
+      [1, 0],          // Pinky: top-left
+      [COLS - 1, ROWS - 1],  // Inky: bottom-right
+      [0, ROWS - 1]    // Clyde: bottom-left
+    ]
+    ghostsRef.current = spawns.ghosts.slice(0, 4).map((g, i) => {
+      // Blinky (i=0) starts outside the house; others wait inside
+      const startsOutside = i === 0
+      return {
+        x: startsOutside ? HOUSE_EXIT_X : g.x,
+        y: startsOutside ? HOUSE_EXIT_Y : g.y,
+        dir: 'left',
+        homeX: homes[i][0],
+        homeY: homes[i][1],
+        spawnX: g.x,
+        spawnY: g.y,
+        color: colors[i % colors.length],
+        state: 'normal',
+        releaseFrame: [0, 30, 120, 240][i] ?? 240,  // 0s, 0.5s, 2s, 4s
+        personality: personalities[i % 4],
+        inHouse: !startsOutside,
+        pendingReverse: false
+      }
+    })
     pelletsLeftRef.current = countPellets(gridRef.current)
     powerFramesRef.current = 0
     ghostEatStreakRef.current = 0
     frameRef.current = 0
     deathTimerRef.current = 0
+    phaseIdxRef.current = 0
+    phaseTimerRef.current = PHASE_SCHEDULE[0].frames
+    modeRef.current = PHASE_SCHEDULE[0].mode
+    pacCardinalRef.current = 'left'
     if (fullReset) {
       scoreRef.current = 0
       livesRef.current = LIVES_INITIAL
@@ -246,57 +327,115 @@ export default function Pacman(): JSX.Element {
     if (!onTile) return false
     let nc = cx + dx
     const nr = cy + dy
-    // Tunnel wrap on row 9 only (matches the open corridor at row 9 in maze)
     if (nc < 0) nc = COLS - 1
     if (nc >= COLS) nc = 0
     if (nr < 0 || nr >= ROWS) return false
     const cell = gridRef.current[nr][nc]
     if (cell === '#') return false
-    if (cell === '-' && !isGhost) return false
+    // Door is one-way: active ghosts (we teleport on release) and Pac-Man
+    // are all blocked. Eyes also stop at HOUSE_EXIT above the door.
+    if (cell === '-') return false
     return true
   }
 
-  function moveEntity(x: number, y: number, dir: Dir, speed: number): { x: number; y: number } {
+  function moveEntity(x: number, y: number, dir: Dir, speed: number): { x: number; y: number; crossed: boolean } {
     const [dx, dy] = DIR_VEC[dir]
     let nx = x + dx * speed
     let ny = y + dy * speed
-    // Tunnel wrap
-    if (nx < -0.5) nx = COLS - 0.5
-    if (nx > COLS - 0.5) nx = -0.5
-    return { x: nx, y: ny }
+    // Detect tile-center crossing on the moving axis — if so, snap to the
+    // center so direction decisions happen reliably regardless of speed.
+    let crossed = false
+    if (dx !== 0) {
+      const targetTile = dx > 0 ? Math.ceil(x + 1e-6) : Math.floor(x - 1e-6)
+      if ((dx > 0 && nx >= targetTile) || (dx < 0 && nx <= targetTile)) {
+        nx = targetTile
+        crossed = true
+      }
+    }
+    if (dy !== 0) {
+      const targetTile = dy > 0 ? Math.ceil(y + 1e-6) : Math.floor(y - 1e-6)
+      if ((dy > 0 && ny >= targetTile) || (dy < 0 && ny <= targetTile)) {
+        ny = targetTile
+        crossed = true
+      }
+    }
+    // Tunnel wrap — preserve sub-tile phase
+    if (nx < -0.5) nx += COLS
+    if (nx > COLS - 0.5) nx -= COLS
+    return { x: nx, y: ny, crossed }
   }
 
-  function ghostNextDir(g: Ghost, pacX: number, pacY: number): Dir {
+  function ghostTarget(
+    g: Ghost,
+    pacTileX: number, pacTileY: number, pacDir: Dir,
+    blinky: Ghost | undefined,
+    mode: Mode
+  ): [number, number] {
+    if (g.state === 'eaten') return [g.spawnX, g.spawnY]
+    if (g.inHouse) return [HOUSE_EXIT_X, HOUSE_EXIT_Y]
+    if (mode === 'scatter') return [g.homeX, g.homeY]
+    const [pdx, pdy] = DIR_VEC[pacDir]
+    switch (g.personality) {
+      case 'blinky':
+        return [pacTileX, pacTileY]
+      case 'pinky': {
+        // 4 tiles ahead of Pac-Man. Arcade's original up-direction overflow
+        // bug also subtracted 4 from X — reproduce for authenticity.
+        if (pacDir === 'up') return [pacTileX - 4, pacTileY - 4]
+        return [pacTileX + pdx * 4, pacTileY + pdy * 4]
+      }
+      case 'inky': {
+        // Anchor = 2 tiles ahead of Pac-Man (with same up-bug)
+        let ax: number, ay: number
+        if (pacDir === 'up') { ax = pacTileX - 2; ay = pacTileY - 2 }
+        else { ax = pacTileX + pdx * 2; ay = pacTileY + pdy * 2 }
+        // Vector from Blinky to anchor, doubled
+        const bx = blinky ? Math.round(blinky.x) : pacTileX
+        const by = blinky ? Math.round(blinky.y) : pacTileY
+        return [ax + (ax - bx), ay + (ay - by)]
+      }
+      case 'clyde': {
+        const d = Math.hypot(g.x - pacTileX, g.y - pacTileY)
+        return d > 8 ? [pacTileX, pacTileY] : [g.homeX, g.homeY]
+      }
+    }
+  }
+
+  function ghostNextDir(
+    g: Ghost,
+    pacTileX: number, pacTileY: number, pacDir: Dir,
+    blinky: Ghost | undefined,
+    mode: Mode
+  ): Dir {
     const cx = Math.round(g.x), cy = Math.round(g.y)
     const opp = OPPOSITE[g.dir]
+    // Eaten ghosts: follow the precomputed BFS direction map — guaranteed
+    // shortest-path navigation, no local-minimum traps.
+    if (g.state === 'eaten') {
+      const mapDir = EYES_DIR_MAP[cy]?.[cx]
+      if (mapDir && mapDir !== 'none') return mapDir as Dir
+    }
     const candidates: Dir[] = (['up', 'down', 'left', 'right'] as Dir[]).filter((d) => {
       if (d === opp) return false
       return canMove(cx, cy, d, true)
     })
     if (candidates.length === 0) {
-      // Allow reversal as fallback
-      return canMove(cx, cy, opp, true) ? opp : 'none'
+      return canMove(cx, cy, opp, true) ? opp : g.dir
+    }
+    if (g.state === 'frightened') {
+      return candidates[Math.floor(Math.random() * candidates.length)]
     }
     if (candidates.length === 1) return candidates[0]
 
-    // Pick by target. Frightened ghosts pick randomly. Eaten ghosts head home.
-    // Normal ghosts head toward Pac-Man with some randomness.
-    let target: [number, number]
-    if (g.state === 'eaten') {
-      target = [g.spawnX, g.spawnY]
-    } else if (g.state === 'frightened') {
-      return candidates[Math.floor(Math.random() * candidates.length)]
-    } else {
-      // 75% chase Pac-Man, 25% scatter to corner
-      if (Math.random() < 0.75) {
-        target = [pacX, pacY]
-      } else {
-        target = [g.homeX, g.homeY]
-      }
-    }
+    const target = g.state === 'eaten'
+      ? [HOUSE_EXIT_X, HOUSE_EXIT_Y] as [number, number]
+      : ghostTarget(g, pacTileX, pacTileY, pacDir, blinky, mode)
+    // Arcade tie-break order: up, left, down, right
+    const order: Dir[] = ['up', 'left', 'down', 'right']
     let bestDir = candidates[0]
     let bestDist = Infinity
-    for (const d of candidates) {
+    for (const d of order) {
+      if (!candidates.includes(d)) continue
       const [dx, dy] = DIR_VEC[d]
       const tx = cx + dx, ty = cy + dy
       const dist = (tx - target[0]) ** 2 + (ty - target[1]) ** 2
@@ -327,12 +466,15 @@ export default function Pacman(): JSX.Element {
         pacmanRef.current.y = spawns.pacman.y
         pacmanRef.current.dir = 'none'
         pacmanRef.current.nextDir = 'none'
-        for (const g of ghostsRef.current) {
-          g.x = g.spawnX
-          g.y = g.spawnY
-          g.dir = 'up'
+        ghostsRef.current.forEach((g, i) => {
+          const startsOutside = i === 0
+          g.x = startsOutside ? HOUSE_EXIT_X : g.spawnX
+          g.y = startsOutside ? HOUSE_EXIT_Y : g.spawnY
+          g.dir = 'left'
           g.state = 'normal'
-        }
+          g.inHouse = !startsOutside
+          g.releaseFrame = frameRef.current + ([0, 30, 120, 240][i] ?? 240)
+        })
         countdownRef.current = COUNTDOWN_FRAMES
         setCountdownN(3)
         phaseRef.current = 'countdown'
@@ -343,6 +485,21 @@ export default function Pacman(): JSX.Element {
     if (phaseRef.current !== 'playing') return
     frameRef.current++
     const f = frameRef.current
+
+    // Scatter/chase phase script — frightened pauses the phase timer
+    if (powerFramesRef.current === 0) {
+      phaseTimerRef.current--
+      if (phaseTimerRef.current <= 0 && phaseIdxRef.current < PHASE_SCHEDULE.length - 1) {
+        phaseIdxRef.current++
+        const next = PHASE_SCHEDULE[phaseIdxRef.current]
+        modeRef.current = next.mode
+        phaseTimerRef.current = next.frames
+        // Force all active ghosts to reverse on mode change
+        for (const g of ghostsRef.current) {
+          if (g.state === 'normal' && !g.inHouse) g.pendingReverse = true
+        }
+      }
+    }
 
     if (powerFramesRef.current > 0) {
       powerFramesRef.current--
@@ -369,6 +526,7 @@ export default function Pacman(): JSX.Element {
       }
     }
     if (p.dir !== 'none') {
+      pacCardinalRef.current = p.dir
       const { x, y } = moveEntity(p.x, p.y, p.dir, PACMAN_SPEED)
       p.x = x
       p.y = y
@@ -391,9 +549,9 @@ export default function Pacman(): JSX.Element {
         powerFramesRef.current = POWER_DURATION
         ghostEatStreakRef.current = 0
         for (const g of ghostsRef.current) {
-          if (g.state === 'normal') {
+          if (g.state === 'normal' && !g.inHouse) {
             g.state = 'frightened'
-            g.dir = OPPOSITE[g.dir]   // ghosts reverse on power activation
+            g.pendingReverse = true   // applied at next tile boundary
           }
         }
       }
@@ -411,27 +569,56 @@ export default function Pacman(): JSX.Element {
     }
 
     // Ghost movement
+    const blinky = ghostsRef.current.find((gh) => gh.personality === 'blinky')
     for (const g of ghostsRef.current) {
-      if (f < g.releaseFrame && g.state === 'normal') continue
-      const gcx = Math.round(g.x), gcy = Math.round(g.y)
-      const gOnTile = Math.abs(g.x - gcx) < 0.05 && Math.abs(g.y - gcy) < 0.05
-      if (gOnTile) {
-        g.x = gcx
-        g.y = gcy
-        // Check if eaten ghost reached spawn — respawn
-        if (g.state === 'eaten' && Math.abs(gcx - g.spawnX) < 0.5 && Math.abs(gcy - g.spawnY) < 0.5) {
+      // Release from house when timer hits, by teleporting to exit tile
+      if (g.inHouse && f >= g.releaseFrame) {
+        g.x = HOUSE_EXIT_X
+        g.y = HOUSE_EXIT_Y
+        g.dir = 'left'
+        g.inHouse = false
+      }
+      if (g.inHouse) continue
+      // Snap when starting on tile already (first frame / after teleport)
+      const startGcx = Math.round(g.x), startGcy = Math.round(g.y)
+      const startOnTile = Math.abs(g.x - startGcx) < 1e-6 && Math.abs(g.y - startGcy) < 1e-6
+      if (startOnTile) {
+        // Eyes reached the house exit — respawn there as a normal ghost
+        if (g.state === 'eaten' && startGcx === HOUSE_EXIT_X && startGcy === HOUSE_EXIT_Y) {
           g.state = 'normal'
-          g.dir = 'up'
+          g.dir = 'left'
         }
-        g.dir = ghostNextDir(g, p.x, p.y)
+        if (g.pendingReverse) {
+          g.pendingReverse = false
+          const opp = OPPOSITE[g.dir]
+          if (canMove(startGcx, startGcy, opp, true)) g.dir = opp
+        }
+        const pacTileX = Math.round(p.x), pacTileY = Math.round(p.y)
+        g.dir = ghostNextDir(g, pacTileX, pacTileY, pacCardinalRef.current, blinky, modeRef.current)
       }
       if (g.dir !== 'none') {
         const speed = g.state === 'frightened' ? GHOST_FRIGHTENED_SPEED
                     : g.state === 'eaten' ? GHOST_SPEED * 2
                     : GHOST_SPEED
-        const { x, y } = moveEntity(g.x, g.y, g.dir, speed)
+        const { x, y, crossed } = moveEntity(g.x, g.y, g.dir, speed)
         g.x = x
         g.y = y
+        // If the move snapped onto a tile center, make a decision right here
+        // so the ghost never overshoots a corridor due to high speed.
+        if (crossed) {
+          const ncx = Math.round(g.x), ncy = Math.round(g.y)
+          if (g.state === 'eaten' && ncx === HOUSE_EXIT_X && ncy === HOUSE_EXIT_Y) {
+            g.state = 'normal'
+            g.dir = 'left'
+          }
+          if (g.pendingReverse) {
+            g.pendingReverse = false
+            const opp = OPPOSITE[g.dir]
+            if (canMove(ncx, ncy, opp, true)) g.dir = opp
+          }
+          const pacTileX = Math.round(p.x), pacTileY = Math.round(p.y)
+          g.dir = ghostNextDir(g, pacTileX, pacTileY, pacCardinalRef.current, blinky, modeRef.current)
+        }
       }
     }
 

@@ -5,18 +5,20 @@ import styles from './Shmup.module.css'
 // formation slots, drift side-to-side, then occasionally peel off in dive-bomb
 // attack runs aimed at the player.
 
-const W = 480
-const H = 600
+const W = 600
+const H = 760
 const SAVE_KEY = 'shmupHighScore'
 
 type Phase = 'idle' | 'waveIntro' | 'playing' | 'gameOver'
 type EnemyType = 'grunt' | 'weaver' | 'tank' | 'scout' | 'bomber'
-type EnemyState = 'entering' | 'formation' | 'diving' | 'returning'
+type EnemyState = 'entering' | 'formation' | 'diving' | 'returning' | 'beaming'
+type PlayerState = 'normal' | 'captured' | 'dual'
 
 interface Vec { x: number; y: number }
 interface Bullet extends Vec { vy: number; vx?: number; from: 'player' | 'enemy' }
 interface Particle extends Vec { vx: number; vy: number; life: number; color: string }
-interface Star extends Vec { speed: number }
+interface Ring extends Vec { life: number; maxLife: number; color: string; maxRadius: number }
+interface Star extends Vec { speed: number; size: number; color: string }
 
 interface Enemy {
   id: number
@@ -42,21 +44,35 @@ interface Enemy {
   diveTargetX: number
   // Per-enemy attack cooldown
   cooldown: number
+  // Beam/capture state (tanks/bosses only)
+  beamT: number
+  beamPhase: 'descend' | 'charge' | 'fire' | 'rise' | 'idle'
+  holdingShip: boolean
 }
 
-const PLAYER_SPEED = 280
-const BULLET_SPEED = 480
-const ENEMY_BULLET_SPEED = 200
-const PLAYER_FIRE_INTERVAL = 0.14
+const PLAYER_SPEED = 300
+const BULLET_SPEED = 540
+const ENEMY_BULLET_SPEED = 220
+const PLAYER_FIRE_INTERVAL = 0.18    // single bullet, slightly slower cadence
 
-// Formation grid
-const FORM_COLS = 7
-const FORM_ROWS = 3
-const FORM_COL_W = 50
-const FORM_ROW_H = 38
-const FORM_TOP = 70
-const FORM_DRIFT_AMP = 70
-const FORM_DRIFT_PERIOD = 6  // seconds for full left-right-left cycle
+// Capture / tractor beam
+const BEAM_DESCEND_DUR = 0.9         // boss moves down to beam position
+const BEAM_CHARGE_DUR = 0.55         // brief windup before beam opens
+const BEAM_FIRE_DUR = 1.6            // beam is active and capable of capture
+const BEAM_RISE_DUR = 1.4            // boss returns to formation after beam
+const BEAM_BOSS_Y = 240              // y position where boss hovers to beam
+const BEAM_HALF_WIDTH_TOP = 14       // beam width at boss
+const BEAM_HALF_WIDTH_BOTTOM = 60    // beam width at canvas bottom
+const CAPTURE_RESPAWN_DELAY = 2.2    // seconds before respawning after capture
+
+// Formation grid (Galaga-style: 10 cols × 5 rows = 50 slots)
+const FORM_COLS = 10
+const FORM_ROWS = 5
+const FORM_COL_W = 44
+const FORM_ROW_H = 36
+const FORM_TOP = 80
+const FORM_DRIFT_AMP = 90
+const FORM_DRIFT_PERIOD = 6
 
 const ENEMY_HP: Record<EnemyType, number> = { grunt: 1, weaver: 2, scout: 1, bomber: 3, tank: 6 }
 const ENEMY_POINTS: Record<EnemyType, number> = { grunt: 100, weaver: 150, scout: 120, bomber: 200, tank: 400 }
@@ -75,7 +91,7 @@ function buildWave(n: number): WaveDef {
   const spawns: WaveDef['spawns'] = []
   const slots: { col: number; row: number }[] = []
   // Fill slots from the front rows back as wave number rises
-  const totalSlots = Math.min(FORM_COLS * FORM_ROWS, 10 + Math.floor(n * 3.5))
+  const totalSlots = Math.min(FORM_COLS * FORM_ROWS, 16 + Math.floor(n * 5))
   for (let i = 0; i < totalSlots; i++) {
     slots.push({ col: i % FORM_COLS, row: Math.floor(i / FORM_COLS) % FORM_ROWS })
   }
@@ -119,8 +135,24 @@ export default function Shmup(): JSX.Element {
   const bulletsRef = useRef<Bullet[]>([])
   const enemiesRef = useRef<Enemy[]>([])
   const particlesRef = useRef<Particle[]>([])
+  const ringsRef = useRef<Ring[]>([])
   const starsRef = useRef<Star[]>(
-    Array.from({ length: 80 }, () => ({ x: Math.random() * W, y: Math.random() * H, speed: 40 + Math.random() * 120 }))
+    Array.from({ length: 140 }, () => {
+      const layer = Math.random()
+      // 3 parallax bands: distant (slow, tiny), mid, near (fast, bright)
+      if (layer < 0.55) return {
+        x: Math.random() * W, y: Math.random() * H,
+        speed: 18 + Math.random() * 22, size: 1, color: 'rgba(180, 200, 230, 0.55)'
+      }
+      if (layer < 0.88) return {
+        x: Math.random() * W, y: Math.random() * H,
+        speed: 60 + Math.random() * 40, size: 1.5, color: 'rgba(220, 230, 255, 0.85)'
+      }
+      return {
+        x: Math.random() * W, y: Math.random() * H,
+        speed: 130 + Math.random() * 80, size: 2, color: '#ffffff'
+      }
+    })
   )
   const lastTRef = useRef(performance.now())
   const playerFireCdRef = useRef(0)
@@ -136,6 +168,9 @@ export default function Shmup(): JSX.Element {
   const phaseRef = useRef<Phase>('idle')
   const scoreRef = useRef(0)
   const diveCooldownRef = useRef(1.2)
+  const beamCooldownRef = useRef(6)
+  const playerStateRef = useRef<PlayerState>('normal')
+  const respawnTimerRef = useRef(0)
   const rafRef = useRef(0)
 
   const [score, setScore] = useState(0)
@@ -192,18 +227,36 @@ export default function Shmup(): JSX.Element {
       }
     }
 
-    // Player movement
-    if (k['ArrowLeft']  || k['a'] || k['A']) p.x -= PLAYER_SPEED * dt
-    if (k['ArrowRight'] || k['d'] || k['D']) p.x += PLAYER_SPEED * dt
-    if (k['ArrowUp']    || k['w'] || k['W']) p.y -= PLAYER_SPEED * dt
-    if (k['ArrowDown']  || k['s'] || k['S']) p.y += PLAYER_SPEED * dt
-    p.x = Math.max(14, Math.min(W - 14, p.x))
-    p.y = Math.max(H / 2, Math.min(H - 14, p.y))
+    // Player movement (no control while captured)
+    const ps = playerStateRef.current
+    if (ps !== 'captured') {
+      if (k['ArrowLeft']  || k['a'] || k['A']) p.x -= PLAYER_SPEED * dt
+      if (k['ArrowRight'] || k['d'] || k['D']) p.x += PLAYER_SPEED * dt
+      if (k['ArrowUp']    || k['w'] || k['W']) p.y -= PLAYER_SPEED * dt
+      if (k['ArrowDown']  || k['s'] || k['S']) p.y += PLAYER_SPEED * dt
+      const xPad = ps === 'dual' ? 26 : 14
+      p.x = Math.max(xPad, Math.min(W - xPad, p.x))
+      p.y = Math.max(H / 2, Math.min(H - 14, p.y))
+    }
+
+    // Respawn timer (post-capture)
+    if (ps === 'captured') {
+      respawnTimerRef.current -= dt
+      if (respawnTimerRef.current <= 0 && livesRef.current > 0) {
+        playerStateRef.current = 'normal'
+        invulnRef.current = 1.6
+        p.x = W / 2; p.y = H - 60
+      }
+    }
 
     playerFireCdRef.current -= dt
-    if (phaseRef.current === 'playing' && (k[' '] || k['z'] || k['Z']) && playerFireCdRef.current <= 0) {
-      bulletsRef.current.push({ x: p.x - 6, y: p.y - 12, vy: -BULLET_SPEED, from: 'player' })
-      bulletsRef.current.push({ x: p.x + 6, y: p.y - 12, vy: -BULLET_SPEED, from: 'player' })
+    if (phaseRef.current === 'playing' && ps !== 'captured' && (k[' '] || k['z'] || k['Z']) && playerFireCdRef.current <= 0) {
+      if (ps === 'dual') {
+        bulletsRef.current.push({ x: p.x - 12, y: p.y - 14, vy: -BULLET_SPEED, from: 'player' })
+        bulletsRef.current.push({ x: p.x + 12, y: p.y - 14, vy: -BULLET_SPEED, from: 'player' })
+      } else {
+        bulletsRef.current.push({ x: p.x, y: p.y - 14, vy: -BULLET_SPEED, from: 'player' })
+      }
       playerFireCdRef.current = PLAYER_FIRE_INTERVAL
     }
 
@@ -241,8 +294,28 @@ export default function Shmup(): JSX.Element {
         e.diveStartY = e.y
         e.diveTargetX = p.x + (Math.random() - 0.5) * 80
       }
-      // More frequent dives at higher waves
       diveCooldownRef.current = Math.max(0.4, 1.6 - waveRef.current * 0.1)
+    }
+
+    // Maybe trigger a capture beam (tanks only). Skip if player is captured
+    // or already dual (no second slot for a held ship) or no tank in formation.
+    beamCooldownRef.current -= dt
+    if (
+      phaseRef.current === 'playing' &&
+      beamCooldownRef.current <= 0 &&
+      playerStateRef.current === 'normal'
+    ) {
+      const tanks = enemiesRef.current.filter(e => e.type === 'tank' && e.state === 'formation' && !e.holdingShip)
+      if (tanks.length > 0) {
+        const e = tanks[Math.floor(Math.random() * tanks.length)]
+        e.state = 'beaming'
+        e.beamPhase = 'descend'
+        e.beamT = 0
+        e.diveStartX = e.x
+        e.diveStartY = e.y
+        e.diveTargetX = Math.max(50, Math.min(W - 50, p.x))
+      }
+      beamCooldownRef.current = 8 + Math.random() * 4
     }
 
     // Update enemies
@@ -287,12 +360,45 @@ export default function Shmup(): JSX.Element {
           e.entryP1 = { x: e.x < W / 2 ? -30 : W + 30, y: 100 }
         }
       } else if (e.state === 'returning') {
-        // Reuse entry-style bezier from top back to slot
         e.entryT = Math.min(1, e.entryT + dt / e.entryDuration)
         const slotPos = formationSlotPos(e.col, e.row, driftX)
         const pos = bezier(e.entryP0, e.entryP1, slotPos, e.entryT)
         e.x = pos.x; e.y = pos.y
         if (e.entryT >= 1) e.state = 'formation'
+      } else if (e.state === 'beaming') {
+        e.beamT += dt
+        if (e.beamPhase === 'descend') {
+          const t = Math.min(1, e.beamT / BEAM_DESCEND_DUR)
+          e.x = e.diveStartX + (e.diveTargetX - e.diveStartX) * t
+          e.y = e.diveStartY + (BEAM_BOSS_Y - e.diveStartY) * t
+          if (t >= 1) { e.beamPhase = 'charge'; e.beamT = 0 }
+        } else if (e.beamPhase === 'charge') {
+          if (e.beamT >= BEAM_CHARGE_DUR) { e.beamPhase = 'fire'; e.beamT = 0 }
+        } else if (e.beamPhase === 'fire') {
+          // Capture if player is inside the cone while beam is active
+          if (
+            playerStateRef.current === 'normal' &&
+            invulnRef.current <= 0 &&
+            isInBeam(e.x, e.y, p.x, p.y)
+          ) {
+            triggerCapture(e)
+          }
+          if (e.beamT >= BEAM_FIRE_DUR) {
+            e.beamPhase = 'rise'
+            e.beamT = 0
+            e.diveStartX = e.x; e.diveStartY = e.y
+          }
+        } else if (e.beamPhase === 'rise') {
+          const t = Math.min(1, e.beamT / BEAM_RISE_DUR)
+          const slotPos = formationSlotPos(e.col, e.row, driftX)
+          e.x = e.diveStartX + (slotPos.x - e.diveStartX) * t
+          e.y = e.diveStartY + (slotPos.y - e.diveStartY) * t
+          if (t >= 1) {
+            e.state = 'formation'
+            e.beamPhase = 'idle'
+            e.beamT = 0
+          }
+        }
       }
     }
 
@@ -322,7 +428,32 @@ export default function Shmup(): JSX.Element {
           if (e.hp <= 0) {
             scoreRef.current += ENEMY_POINTS[e.type]
             setScore(scoreRef.current)
-            burst(e.x, e.y, ENEMY_COLOR[e.type], 12)
+            burst(e.x, e.y, ENEMY_COLOR[e.type], 14)
+            ringsRef.current.push({
+              x: e.x, y: e.y, life: 0.35, maxLife: 0.35,
+              color: ENEMY_COLOR[e.type], maxRadius: e.type === 'tank' ? 36 : 24
+            })
+            // Rescue: killing a boss that holds your ship awards dual fighter.
+            // Bonus: 2x boss points and a celebratory ring.
+            if (e.holdingShip) {
+              scoreRef.current += ENEMY_POINTS[e.type]
+              setScore(scoreRef.current)
+              ringsRef.current.push({
+                x: e.x, y: e.y, life: 0.6, maxLife: 0.6,
+                color: '#fde047', maxRadius: 60
+              })
+              if (playerStateRef.current === 'normal') {
+                playerStateRef.current = 'dual'
+                invulnRef.current = Math.max(invulnRef.current, 1.0)
+              } else if (playerStateRef.current === 'captured') {
+                // Player still captured (within respawn delay) — respawn as dual now
+                playerStateRef.current = 'dual'
+                invulnRef.current = 1.6
+                playerRef.current.x = W / 2
+                playerRef.current.y = H - 60
+                respawnTimerRef.current = 0
+              }
+            }
           }
           break
         }
@@ -330,20 +461,21 @@ export default function Shmup(): JSX.Element {
     }
     enemiesRef.current = enemiesRef.current.filter(e => e.hp > 0)
 
-    // Enemy bullets vs player
-    if (invulnRef.current <= 0 && phaseRef.current === 'playing') {
+    // Enemy bullets vs player (skip while captured / invulnerable)
+    if (invulnRef.current <= 0 && phaseRef.current === 'playing' && playerStateRef.current !== 'captured') {
+      const hitHalfWidth = playerStateRef.current === 'dual' ? 22 : 12
       for (const b of bulletsRef.current) {
         if (b.from !== 'enemy') continue
-        if (Math.abs(b.x - p.x) < 12 && Math.abs(b.y - p.y) < 12) {
+        if (Math.abs(b.x - p.x) < hitHalfWidth && Math.abs(b.y - p.y) < 12) {
           hitPlayer()
           b.y = H + 100
           break
         }
       }
-      // Enemy bodies vs player (only diving)
+      const bodyHalfWidth = playerStateRef.current === 'dual' ? 28 : 18
       for (const e of enemiesRef.current) {
         if (e.state !== 'diving') continue
-        if (Math.abs(e.x - p.x) < 18 && Math.abs(e.y - p.y) < 18) {
+        if (Math.abs(e.x - p.x) < bodyHalfWidth && Math.abs(e.y - p.y) < 18) {
           hitPlayer()
           e.hp = 0
           burst(e.x, e.y, ENEMY_COLOR[e.type], 12)
@@ -359,6 +491,9 @@ export default function Shmup(): JSX.Element {
       pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.life -= dt
     }
     particlesRef.current = particlesRef.current.filter(pt => pt.life > 0)
+    // Rings
+    for (const r of ringsRef.current) r.life -= dt
+    ringsRef.current = ringsRef.current.filter(r => r.life > 0)
 
     // Wave clear?
     if (phaseRef.current === 'playing' && enemiesRef.current.length === 0 && waveSpawnIndexRef.current >= waveDefRef.current.spawns.length) {
@@ -399,7 +534,8 @@ export default function Shmup(): JSX.Element {
       entryP0: p0, entryP1: p1, entryP2: { x: 0, y: 0 },
       entryT: 0, entryDuration: 1.4,
       diveT: 0, diveStartX: 0, diveStartY: 0, diveTargetX: 0,
-      cooldown: 2 + Math.random() * 2
+      cooldown: 2 + Math.random() * 2,
+      beamT: 0, beamPhase: 'idle', holdingShip: false
     })
   }
 
@@ -426,7 +562,48 @@ export default function Shmup(): JSX.Element {
     }
   }
 
+  function isInBeam(bossX: number, bossY: number, px: number, py: number): boolean {
+    // Cone widens linearly from BEAM_HALF_WIDTH_TOP at boss to BEAM_HALF_WIDTH_BOTTOM at H.
+    if (py < bossY) return false
+    const tBeam = (py - bossY) / (H - bossY)
+    const halfWidth = BEAM_HALF_WIDTH_TOP + (BEAM_HALF_WIDTH_BOTTOM - BEAM_HALF_WIDTH_TOP) * tBeam
+    return Math.abs(px - bossX) < halfWidth
+  }
+
+  function triggerCapture(boss: Enemy): void {
+    playerStateRef.current = 'captured'
+    boss.holdingShip = true
+    boss.beamPhase = 'rise'
+    boss.beamT = 0
+    boss.diveStartX = boss.x; boss.diveStartY = boss.y
+    burst(playerRef.current.x, playerRef.current.y, '#fde047', 24)
+    ringsRef.current.push({
+      x: playerRef.current.x, y: playerRef.current.y,
+      life: 0.5, maxLife: 0.5, color: '#fde047', maxRadius: 50
+    })
+    livesRef.current--; setLives(livesRef.current)
+    respawnTimerRef.current = CAPTURE_RESPAWN_DELAY
+    if (livesRef.current <= 0) {
+      phaseRef.current = 'gameOver'; setPhase('gameOver')
+      if (scoreRef.current > hi) {
+        setHi(scoreRef.current)
+        window.api.settings.set(SAVE_KEY, String(scoreRef.current)).catch(() => {})
+      }
+    }
+  }
+
   function hitPlayer(): void {
+    // Dual-fighter absorbs one hit — lose the side ship, no life lost
+    if (playerStateRef.current === 'dual') {
+      playerStateRef.current = 'normal'
+      invulnRef.current = 1.4
+      burst(playerRef.current.x + 12, playerRef.current.y, '#60a5fa', 18)
+      ringsRef.current.push({
+        x: playerRef.current.x + 12, y: playerRef.current.y,
+        life: 0.4, maxLife: 0.4, color: '#60a5fa', maxRadius: 28
+      })
+      return
+    }
     livesRef.current--
     setLives(livesRef.current)
     invulnRef.current = 1.6
@@ -452,6 +629,7 @@ export default function Shmup(): JSX.Element {
     bulletsRef.current = []
     enemiesRef.current = []
     particlesRef.current = []
+    ringsRef.current = []
     playerRef.current = { x: W / 2, y: H - 60 }
     livesRef.current = 3; setLives(3)
     scoreRef.current = 0; setScore(0)
@@ -459,6 +637,9 @@ export default function Shmup(): JSX.Element {
     formationTRef.current = 0
     invulnRef.current = 0
     diveCooldownRef.current = 3
+    beamCooldownRef.current = 8
+    playerStateRef.current = 'normal'
+    respawnTimerRef.current = 0
     startWave(1)
   }
 
@@ -469,25 +650,39 @@ export default function Shmup(): JSX.Element {
     ctx.fillStyle = '#02050a'
     ctx.fillRect(0, 0, W, H)
 
-    // Stars
-    ctx.fillStyle = '#fff'
+    // Parallax stars
     for (const s of starsRef.current) {
-      const a = s.speed / 160
-      ctx.globalAlpha = Math.min(1, a)
-      ctx.fillRect(s.x, s.y, 1.5, 1.5)
+      ctx.fillStyle = s.color
+      ctx.fillRect(s.x, s.y, s.size, s.size)
     }
-    ctx.globalAlpha = 1
+
+    // Tractor beams (drawn before enemies so the boss sits on top)
+    for (const e of enemiesRef.current) {
+      if (e.state === 'beaming' && (e.beamPhase === 'charge' || e.beamPhase === 'fire')) {
+        drawBeam(ctx, e.x, e.y, e.beamPhase === 'charge' ? e.beamT / BEAM_CHARGE_DUR * 0.4 : 1)
+      }
+    }
 
     // Player
     if (phaseRef.current !== 'idle' && phaseRef.current !== 'gameOver') {
       const p = playerRef.current
+      const ps = playerStateRef.current
       const blink = invulnRef.current > 0 && Math.floor(invulnRef.current * 16) % 2 === 0
-      if (!blink) drawShip(ctx, p.x, p.y, '#60a5fa')
+      if (ps === 'normal' && !blink) {
+        drawShip(ctx, p.x, p.y, '#60a5fa')
+      } else if (ps === 'dual' && !blink) {
+        drawShip(ctx, p.x - 12, p.y, '#60a5fa')
+        drawShip(ctx, p.x + 12, p.y, '#fde047')
+      }
     }
 
     // Enemies
     for (const e of enemiesRef.current) {
-      drawEnemy(ctx, e.x, e.y, ENEMY_COLOR[e.type], e.type, e.state === 'diving')
+      drawEnemy(ctx, e.x, e.y, ENEMY_COLOR[e.type], e.type, e.state === 'diving' || e.state === 'beaming')
+      // Captured ship attached below a holding boss
+      if (e.holdingShip) {
+        drawShip(ctx, e.x, e.y + 22, '#9ca3af')
+      }
     }
 
     // Bullets
@@ -501,6 +696,17 @@ export default function Shmup(): JSX.Element {
         ctx.fill()
       }
     }
+
+    // Rings (death flashes)
+    for (const r of ringsRef.current) {
+      const t = 1 - r.life / r.maxLife
+      const radius = r.maxRadius * t
+      ctx.globalAlpha = 1 - t
+      ctx.strokeStyle = r.color
+      ctx.lineWidth = 2
+      ctx.beginPath(); ctx.arc(r.x, r.y, radius, 0, Math.PI * 2); ctx.stroke()
+    }
+    ctx.globalAlpha = 1
 
     // Particles
     for (const pt of particlesRef.current) {
@@ -522,63 +728,168 @@ export default function Shmup(): JSX.Element {
     }
   }
 
-  function drawShip(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
-    ctx.fillStyle = color
+  function drawBeam(ctx: CanvasRenderingContext2D, bossX: number, bossY: number, intensity: number): void {
+    // Cone polygon — boss top to canvas bottom, widening.
+    const topY = bossY + 4
+    const grad = ctx.createLinearGradient(0, topY, 0, H)
+    grad.addColorStop(0, `rgba(253, 224, 71, ${0.75 * intensity})`)
+    grad.addColorStop(0.6, `rgba(253, 224, 71, ${0.25 * intensity})`)
+    grad.addColorStop(1, `rgba(253, 224, 71, 0)`)
+    ctx.fillStyle = grad
     ctx.beginPath()
-    ctx.moveTo(x, y - 12)
-    ctx.lineTo(x - 12, y + 10)
-    ctx.lineTo(x, y + 4)
-    ctx.lineTo(x + 12, y + 10)
+    ctx.moveTo(bossX - BEAM_HALF_WIDTH_TOP, topY)
+    ctx.lineTo(bossX + BEAM_HALF_WIDTH_TOP, topY)
+    ctx.lineTo(bossX + BEAM_HALF_WIDTH_BOTTOM, H)
+    ctx.lineTo(bossX - BEAM_HALF_WIDTH_BOTTOM, H)
     ctx.closePath()
     ctx.fill()
-    ctx.fillStyle = '#fff'
-    ctx.fillRect(x - 1.5, y - 4, 3, 8)
+    // Animated stripes
+    const t = (performance.now() / 120) % 24
+    ctx.strokeStyle = `rgba(253, 230, 138, ${0.55 * intensity})`
+    ctx.lineWidth = 1
+    for (let yo = -t; yo < H - topY; yo += 12) {
+      const yy = topY + yo
+      if (yy < topY || yy > H) continue
+      const tBeam = (yy - bossY) / (H - bossY)
+      const hw = BEAM_HALF_WIDTH_TOP + (BEAM_HALF_WIDTH_BOTTOM - BEAM_HALF_WIDTH_TOP) * tBeam
+      ctx.beginPath()
+      ctx.moveTo(bossX - hw, yy)
+      ctx.lineTo(bossX + hw, yy)
+      ctx.stroke()
+    }
+  }
+
+  function drawShip(ctx: CanvasRenderingContext2D, x: number, y: number, color: string): void {
+    // Engine flames — flicker
+    const flameH = 6 + Math.random() * 4
+    const grad = ctx.createLinearGradient(0, y + 8, 0, y + 8 + flameH)
+    grad.addColorStop(0, 'rgba(253, 224, 71, 0.95)')
+    grad.addColorStop(0.5, 'rgba(251, 146, 60, 0.7)')
+    grad.addColorStop(1, 'rgba(251, 146, 60, 0)')
+    ctx.fillStyle = grad
+    ctx.beginPath(); ctx.moveTo(x - 5, y + 8); ctx.lineTo(x - 2, y + 8 + flameH); ctx.lineTo(x - 8, y + 8 + flameH * 0.6); ctx.closePath(); ctx.fill()
+    ctx.beginPath(); ctx.moveTo(x + 5, y + 8); ctx.lineTo(x + 2, y + 8 + flameH); ctx.lineTo(x + 8, y + 8 + flameH * 0.6); ctx.closePath(); ctx.fill()
+    // Wings (white outer)
+    ctx.fillStyle = '#e5e7eb'
+    ctx.beginPath()
+    ctx.moveTo(x - 14, y + 10)
+    ctx.lineTo(x - 8, y - 2)
+    ctx.lineTo(x - 4, y - 2)
+    ctx.lineTo(x - 4, y + 10)
+    ctx.closePath(); ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(x + 14, y + 10)
+    ctx.lineTo(x + 8, y - 2)
+    ctx.lineTo(x + 4, y - 2)
+    ctx.lineTo(x + 4, y + 10)
+    ctx.closePath(); ctx.fill()
+    // Hull (blue body)
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.moveTo(x, y - 14)
+    ctx.lineTo(x - 5, y + 4)
+    ctx.lineTo(x - 5, y + 10)
+    ctx.lineTo(x + 5, y + 10)
+    ctx.lineTo(x + 5, y + 4)
+    ctx.closePath(); ctx.fill()
+    // Cockpit
+    ctx.fillStyle = '#bae6fd'
+    ctx.fillRect(x - 1.5, y - 6, 3, 6)
+    // Nose tip highlight
+    ctx.fillStyle = '#fde047'
+    ctx.fillRect(x - 0.5, y - 14, 1, 3)
   }
 
   function drawEnemy(ctx: CanvasRenderingContext2D, x: number, y: number, color: string, type: EnemyType, diving: boolean): void {
-    ctx.fillStyle = color
     if (diving) {
       ctx.shadowColor = color
-      ctx.shadowBlur = 8
+      ctx.shadowBlur = 10
     }
     if (type === 'tank') {
-      ctx.fillRect(x - 16, y - 12, 32, 22)
-      ctx.fillStyle = '#7f1d1d'
-      ctx.fillRect(x - 10, y - 4, 20, 6)
-    } else if (type === 'weaver') {
+      // Boss-Galaga: large with crown spires and dark visor
+      ctx.fillStyle = color
       ctx.beginPath()
-      ctx.moveTo(x, y + 10)
-      ctx.lineTo(x - 14, y - 6)
-      ctx.lineTo(x, y - 2)
-      ctx.lineTo(x + 14, y - 6)
-      ctx.closePath()
-      ctx.fill()
-    } else if (type === 'scout') {
-      ctx.beginPath()
-      ctx.moveTo(x, y - 10)
-      ctx.lineTo(x + 8, y + 8)
-      ctx.lineTo(x - 8, y + 8)
-      ctx.closePath()
-      ctx.fill()
-    } else if (type === 'bomber') {
-      // Pink bomber: hex
-      ctx.beginPath()
-      ctx.moveTo(x - 12, y)
+      ctx.moveTo(x - 18, y - 6)
+      ctx.lineTo(x - 12, y - 14)
       ctx.lineTo(x - 6, y - 10)
+      ctx.lineTo(x, y - 14)
       ctx.lineTo(x + 6, y - 10)
-      ctx.lineTo(x + 12, y)
-      ctx.lineTo(x + 6, y + 10)
-      ctx.lineTo(x - 6, y + 10)
-      ctx.closePath()
-      ctx.fill()
-      ctx.fillStyle = '#7a1a3f'
-      ctx.fillRect(x - 4, y - 3, 8, 6)
-    } else {
+      ctx.lineTo(x + 12, y - 14)
+      ctx.lineTo(x + 18, y - 6)
+      ctx.lineTo(x + 14, y + 10)
+      ctx.lineTo(x - 14, y + 10)
+      ctx.closePath(); ctx.fill()
+      ctx.fillStyle = '#1f2937'
+      ctx.fillRect(x - 11, y - 4, 22, 6)
+      ctx.fillStyle = '#fde047'
+      ctx.fillRect(x - 8, y - 3, 3, 4)
+      ctx.fillRect(x + 5, y - 3, 3, 4)
+    } else if (type === 'weaver') {
+      // Butterfly: split wings, antennae
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(x - 2, y - 8); ctx.lineTo(x - 5, y - 13); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(x + 2, y - 8); ctx.lineTo(x + 5, y - 13); ctx.stroke()
+      ctx.fillStyle = color
+      // left wing
       ctx.beginPath()
-      ctx.arc(x, y, 11, 0, Math.PI * 2)
-      ctx.fill()
+      ctx.moveTo(x, y - 6); ctx.lineTo(x - 14, y - 8); ctx.lineTo(x - 12, y + 2); ctx.lineTo(x - 2, y + 4)
+      ctx.closePath(); ctx.fill()
+      // right wing (mirror)
+      ctx.beginPath()
+      ctx.moveTo(x, y - 6); ctx.lineTo(x + 14, y - 8); ctx.lineTo(x + 12, y + 2); ctx.lineTo(x + 2, y + 4)
+      ctx.closePath(); ctx.fill()
+      // body
+      ctx.fillStyle = '#1f2937'
+      ctx.fillRect(x - 1.5, y - 8, 3, 14)
+      // wing dots
+      ctx.fillStyle = '#fde047'
+      ctx.fillRect(x - 9, y - 4, 2, 2)
+      ctx.fillRect(x + 7, y - 4, 2, 2)
+    } else if (type === 'scout') {
+      // Sleek dart with stripes
+      ctx.fillStyle = color
+      ctx.beginPath()
+      ctx.moveTo(x, y - 12)
+      ctx.lineTo(x + 9, y + 6)
+      ctx.lineTo(x + 4, y + 8)
+      ctx.lineTo(x, y + 4)
+      ctx.lineTo(x - 4, y + 8)
+      ctx.lineTo(x - 9, y + 6)
+      ctx.closePath(); ctx.fill()
+      ctx.fillStyle = '#064e3b'
+      ctx.fillRect(x - 1, y - 6, 2, 8)
+    } else if (type === 'bomber') {
+      // Heavy: rounded hex with armor plates
+      ctx.fillStyle = color
+      ctx.beginPath()
+      ctx.moveTo(x - 13, y - 2)
+      ctx.lineTo(x - 7, y - 11)
+      ctx.lineTo(x + 7, y - 11)
+      ctx.lineTo(x + 13, y - 2)
+      ctx.lineTo(x + 7, y + 9)
+      ctx.lineTo(x - 7, y + 9)
+      ctx.closePath(); ctx.fill()
+      ctx.fillStyle = '#7a1a3f'
+      ctx.fillRect(x - 5, y - 4, 10, 7)
+      ctx.fillStyle = '#fbcfe8'
+      ctx.fillRect(x - 2, y - 2, 4, 3)
+    } else {
+      // Bee grunt — oval with antennae
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1
+      ctx.beginPath(); ctx.moveTo(x - 3, y - 7); ctx.lineTo(x - 6, y - 12); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(x + 3, y - 7); ctx.lineTo(x + 6, y - 12); ctx.stroke()
+      ctx.fillStyle = color
+      ctx.beginPath(); ctx.ellipse(x, y, 10, 9, 0, 0, Math.PI * 2); ctx.fill()
+      // stripes
       ctx.fillStyle = '#7c2d12'
-      ctx.fillRect(x - 4, y - 2, 8, 4)
+      ctx.fillRect(x - 9, y - 2, 18, 2)
+      ctx.fillRect(x - 8, y + 2, 16, 2)
+      // wings (small grey)
+      ctx.fillStyle = 'rgba(229, 231, 235, 0.55)'
+      ctx.beginPath(); ctx.ellipse(x - 10, y - 2, 4, 2, -0.4, 0, Math.PI * 2); ctx.fill()
+      ctx.beginPath(); ctx.ellipse(x + 10, y - 2, 4, 2, 0.4, 0, Math.PI * 2); ctx.fill()
     }
     ctx.shadowBlur = 0
   }
