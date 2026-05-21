@@ -1,0 +1,222 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  position: relative;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.header strong {
+  color: #fbbf24;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.resetBtn {
+  padding: 5px 12px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  cursor: pointer;
+}
+
+.resetBtn:hover { background: rgba(251, 191, 36, 0.22); }
+
+.layout {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.canvas {
+  display: block;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 4px;
+  background: #0a0805;
+  outline: none;
+  image-rendering: pixelated;
+}
+
+.sidebar {
+  width: 200px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(251, 191, 36, 0.18);
+  border-radius: 4px;
+  padding: 10px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  border-bottom: 1px dotted rgba(255, 255, 255, 0.08);
+}
+
+.stat strong { color: #fbbf24; }
+
+.statRed strong { color: #fca5a5; }
+
+.section {
+  margin-top: 10px;
+  font-size: 10px;
+  color: rgba(251, 191, 36, 0.7);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.invList {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0 0;
+  font-size: 11px;
+}
+
+.invList li {
+  padding: 2px 0;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.invList .equipped { color: #4ade80; }
+
+.log {
+  margin-top: 10px;
+  max-height: 140px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+
+.log p {
+  margin: 1px 0;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.log p.dmg { color: #fca5a5; }
+.log p.kill { color: #fbbf24; }
+.log p.pickup { color: #67e8f9; }
+.log p.heal { color: #86efac; }
+
+.hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: center;
+  max-width: 720px;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.85);
+  border-radius: 6px;
+  z-index: 10;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 800;
+  color: #fbbf24;
+  letter-spacing: 0.08em;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+}
+
+.btn {
+  padding: 9px 24px;
+  background: linear-gradient(160deg, #d97706 0%, #fbbf24 100%);
+  color: #000;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.btn:hover { transform: translateY(-1px); }
+
+.btnGhost {
+  padding: 7px 16px;
+  background: transparent;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.btnGhost:hover { background: rgba(251, 191, 36, 0.1); }
+
+.forgeRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 700px;
+}
+
+.forgeCard {
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 6px;
+  padding: 12px;
+  width: 160px;
+  text-align: left;
+}
+
+.forgeName {
+  font-size: 12px;
+  font-weight: 800;
+  color: #fbbf24;
+  margin-bottom: 4px;
+}
+
+.forgeDesc {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 8px;
+}
+
+.forgeBuy {
+  display: block;
+  width: 100%;
+  padding: 5px 0;
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.forgeBuy:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.forgeBuy:hover:not(:disabled) { background: rgba(251, 191, 36, 0.25); }

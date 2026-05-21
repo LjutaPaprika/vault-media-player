@@ -21,6 +21,10 @@ import Sokoban from '../components/Sokoban'
 import Reversi from '../components/Reversi'
 import Asteroids from '../components/Asteroids'
 import Pacman from '../components/Pacman'
+import Frogger from '../components/Frogger'
+import EndlessRunner from '../components/EndlessRunner'
+import Survivors from '../components/Survivors'
+import Roguelike from '../components/Roguelike'
 import styles from './ArcadePage.module.css'
 
 function fmt(n: number): string {
@@ -61,6 +65,10 @@ export default function ArcadePage(): JSX.Element {
   const [reversiRecord, setReversiRecord] = useState<{ wins: number; losses: number; draws: number }>({ wins: 0, losses: 0, draws: 0 })
   const [asteroidsHi, setAsteroidsHi] = useState(0)
   const [pacmanHi, setPacmanHi] = useState(0)
+  const [froggerHi, setFroggerHi] = useState(0)
+  const [runnerHi, setRunnerHi] = useState(0)
+  const [survivorsBest, setSurvivorsBest] = useState<{ time: number; kills: number }>({ time: 0, kills: 0 })
+  const [roguelikeSouls, setRoguelikeSouls] = useState(0)
 
   const { files, prestigeCount, shows, paused, togglePause } = useIdleGameStore()
   const mult = prestigeMultiplier(prestigeCount)
@@ -139,6 +147,29 @@ export default function ArcadePage(): JSX.Element {
     })
     window.api.settings.get('pacmanHighScore', '0').then(v => {
       setPacmanHi(parseInt(v, 10) || 0)
+    })
+    window.api.settings.get('froggerHighScore', '0').then(v => {
+      setFroggerHi(parseInt(v, 10) || 0)
+    })
+    void (async () => {
+      const [s, l, g] = await Promise.all([
+        window.api.settings.get('runnerHighScore_side', '0'),
+        window.api.settings.get('runnerHighScore_lane', '0'),
+        window.api.settings.get('runnerHighScore_gravity', '0')
+      ])
+      setRunnerHi(Math.max(parseInt(s, 10) || 0, parseInt(l, 10) || 0, parseInt(g, 10) || 0))
+    })()
+    window.api.settings.get('survivorsBest', '{}').then(v => {
+      try {
+        const d = JSON.parse(v) as { time?: number; kills?: number }
+        setSurvivorsBest({ time: d.time ?? 0, kills: d.kills ?? 0 })
+      } catch { /* ignore */ }
+    })
+    window.api.settings.get('roguelikeMeta', '{}').then(v => {
+      try {
+        const d = JSON.parse(v) as { souls?: number }
+        setRoguelikeSouls(d.souls ?? 0)
+      } catch { /* ignore */ }
     })
   }, [])
 
@@ -317,6 +348,56 @@ export default function ArcadePage(): JSX.Element {
             <span className={styles.cardChevron}>{openCard === 'pacman' ? '▲' : '▼'}</span>
           </button>
           {openCard === 'pacman' && <Pacman />}
+        </div>
+
+        {/* ── Roguelike ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardGold}`} onClick={() => toggleCard('roguelike')}>
+            <span className={`${styles.cardTitle} ${styles.titleGold}`}>⚔ Roguelike</span>
+            <span className={styles.cardMeta}>
+              {roguelikeSouls > 0 ? `${fmt(roguelikeSouls)} souls forged` : '6 floors · permadeath · soul forge'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'roguelike' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'roguelike' && <Roguelike />}
+        </div>
+
+        {/* ── Survivors ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardPurple}`} onClick={() => toggleCard('survivors')}>
+            <span className={`${styles.cardTitle} ${styles.titlePurple}`}>🧛 Survivors</span>
+            <span className={styles.cardMeta}>
+              {survivorsBest.time > 0
+                ? `best ${Math.floor(survivorsBest.time / 60)}:${(survivorsBest.time % 60).toString().padStart(2, '0')} · ${survivorsBest.kills}k`
+                : 'Survive 10 minutes against the horde'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'survivors' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'survivors' && <Survivors />}
+        </div>
+
+        {/* ── Endless Runner ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardOrange}`} onClick={() => toggleCard('runner')}>
+            <span className={`${styles.cardTitle} ${styles.titleOrange}`}>🏃 Endless Runner</span>
+            <span className={styles.cardMeta}>
+              {runnerHi > 0 ? `best ${fmt(runnerHi)}` : 'Side · lane · gravity — pick your run'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'runner' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'runner' && <EndlessRunner />}
+        </div>
+
+        {/* ── Frogger ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardGreen}`} onClick={() => toggleCard('frogger')}>
+            <span className={`${styles.cardTitle} ${styles.titleGreen}`}>🐸 Frogger</span>
+            <span className={styles.cardMeta}>
+              {froggerHi > 0 ? `best ${fmt(froggerHi)}` : 'Hop the road and river'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'frogger' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'frogger' && <Frogger />}
         </div>
 
         {/* ── Maze ── */}
