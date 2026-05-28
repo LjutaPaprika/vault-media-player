@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   padding: 12px;
   position: relative;
 }
@@ -21,6 +21,19 @@
   margin-left: 4px;
 }
 
+.goldTag {
+  color: #fbbf24 !important;
+  background: rgba(251, 191, 36, 0.12);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.goldTag strong {
+  color: #fde047;
+  font-size: 13px;
+}
+
 .resetBtn {
   padding: 5px 12px;
   background: rgba(251, 191, 36, 0.12);
@@ -36,8 +49,42 @@
 
 .layout {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: flex-start;
+}
+
+.leftPanel {
+  width: 140px;
+  max-height: 440px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(251, 191, 36, 0.18);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.7);
+  flex-shrink: 0;
+}
+
+.centerCol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rightPanel {
+  width: 180px;
+  max-height: 440px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(251, 191, 36, 0.18);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  flex-shrink: 0;
 }
 
 .canvas {
@@ -49,16 +96,27 @@
   image-rendering: pixelated;
 }
 
-.sidebar {
-  width: 200px;
+.logBar {
+  max-height: 72px;
+  overflow-y: auto;
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(251, 191, 36, 0.18);
   border-radius: 4px;
-  padding: 10px;
+  padding: 4px 8px;
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
 }
+
+.logBar p {
+  margin: 1px 0;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.logBar p:first-child { color: rgba(255, 255, 255, 0.85); }
+.logBar .dmg { color: #fca5a5; }
+.logBar .kill { color: #fbbf24; }
+.logBar .pickup { color: #67e8f9; }
+.logBar .heal { color: #86efac; }
 
 .stat {
   display: flex;
@@ -72,43 +130,58 @@
 .statRed strong { color: #fca5a5; }
 
 .section {
-  margin-top: 10px;
+  margin-top: 8px;
   font-size: 10px;
   color: rgba(251, 191, 36, 0.7);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
+.section:first-child { margin-top: 0; }
+
 .invList {
   list-style: none;
   padding: 0;
-  margin: 6px 0 0 0;
+  margin: 4px 0 0 0;
   font-size: 11px;
 }
 
 .invList li {
-  padding: 2px 0;
+  padding: 1px 0;
   color: rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .invList .equipped { color: #4ade80; }
 
-.log {
-  margin-top: 10px;
-  max-height: 140px;
-  overflow-y: auto;
-  font-size: 11px;
+.legend {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.6);
 }
 
-.log p {
-  margin: 1px 0;
-  color: rgba(255, 255, 255, 0.65);
+.legend span {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  font-weight: 700;
+  margin-right: 4px;
 }
 
-.log p.dmg { color: #fca5a5; }
-.log p.kill { color: #fbbf24; }
-.log p.pickup { color: #67e8f9; }
-.log p.heal { color: #86efac; }
+.legendGroup {
+  margin-bottom: 4px;
+}
+
+.legendTitle {
+  width: auto !important;
+  font-size: 9px;
+  color: rgba(251, 191, 36, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
 
 .hint {
   font-size: 11px;
@@ -220,3 +293,33 @@
 }
 
 .forgeBuy:hover:not(:disabled) { background: rgba(251, 191, 36, 0.25); }
+
+.shopGrid {
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px auto;
+}
+
+.shopItem {
+  display: grid;
+  grid-template-columns: 24px 16px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.shopItem.sold {
+  opacity: 0.35;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.shopIdx { color: #c084fc; font-weight: 800; font-size: 12px; }
+.shopGlyph { font-weight: 700; font-size: 14px; }
+.shopName { color: #fff; font-weight: 600; font-size: 12px; }
+.shopStat { color: rgba(255, 255, 255, 0.5); font-size: 10px; }
+.shopPrice { color: #fde047; font-weight: 800; font-size: 12px; text-align: right; white-space: nowrap; }

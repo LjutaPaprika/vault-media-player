@@ -19,6 +19,7 @@ import Pong from '../components/Pong'
 import Wordle from '../components/Wordle'
 import Sokoban from '../components/Sokoban'
 import Reversi from '../components/Reversi'
+import Quoridor from '../components/Quoridor'
 import Asteroids from '../components/Asteroids'
 import Pacman from '../components/Pacman'
 import Frogger from '../components/Frogger'
@@ -63,10 +64,11 @@ export default function ArcadePage(): JSX.Element {
   const [wordleStreak, setWordleStreak] = useState(0)
   const [sokobanCleared, setSokobanCleared] = useState(0)
   const [reversiRecord, setReversiRecord] = useState<{ wins: number; losses: number; draws: number }>({ wins: 0, losses: 0, draws: 0 })
+  const [quoridorRecord, setQuoridorRecord] = useState<{ wins: number; losses: number }>({ wins: 0, losses: 0 })
   const [asteroidsHi, setAsteroidsHi] = useState(0)
   const [pacmanHi, setPacmanHi] = useState(0)
   const [froggerHi, setFroggerHi] = useState(0)
-  const [runnerHi, setRunnerHi] = useState(0)
+  const [runnerHi, setRunnerHi] = useState<{ side: number; lane: number; gravity: number }>({ side: 0, lane: 0, gravity: 0 })
   const [survivorsBest, setSurvivorsBest] = useState<{ time: number; kills: number }>({ time: 0, kills: 0 })
   const [roguelikeSouls, setRoguelikeSouls] = useState(0)
 
@@ -142,6 +144,12 @@ export default function ArcadePage(): JSX.Element {
         setReversiRecord({ wins: data.wins ?? 0, losses: data.losses ?? 0, draws: data.draws ?? 0 })
       } catch { /* ignore */ }
     })
+    window.api.settings.get('quoridorRecord', '{}').then(v => {
+      try {
+        const data = JSON.parse(v) as { wins?: number; losses?: number }
+        setQuoridorRecord({ wins: data.wins ?? 0, losses: data.losses ?? 0 })
+      } catch { /* ignore */ }
+    })
     window.api.settings.get('asteroidsHighScore', '0').then(v => {
       setAsteroidsHi(parseInt(v, 10) || 0)
     })
@@ -157,7 +165,7 @@ export default function ArcadePage(): JSX.Element {
         window.api.settings.get('runnerHighScore_lane', '0'),
         window.api.settings.get('runnerHighScore_gravity', '0')
       ])
-      setRunnerHi(Math.max(parseInt(s, 10) || 0, parseInt(l, 10) || 0, parseInt(g, 10) || 0))
+      setRunnerHi({ side: parseInt(s, 10) || 0, lane: parseInt(l, 10) || 0, gravity: parseInt(g, 10) || 0 })
     })()
     window.api.settings.get('survivorsBest', '{}').then(v => {
       try {
@@ -326,6 +334,20 @@ export default function ArcadePage(): JSX.Element {
           {openCard === 'reversi' && <Reversi />}
         </div>
 
+        {/* ── Quoridor ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardOrange}`} onClick={() => toggleCard('quoridor')}>
+            <span className={`${styles.cardTitle} ${styles.titleOrange}`}>🏰 Quoridor</span>
+            <span className={styles.cardMeta}>
+              {quoridorRecord.wins + quoridorRecord.losses > 0
+                ? `${quoridorRecord.wins}W · ${quoridorRecord.losses}L`
+                : 'Wall off your opponent'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'quoridor' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'quoridor' && <Quoridor />}
+        </div>
+
         {/* ── Asteroids ── */}
         <div className={styles.card}>
           <button className={`${styles.cardHeader} ${styles.cardCyan}`} onClick={() => toggleCard('asteroids')}>
@@ -353,7 +375,7 @@ export default function ArcadePage(): JSX.Element {
         {/* ── Roguelike ── */}
         <div className={styles.card}>
           <button className={`${styles.cardHeader} ${styles.cardGold}`} onClick={() => toggleCard('roguelike')}>
-            <span className={`${styles.cardTitle} ${styles.titleGold}`}>⚔ Roguelike</span>
+            <span className={`${styles.cardTitle} ${styles.titleGold}`}>⚔ Soul Forge</span>
             <span className={styles.cardMeta}>
               {roguelikeSouls > 0 ? `${fmt(roguelikeSouls)} souls forged` : '6 floors · permadeath · soul forge'}
             </span>
@@ -381,7 +403,9 @@ export default function ArcadePage(): JSX.Element {
           <button className={`${styles.cardHeader} ${styles.cardOrange}`} onClick={() => toggleCard('runner')}>
             <span className={`${styles.cardTitle} ${styles.titleOrange}`}>🏃 Endless Runner</span>
             <span className={styles.cardMeta}>
-              {runnerHi > 0 ? `best ${fmt(runnerHi)}` : 'Side · lane · gravity — pick your run'}
+              {(runnerHi.side > 0 || runnerHi.lane > 0 || runnerHi.gravity > 0)
+                ? `side ${fmt(runnerHi.side)} · lane ${fmt(runnerHi.lane)} · grav ${fmt(runnerHi.gravity)}`
+                : 'Side · lane · gravity — pick your run'}
             </span>
             <span className={styles.cardChevron}>{openCard === 'runner' ? '▲' : '▼'}</span>
           </button>
