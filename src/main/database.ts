@@ -113,7 +113,15 @@ function getDb(): Database.Database {
     CREATE TABLE IF NOT EXISTS favourites (
       album_path TEXT PRIMARY KEY
     );
+
+    CREATE TABLE IF NOT EXISTS dir_mtimes (
+      dir_path TEXT PRIMARY KEY,
+      mtime    INTEGER NOT NULL
+    );
   `)
+
+  // One-time cleanup: superseded by the dir_mtimes table
+  try { db.prepare("DELETE FROM config WHERE key = 'dirMtimes'").run() } catch { /* table missing */ }
 
   // Migrations
   try { db.exec('ALTER TABLE media_items ADD COLUMN file_modified INTEGER DEFAULT 0') } catch { /* already exists */ }
@@ -217,6 +225,26 @@ export function clearStoredFileTimes(): void {
   getDb().prepare('UPDATE media_items SET file_modified = 0').run()
 }
 
+export function clearStoredDirTimes(): void {
+  getDb().prepare('DELETE FROM dir_mtimes').run()
+}
+
+export function getStoredDirTimes(): Map<string, number> {
+  const rows = getDb()
+    .prepare('SELECT dir_path, mtime FROM dir_mtimes')
+    .all() as { dir_path: string; mtime: number }[]
+  return new Map(rows.map((r) => [r.dir_path, r.mtime]))
+}
+
+export function setStoredDirTimes(map: Map<string, number>): void {
+  const db = getDb()
+  const insert = db.prepare('INSERT OR REPLACE INTO dir_mtimes (dir_path, mtime) VALUES (?, ?)')
+  db.transaction(() => {
+    db.prepare('DELETE FROM dir_mtimes').run()
+    for (const [p, m] of map) insert.run(p, m)
+  })()
+}
+
 export function getStoredFileTimes(): Map<string, number> {
   const rows = getDb()
     .prepare('SELECT file_path, file_modified FROM media_items')
@@ -317,6 +345,14 @@ export function rerootPaths(oldRoot: string, newRoot: string): void {
     .all() as { album_path: string }[]
   const updateFav = db.prepare('UPDATE favourites SET album_path = ? WHERE album_path = ?')
 
+  // Smart-scan dir-mtime cache. Done in JS rather than pure SQL because cross-OS
+  // swaps (Windows ↔ Mac) flip the path separator, which SQL `LIKE` can't bridge.
+  const dirRows = db
+    .prepare('SELECT dir_path, mtime FROM dir_mtimes')
+    .all() as { dir_path: string; mtime: number }[]
+  const deleteDir = db.prepare('DELETE FROM dir_mtimes WHERE dir_path = ?')
+  const insertDir = db.prepare('INSERT OR REPLACE INTO dir_mtimes (dir_path, mtime) VALUES (?, ?)')
+
   db.transaction(() => {
     for (const row of mediaRows) {
       const nf = reroot(row.file_path)
@@ -328,6 +364,13 @@ export function rerootPaths(oldRoot: string, newRoot: string): void {
     for (const row of favRows) {
       const na = reroot(row.album_path)
       if (na && na !== row.album_path) updateFav.run(na, row.album_path)
+    }
+    for (const row of dirRows) {
+      const nd = reroot(row.dir_path)
+      if (nd && nd !== row.dir_path) {
+        deleteDir.run(row.dir_path)
+        insertDir.run(nd, row.mtime)
+      }
     }
   })()
 }

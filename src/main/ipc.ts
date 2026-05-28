@@ -10,7 +10,7 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, getTechInfo, getDurationsForCategory, setLastOpened, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -64,6 +64,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('library:getConfig', () => {
     const label = getConfig('libraryLabel')
     const resolvedPath = label ? findDriveByLabel(label) : null
+    // If the drive's mount point changed since last run (different PC, different
+    // letter, or Windows↔Mac swap), reroot stored paths now so posters resolve
+    // without requiring a manual scan.
+    if (resolvedPath) {
+      const storedRoot = getConfig('driveRoot')
+      if (storedRoot && storedRoot !== resolvedPath) rerootPaths(storedRoot, resolvedPath)
+      setConfig('driveRoot', resolvedPath)
+    }
     return { label, resolvedPath }
   })
 
@@ -89,7 +97,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (!label) throw new Error('Library drive label is not configured.')
     const root = resolveRootForScan(label)
     hideSystemFolders(root)
-    const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'))
+    const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'), true)
     return { count: updated }
   })
 
@@ -99,6 +107,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const root = resolveRootForScan(label)
     hideSystemFolders(root)
     clearStoredFileTimes()
+    clearStoredDirTimes()
     const { total } = scanLibrary(root, getToolPath(root, 'ffprobe'))
     return { count: total }
   })

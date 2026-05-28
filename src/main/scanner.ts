@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs'
-import { join, extname, basename, dirname } from 'path'
+import { join, extname, basename, dirname, sep } from 'path'
 import { execSync } from 'child_process'
-import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, migrateRenamedPaths, updateTechInfo, needsTechInfo, setConfig } from './database'
+import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, migrateRenamedPaths, updateTechInfo, needsTechInfo, setConfig, getStoredDirTimes, setStoredDirTimes } from './database'
 import { probeFile, probeAudioFileSync } from './mediaInfo'
 
 // Returns the set of subdirectory names inside `dir` flagged as hidden by the OS.
@@ -28,12 +28,14 @@ function listHiddenDirs(dir: string): Set<string> {
 // ─── Incremental scan session state ─────────────────────────────────────────
 // Populated at the start of each scanLibrary call, cleared at the end.
 let _storedTimes     = new Map<string, number>()
+let _storedDirTimes  = new Map<string, number>()
 let _foundPaths      = new Set<string>()
 let _updatedCount    = 0
 let _categoryBytes   = new Map<string, number>()
 let _extrasBytesByParent = new Map<string, number>()
 let _musicTrackCount = 0
 let _mangaSeriesCount = 0
+let _smartMode       = false
 
 // Call instead of upsertItem directly. Skips files whose mtime hasn't changed.
 function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]): boolean {
@@ -57,6 +59,43 @@ function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]
   upsertItem({ ...item, fileModified: mtime })
   _updatedCount++
   return true
+}
+
+// Smart-scan helpers: skip directories whose mtime hasn't changed since last scan
+function isDirChanged(dirPath: string): boolean {
+  if (!_smartMode) return true
+  try {
+    const { mtimeMs } = statSync(dirPath)
+    const mtime = Math.floor(mtimeMs)
+    if (_storedDirTimes.get(dirPath) === mtime) return false
+    _storedDirTimes.set(dirPath, mtime)
+    return true
+  } catch {
+    return true
+  }
+}
+
+function recordDirTime(dirPath: string): void {
+  try {
+    const { mtimeMs } = statSync(dirPath)
+    _storedDirTimes.set(dirPath, Math.floor(mtimeMs))
+  } catch { /* ignore */ }
+}
+
+function preserveStoredPaths(dirPrefix: string): void {
+  const prefix = dirPrefix.endsWith(sep) ? dirPrefix : dirPrefix + sep
+  for (const [filePath] of _storedTimes) {
+    if (filePath.startsWith(prefix)) _foundPaths.add(filePath)
+  }
+}
+
+function preserveDirectFiles(dirPrefix: string): void {
+  const prefix = dirPrefix.endsWith(sep) ? dirPrefix : dirPrefix + sep
+  for (const [filePath] of _storedTimes) {
+    if (filePath.startsWith(prefix) && !filePath.slice(prefix.length).includes(sep)) {
+      _foundPaths.add(filePath)
+    }
+  }
 }
 
 const VIDEO_EXTS = new Set(['.mkv', '.mp4', '.avi', '.mov', '.m4v', '.wmv'])
@@ -354,6 +393,7 @@ function scanMovies(rootDir: string, ffprobePath = ''): number {
     }
 
     const movieDir = join(rootDir, entry.name)
+    if (!isDirChanged(movieDir)) { preserveStoredPaths(movieDir); count++; continue }
     const meta = tryReadJson(join(movieDir, 'movie.json'))
     const poster = findPoster(movieDir)
     const firstVideo = findFirstMovieVideo(movieDir)
@@ -447,6 +487,8 @@ function scanEpisodes(
   subSeriesLabel?: string
 ): number {
   let count = 0
+  const dirChanged = isDirChanged(dir)
+  if (!dirChanged) { recordDirTime(dir) }
   const entries = readdirSync(dir, { withFileTypes: true })
 
   for (const entry of entries) {
@@ -479,6 +521,7 @@ function scanEpisodes(
       continue
     }
     if (!entry.isFile() || !VIDEO_EXTS.has(extname(entry.name).toLowerCase())) continue
+    if (!dirChanged) { _foundPaths.add(join(dir, entry.name)); count++; continue }
 
     let episodeInfo: string
     if (subSeriesLabel) {
@@ -563,6 +606,7 @@ function scanMusic(rootDir: string, ffprobePath = ''): number {
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const albumDir = join(rootDir, entry.name)
+    if (!isDirChanged(albumDir)) { preserveStoredPaths(albumDir); count++; continue }
     const audioFiles = readdirSync(albumDir).filter((f) => AUDIO_EXTS.has(extname(f).toLowerCase())).sort()
     if (audioFiles.length === 0) continue
     _musicTrackCount += audioFiles.length
@@ -617,6 +661,7 @@ function scanBooks(rootDir: string): number {
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const bookDir = join(rootDir, entry.name)
+    if (!isDirChanged(bookDir)) { preserveStoredPaths(bookDir); count++; continue }
 
     // Parse "Title - Author" from folder name
     const dashIdx = entry.name.indexOf(' - ')
@@ -660,6 +705,7 @@ function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): num
   for (const series of readdirSync(rootDir, { withFileTypes: true })) {
     if (!series.isDirectory()) continue
     const seriesDir = join(rootDir, series.name)
+    if (!isDirChanged(seriesDir)) { preserveStoredPaths(seriesDir); count++; continue }
     let files: string[] = []
     try { files = readdirSync(seriesDir).filter(f => MANGA_EXTS.has(extname(f).toLowerCase())).sort() }
     catch { continue }
@@ -695,6 +741,7 @@ function scanPcGames(rootDir: string): number {
     if (!entry.isDirectory()) continue
     if (entry.name.startsWith('.') || hidden.has(entry.name)) continue
     const gameDir = join(rootDir, entry.name)
+    if (!isDirChanged(gameDir)) { preserveStoredPaths(gameDir); count++; continue }
     const meta = tryReadJson(join(gameDir, 'game.json'))
     const execName = (meta.executable as string) ?? findExe(gameDir)
     if (!execName) continue
@@ -777,10 +824,10 @@ function scanRoms(rootDir: string): number {
     if (!platform) continue
     const platformDir = join(rootDir, platformFolder.name)
     if (platform === 'mame') {
-      // Each game lives in its own subfolder: mame/Mappy/mappy.zip
       for (const entry of readdirSync(platformDir, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue
         const gameDir = join(platformDir, entry.name)
+        if (!isDirChanged(gameDir)) { preserveStoredPaths(gameDir); count++; continue }
         const zips = readdirSync(gameDir).filter((f) => extname(f).toLowerCase() === '.zip')
         if (!zips.length) continue
         // When multiple zips exist (e.g. parent + clone), prefer the one whose
@@ -812,8 +859,8 @@ function scanRoms(rootDir: string): number {
     } else {
       for (const entry of readdirSync(platformDir, { withFileTypes: true })) {
         if (entry.isDirectory()) {
-          // Folder-per-game structure: rom/xbox360/Halo 3/game.iso — supports posters
           const gameDir = join(platformDir, entry.name)
+          if (!isDirChanged(gameDir)) { preserveStoredPaths(gameDir); count++; continue }
           const rom = readdirSync(gameDir).find((f) => ROM_EXTS.has(extname(f).toLowerCase()))
           if (!rom) continue
           const romPath = join(gameDir, rom)
@@ -872,6 +919,7 @@ function scanYouTube(rootDir: string, ffprobePath = ''): number {
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       const playlistDir = join(rootDir, entry.name)
+      if (!isDirChanged(playlistDir)) { preserveStoredPaths(playlistDir); continue }
       for (const file of readdirSync(playlistDir, { withFileTypes: true })) {
         if (file.isFile() && VIDEO_EXTS.has(extname(file.name).toLowerCase())) {
           scanVideoFile(join(playlistDir, file.name), entry.name)
@@ -886,12 +934,14 @@ function scanYouTube(rootDir: string, ffprobePath = ''): number {
 
 // ─── Main entry ─────────────────────────────────────────────────────────────
 
-export function scanLibrary(root: string, ffprobePath = ''): { total: number; updated: number } {
+export function scanLibrary(root: string, ffprobePath = '', smart = false): { total: number; updated: number } {
   const m = (sub: string) => join(root, 'media', sub)
   const g = (sub: string) => join(root, 'games', sub)
 
   // Initialize incremental scan session
   _storedTimes      = getStoredFileTimes()
+  _storedDirTimes   = smart ? getStoredDirTimes() : new Map()
+  _smartMode        = smart
   _foundPaths       = new Set<string>()
   _updatedCount     = 0
   _categoryBytes    = new Map<string, number>()
@@ -919,19 +969,26 @@ export function scanLibrary(root: string, ffprobePath = ''): { total: number; up
 
   const updated = _updatedCount
 
-  // Persist storage and count stats to config so the stats page can read them without re-walking the disk
-  const storageTotal = [..._categoryBytes.values()].reduce((a, b) => a + b, 0)
-  setConfig('storageStats', JSON.stringify({
-    total: storageTotal,
-    byCategory: Object.fromEntries(_categoryBytes),
-    musicTrackCount: _musicTrackCount,
-    mangaSeriesCount: _mangaSeriesCount,
-    extrasBytesByParent: Object.fromEntries(_extrasBytesByParent),
-    computedAt: Date.now()
-  }))
+  // Persist directory mtimes for smart scan
+  if (_smartMode) setStoredDirTimes(_storedDirTimes)
+
+  // Persist storage stats only during full scan (smart scan skips directories → incomplete bytes)
+  if (!_smartMode) {
+    const storageTotal = [..._categoryBytes.values()].reduce((a, b) => a + b, 0)
+    setConfig('storageStats', JSON.stringify({
+      total: storageTotal,
+      byCategory: Object.fromEntries(_categoryBytes),
+      musicTrackCount: _musicTrackCount,
+      mangaSeriesCount: _mangaSeriesCount,
+      extrasBytesByParent: Object.fromEntries(_extrasBytesByParent),
+      computedAt: Date.now()
+    }))
+  }
 
   // Clear session state
   _storedTimes      = new Map()
+  _storedDirTimes   = new Map()
+  _smartMode        = false
   _foundPaths       = new Set()
   _updatedCount     = 0
   _categoryBytes    = new Map()
