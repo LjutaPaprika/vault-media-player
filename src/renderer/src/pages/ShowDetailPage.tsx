@@ -41,6 +41,9 @@ function extrasGroupKey(title: string): string | null {
   if (spaceNum) return spaceNum[1].trim()
   const seasonTag = title.match(/^(.+?)\s+\(S\d+\)$/)
   if (seasonTag) return seasonTag[1].trim()
+  // "Group - N - Title" — number in the middle, descriptive title after
+  const groupNumTitle = title.match(/^(.+?)\s+-\s+\d+\s+-\s+.+$/)
+  if (groupNumTitle) return groupNumTitle[1].trim()
   return null
 }
 
@@ -522,7 +525,9 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                       className={`${styles.episodeRow} ${thisIdx === focusedIdx ? styles.controllerFocus : ''}`}
                       onClick={() => section.item.filePath && playFile(section.item.filePath as string)}
                     >
-                      <span className={styles.episodeTitle}>{section.item.title}</span>
+                      <div className={styles.episodeTitleGroup}>
+                        <span className={styles.episodeTitle}>{section.item.title}</span>
+                      </div>
                       <span className={styles.playIcon}>▶</span>
                     </button>
                   )
@@ -535,6 +540,13 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                       </div>
                       {section.items.map((item) => {
                         const thisIdx = navIdx++
+                        // If title is "Group - N - Title", trim the redundant "Group - " prefix
+                        // from the row. Leave "Group - N" rows alone (bare numbers look too terse).
+                        const prefix = `${section.key} - `
+                        const displayTitle =
+                          item.title.startsWith(prefix) && /\s+-\s+\d+\s+-\s+/.test(item.title)
+                            ? item.title.slice(prefix.length)
+                            : item.title
                         return (
                           <button
                             key={item.id}
@@ -542,7 +554,9 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                             className={`${styles.episodeRow} ${thisIdx === focusedIdx ? styles.controllerFocus : ''}`}
                             onClick={() => item.filePath && playFile(item.filePath as string)}
                           >
-                            <span className={styles.episodeTitle}>{item.title}</span>
+                            <div className={styles.episodeTitleGroup}>
+                              <span className={styles.episodeTitle}>{displayTitle}</span>
+                            </div>
                             <span className={styles.playIcon}>▶</span>
                           </button>
                         )
