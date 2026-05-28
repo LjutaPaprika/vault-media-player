@@ -24,3 +24,6 @@ build/icon.png
 build/icon.ico
 builder-debug.yml
 builder-effective-config.yaml
+
+# Cygwin crash dumps
+*.stackdump
