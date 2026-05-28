@@ -276,24 +276,41 @@ export function migrateRenamedPaths(foundPaths: Set<string>, storedPaths: Set<st
     .prepare(`SELECT file_path, file_modified FROM media_items WHERE file_path IN (${fresh.map(() => '?').join(',')})`)
     .all(...fresh) as { file_path: string; file_modified: number }[]
 
-  const orphansByKey = new Map<string, Row[]>()
+  // Two indices: exact (basename + mtime) for the common rename case,
+  // and mtime-only as a fallback when basename changed (e.g. batch prefix
+  // rename like "Foo.mkv" → "E01 - Foo.mkv"). Mtime alone is reliable when
+  // unique across the orphan set.
+  const orphansByExact = new Map<string, Row[]>()
+  const orphansByMtime = new Map<number, Row[]>()
   for (const r of orphanRows) {
-    const key = `${basename(r.file_path)}|${r.file_modified}`
-    const arr = orphansByKey.get(key) ?? []
-    arr.push(r)
-    orphansByKey.set(key, arr)
+    const exactKey = `${basename(r.file_path)}|${r.file_modified}`
+    const exactArr = orphansByExact.get(exactKey) ?? []
+    exactArr.push(r)
+    orphansByExact.set(exactKey, exactArr)
+    const mtimeArr = orphansByMtime.get(r.file_modified) ?? []
+    mtimeArr.push(r)
+    orphansByMtime.set(r.file_modified, mtimeArr)
   }
 
   const update = db.prepare('UPDATE media_items SET last_opened_at = ?, tech_info = COALESCE(?, tech_info) WHERE file_path = ?')
   db.transaction(() => {
     for (const f of freshRows) {
-      const key = `${basename(f.file_path)}|${f.file_modified}`
-      const candidates = orphansByKey.get(key)
-      if (!candidates || candidates.length !== 1) continue // ambiguous or no match → skip
-      const o = candidates[0]
-      if (o.last_opened_at === null && o.tech_info === null) continue
-      update.run(o.last_opened_at, o.tech_info, f.file_path)
-      orphansByKey.delete(key) // consume so the same orphan can't be claimed twice
+      const exactKey = `${basename(f.file_path)}|${f.file_modified}`
+      let matched: Row | undefined
+      const exactCandidates = orphansByExact.get(exactKey)
+      if (exactCandidates?.length === 1) {
+        matched = exactCandidates[0]
+      } else if (!exactCandidates) {
+        const mtimeCandidates = orphansByMtime.get(f.file_modified)
+        if (mtimeCandidates?.length === 1) matched = mtimeCandidates[0]
+      }
+      if (!matched) continue
+      if (matched.last_opened_at === null && matched.tech_info === null) continue
+      update.run(matched.last_opened_at, matched.tech_info, f.file_path)
+      // Consume the orphan from both indices so it can't be claimed twice
+      const consumedExact = `${basename(matched.file_path)}|${matched.file_modified}`
+      orphansByExact.delete(consumedExact)
+      orphansByMtime.delete(matched.file_modified)
     }
   })()
 }

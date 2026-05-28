@@ -521,7 +521,11 @@ function scanEpisodes(
       continue
     }
     if (!entry.isFile() || !VIDEO_EXTS.has(extname(entry.name).toLowerCase())) continue
-    if (!dirChanged) { _foundPaths.add(join(dir, entry.name)); count++; continue }
+    // Smart-scan short-circuit only applies to files we already know about.
+    // Unknown files (e.g. renamed via Windows, which doesn't bump parent dir
+    // mtime) must fall through to full processing or they'd never get indexed.
+    const epPathEarly = join(dir, entry.name)
+    if (!dirChanged && _storedTimes.has(epPathEarly)) { _foundPaths.add(epPathEarly); count++; continue }
 
     let episodeInfo: string
     if (subSeriesLabel) {
