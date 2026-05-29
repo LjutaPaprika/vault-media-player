@@ -224,9 +224,9 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   }, [episodes])
 
   const seriesComplete = useMemo(() => {
-    if (parsed.length === 0 || lastWatchedId === -1) return false
-    return parsed[parsed.length - 1].id === lastWatchedId
-  }, [parsed, lastWatchedId])
+    if (episodes.length === 0) return false
+    return episodes.every((ep) => ep.lastOpenedAt != null)
+  }, [episodes])
 
   const seasons = useMemo(() => {
     const map = new Map<number, ParsedEpisode[]>()
