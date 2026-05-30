@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAppStore } from '../store/appStore'
+import { useSyncStore } from '../store/syncStore'
 import PageShell from '../components/PageShell'
 import styles from './SettingsPage.module.css'
 import {
@@ -407,10 +408,10 @@ export default function SettingsPage(): JSX.Element {
 
   const [backupLabelInit, setBackupLabelInit] = useState('')
 
-  // Sync state
-  const [syncing, setSyncing] = useState(false)
-  const [syncLines, setSyncLines] = useState<SyncProgress[]>([])
-  const logRef = useRef<HTMLDivElement | null>(null)
+  // Sync state lives in a global store so progress persists across navigation.
+  const syncing   = useSyncStore((s) => s.syncing)
+  const syncLines = useSyncStore((s) => s.lines)
+  const logRef    = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     window.api.sync.getBackupLabel().then((label) => {
@@ -429,24 +430,7 @@ export default function SettingsPage(): JSX.Element {
   }
 
   async function startSync(): Promise<void> {
-    setSyncing(true)
-    setSyncLines([])
-
-    const cleanup = window.api.sync.onProgress((progress) => {
-      setSyncLines((prev) => [...prev, progress])
-      if (progress.status === 'done' || progress.status === 'error') {
-        setSyncing(false)
-        cleanup()
-      }
-    })
-
-    try {
-      await window.api.sync.start()
-    } catch (err) {
-      setSyncLines([{ status: 'error', message: (err as Error).message }])
-      setSyncing(false)
-      cleanup()
-    }
+    await useSyncStore.getState().start()
   }
 
   const lastLine = syncLines[syncLines.length - 1]

@@ -10,6 +10,7 @@ import {
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import MusicPlayerBar from './components/MusicPlayerBar'
+import SyncIndicator from './components/SyncIndicator'
 import { MusicPlayerProvider } from './context/MusicPlayerContext'
 import SetupScreen from './pages/SetupScreen'
 import MoviesPage from './pages/MoviesPage'
@@ -115,6 +116,7 @@ export default function App(): JSX.Element {
           <main className="content">{PAGES[activePage] ?? <HomePage />}</main>
         </div>
         <MusicPlayerBar />
+        <SyncIndicator />
       </div>
     </MusicPlayerProvider>
   )
