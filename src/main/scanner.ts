@@ -61,15 +61,50 @@ function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]
   return true
 }
 
-// Smart-scan helpers: skip directories whose mtime hasn't changed since last scan
+// Extensions that the scanner doesn't index as media items themselves but whose
+// presence (or recency) signals that a directory's contents have changed —
+// posters, sidecars, etc. Listed here so the spot-check below treats them as
+// evidence of change rather than as "unknown media files".
+const SIDECAR_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.nfo', '.txt', '.json'])
+
+// Smart-scan helpers: skip directories whose mtime hasn't changed since last scan.
+// On exFAT (and occasionally NTFS) the parent directory's mtime isn't reliably
+// bumped when files inside are added/renamed/replaced, so an mtime-only check
+// silently misses real changes. We back the mtime check with a one-level file
+// probe: if any direct file has an mtime newer than the cached dir mtime, or
+// has an unrecognized media path, treat the directory as dirty.
 function isDirChanged(dirPath: string): boolean {
   if (!_smartMode) return true
   try {
     const { mtimeMs } = statSync(dirPath)
     const mtime = Math.floor(mtimeMs)
-    if (_storedDirTimes.get(dirPath) === mtime) return false
-    _storedDirTimes.set(dirPath, mtime)
-    return true
+    const stored = _storedDirTimes.get(dirPath)
+    if (stored !== mtime) {
+      _storedDirTimes.set(dirPath, mtime)
+      return true
+    }
+    // mtime claims unchanged — verify by probing direct children.
+    let newest = mtime
+    let dirty = false
+    for (const e of readdirSync(dirPath, { withFileTypes: true })) {
+      if (!e.isFile()) continue
+      const fp = join(dirPath, e.name)
+      const ext = extname(e.name).toLowerCase()
+      try {
+        const fm = Math.floor(statSync(fp).mtimeMs)
+        if (fm > newest) newest = fm
+        if (fm > stored) { dirty = true; break }
+      } catch { /* ignore stat failure */ }
+      // Rename detection: file's mtime is unchanged but its name (path) is new.
+      // Only count media files here — sidecars (posters, .nfo) wouldn't be in
+      // _storedTimes and would trigger false positives every scan.
+      if (!SIDECAR_EXTS.has(ext) && !_storedTimes.has(fp)) { dirty = true; break }
+    }
+    if (dirty) {
+      _storedDirTimes.set(dirPath, newest)
+      return true
+    }
+    return false
   } catch {
     return true
   }
