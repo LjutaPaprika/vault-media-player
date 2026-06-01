@@ -29,6 +29,10 @@ function listHiddenDirs(dir: string): Set<string> {
 // Populated at the start of each scanLibrary call, cleared at the end.
 let _storedTimes     = new Map<string, number>()
 let _storedDirTimes  = new Map<string, number>()
+// Set of directories that isDirChanged flagged as dirty this scan. Used by
+// checkAndUpsert to force a DB write even when a file's mtime is unchanged,
+// so sidecar updates (new poster, episodes.json edits) propagate.
+let _dirtyDirs       = new Set<string>()
 let _foundPaths      = new Set<string>()
 let _updatedCount    = 0
 let _categoryBytes   = new Map<string, number>()
@@ -38,7 +42,7 @@ let _mangaSeriesCount = 0
 let _smartMode       = false
 
 // Call instead of upsertItem directly. Skips files whose mtime hasn't changed.
-function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]): boolean {
+function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0], force = false): boolean {
   const { mtimeMs, size } = statSync(filePath)
   const mtime = Math.floor(mtimeMs)
   _foundPaths.add(filePath)
@@ -55,7 +59,11 @@ function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]
       _extrasBytesByParent.set(parent, (_extrasBytesByParent.get(parent) ?? 0) + size)
     }
   }
-  if (_storedTimes.get(filePath) === mtime) return false // unchanged — skip
+  // Skip only when the file is unchanged AND nothing forces an upsert.
+  // Sidecar changes (new poster, edited episodes.json) leave media mtimes
+  // alone but still require us to push fresh metadata into the DB; the
+  // _dirtyDirs membership check propagates that signal from isDirChanged.
+  if (!force && !_dirtyDirs.has(dirname(filePath)) && _storedTimes.get(filePath) === mtime) return false
   upsertItem({ ...item, fileModified: mtime })
   _updatedCount++
   return true
@@ -81,6 +89,7 @@ function isDirChanged(dirPath: string): boolean {
     const stored = _storedDirTimes.get(dirPath)
     if (stored !== mtime) {
       _storedDirTimes.set(dirPath, mtime)
+      _dirtyDirs.add(dirPath)
       return true
     }
     // mtime claims unchanged — verify by probing direct children.
@@ -102,6 +111,7 @@ function isDirChanged(dirPath: string): boolean {
     }
     if (dirty) {
       _storedDirTimes.set(dirPath, newest)
+      _dirtyDirs.add(dirPath)
       return true
     }
     return false
@@ -1004,6 +1014,7 @@ export function scanLibrary(root: string, ffprobePath = '', smart = false): { to
   // Initialize incremental scan session
   _storedTimes      = getStoredFileTimes()
   _storedDirTimes   = smart ? getStoredDirTimes() : new Map()
+  _dirtyDirs        = new Set()
   _smartMode        = smart
   _foundPaths       = new Set<string>()
   _updatedCount     = 0
