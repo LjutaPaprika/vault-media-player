@@ -78,6 +78,30 @@ function parseEpisode(item: MediaItem): ParsedEpisode {
       subLabel
     }
   }
+  // Multi-episode range with title: "S01E01-02 · Title"
+  const fullRange = item.description?.match(/^(S(\d+)E(\d+)-(\d+))\s*·\s*(.+)$/)
+  if (fullRange) {
+    return {
+      id: item.id,
+      season: parseInt(fullRange[2], 10),
+      episode: parseInt(fullRange[3], 10),
+      badge: fullRange[1],
+      title: fullRange[5],
+      filePath: item.filePath
+    }
+  }
+  // Multi-episode range without title: "S01E01-02"
+  const badgeRange = item.description?.match(/^(S(\d+)E(\d+)-(\d+))$/)
+  if (badgeRange) {
+    return {
+      id: item.id,
+      season: parseInt(badgeRange[2], 10),
+      episode: parseInt(badgeRange[3], 10),
+      badge: badgeRange[1],
+      title: `Episodes ${parseInt(badgeRange[3], 10)}-${parseInt(badgeRange[4], 10)}`,
+      filePath: item.filePath
+    }
+  }
   // Full format: "S01E01 · Title"
   const full = item.description?.match(/^(S(\d+)E(\d+))\s*·\s*(.+)$/)
   if (full) {

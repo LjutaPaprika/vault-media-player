@@ -244,6 +244,30 @@ const QUALITY_RE = /^(720p|1080p|2160p|480p|4k|blu[\s-]?ray|brrip|br\d{3,4}p|web
 // "Show.Name.S01E01.Episode.Title.mkv"
 // "show.e01e01.extended.mkv" (non-standard season prefix)
 function parseEpisodeInfo(filename: string, season?: number): string | null {
+  // Multi-episode bundle: "Show - S01E01-E02 - Title.mkv" or "Show - S03E18-E21 - Title.mkv"
+  // Produces a range badge like "S01E01-02" so two-part / multi-part files are visible as such.
+  const multiSeMatch = filename.match(/[-–]\s*S(\d+)E(\d+)-E(\d+)\s*[-–]\s*(.+?)(?:\s*\(.*\))*\.[^.]+$/i)
+  if (multiSeMatch) {
+    const s = multiSeMatch[1].padStart(2, '0')
+    const e1 = multiSeMatch[2].padStart(2, '0')
+    const e2 = multiSeMatch[3].padStart(2, '0')
+    const title = multiSeMatch[4].trim()
+    const badge = `S${s}E${e1}-${e2}`
+    return title && !QUALITY_RE.test(title) ? `${badge} · ${title}` : badge
+  }
+
+  // Multi-episode bare leading form (named-subfolder): "E001-E002 - Pilot.mkv"
+  const multiLeadEMatch = filename.match(/^E(\d+)-E(\d+)[-\s]+(.+?)(?:\s*\[[^\]]*\])?\.[^.]+$/i)
+  if (multiLeadEMatch) {
+    const e1 = String(parseInt(multiLeadEMatch[1], 10)).padStart(2, '0')
+    const e2 = String(parseInt(multiLeadEMatch[2], 10)).padStart(2, '0')
+    const title = multiLeadEMatch[3].trim()
+    const badge = season !== undefined
+      ? `S${String(season).padStart(2, '0')}E${e1}-${e2}`
+      : `E${e1}-${e2}`
+    return title && !QUALITY_RE.test(title) ? `${badge} · ${title}` : badge
+  }
+
   // Filename starts directly with SxxExx: "S01E01-Title [hash].mkv"
   const leadMatch = filename.match(/^(S\d+E\d+)[-\s]+(.+?)(?:\s*\[[^\]]*\])?\.[^.]+$/i)
   if (leadMatch) {
