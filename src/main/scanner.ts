@@ -120,13 +120,6 @@ function isDirChanged(dirPath: string): boolean {
   }
 }
 
-function recordDirTime(dirPath: string): void {
-  try {
-    const { mtimeMs } = statSync(dirPath)
-    _storedDirTimes.set(dirPath, Math.floor(mtimeMs))
-  } catch { /* ignore */ }
-}
-
 function preserveStoredPaths(dirPrefix: string): void {
   const prefix = dirPrefix.endsWith(sep) ? dirPrefix : dirPrefix + sep
   for (const [filePath] of _storedTimes) {
@@ -557,7 +550,6 @@ function scanEpisodes(
 ): number {
   let count = 0
   const dirChanged = isDirChanged(dir)
-  if (!dirChanged) { recordDirTime(dir) }
   const entries = readdirSync(dir, { withFileTypes: true })
 
   for (const entry of entries) {
