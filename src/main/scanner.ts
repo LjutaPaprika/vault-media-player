@@ -69,11 +69,18 @@ function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]
   return true
 }
 
-// Extensions that the scanner doesn't index as media items themselves but whose
-// presence (or recency) signals that a directory's contents have changed —
-// posters, sidecars, etc. Listed here so the spot-check below treats them as
-// evidence of change rather than as "unknown media files".
-const SIDECAR_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.nfo', '.txt', '.json'])
+// Extensions for which finding an unindexed file in a directory signals a
+// real change worth re-scanning. Restricted to content types where every
+// file is expected to be indexed (videos, manga, books). Categories that
+// index only one file per directory (music's first track, PC games' exe,
+// movies' main video) leave most files in the dir intentionally unindexed,
+// so those extensions can't reliably indicate a rename / new file and must
+// be excluded — otherwise every such directory looks dirty every scan.
+const TRACKED_MEDIA_EXTS = new Set([
+  '.mkv', '.mp4', '.avi', '.mov', '.m4v', '.wmv',  // videos
+  '.cbz', '.cbr',                                   // manga / comics
+  '.epub', '.mobi'                                  // books (pdf shared w/ manga, excluded for safety)
+])
 
 // Smart-scan helpers: skip directories whose contents haven't changed since
 // last scan. On exFAT (and occasionally NTFS) the parent directory's mtime
@@ -105,10 +112,12 @@ function isDirChanged(dirPath: string): boolean {
         if (stored !== undefined && fm > stored) dirty = true
       } catch { /* ignore stat failure */ }
       // Rename detection: file's mtime is unchanged but its path is new to us.
-      // Only count media files — sidecars (posters, .nfo, .json) wouldn't be in
-      // _storedTimes and would trigger false positives every scan.
+      // Restricted to TRACKED_MEDIA_EXTS — categories like music and PC games
+      // intentionally leave most files unindexed (only first track / .exe),
+      // so checking those extensions would mark every album and game dir
+      // dirty every scan.
       const ext = extname(e.name).toLowerCase()
-      if (stored !== undefined && !SIDECAR_EXTS.has(ext) && !_storedTimes.has(fp)) dirty = true
+      if (stored !== undefined && TRACKED_MEDIA_EXTS.has(ext) && !_storedTimes.has(fp)) dirty = true
     }
 
     if (!dirty) return false
