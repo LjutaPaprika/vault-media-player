@@ -29,6 +29,12 @@ function listHiddenDirs(dir: string): Set<string> {
 // Populated at the start of each scanLibrary call, cleared at the end.
 let _storedTimes     = new Map<string, number>()
 let _storedDirTimes  = new Map<string, number>()
+// Per-directory set of basenames that the DB knew about at scan start. Built
+// once from _storedTimes. Used by isDirChanged to detect renames on
+// filesystems where renaming a file inside a directory doesn't bump the
+// directory's mtime (Windows NTFS / exFAT) — if a previously-indexed file is
+// gone from disk, something in the dir changed even though mtime says it didn't.
+let _storedDirFiles  = new Map<string, Set<string>>()
 // Set of directories that isDirChanged flagged as dirty this scan. Used by
 // checkAndUpsert to force a DB write even when a file's mtime is unchanged,
 // so sidecar updates (new poster, episodes.json edits) propagate.
@@ -91,14 +97,29 @@ function isDirChanged(dirPath: string): boolean {
     let watermark = dirMtime
     let dirty = stored === undefined || dirMtime > stored
 
+    const onDiskNames = new Set<string>()
     for (const e of readdirSync(dirPath, { withFileTypes: true })) {
       if (!e.isFile()) continue
+      onDiskNames.add(e.name)
       const fp = join(dirPath, e.name)
       try {
         const fm = Math.floor(statSync(fp).mtimeMs)
         if (fm > watermark) watermark = fm
         if (stored !== undefined && fm > stored) dirty = true
       } catch { /* ignore stat failure */ }
+    }
+
+    // Rename detection that survives stale dir mtimes (NTFS / exFAT don't bump
+    // the parent dir mtime on rename-within-dir). If a file the DB knew about
+    // at scan start is no longer on disk under the same name, the dir really
+    // did change even though mtime says otherwise.
+    if (!dirty && stored !== undefined) {
+      const expected = _storedDirFiles.get(dirPath)
+      if (expected) {
+        for (const name of expected) {
+          if (!onDiskNames.has(name)) { dirty = true; break }
+        }
+      }
     }
 
     if (!dirty) return false
@@ -997,6 +1018,17 @@ export function scanLibrary(root: string, ffprobePath = '', smart = false): { to
   _storedTimes      = getStoredFileTimes()
   _storedDirTimes   = smart ? getStoredDirTimes() : new Map()
   _dirtyDirs        = new Set()
+  // Build per-dir basename set so isDirChanged can detect renames on
+  // filesystems that don't bump parent dir mtime on rename (NTFS/exFAT).
+  _storedDirFiles   = new Map()
+  if (smart) {
+    for (const fp of _storedTimes.keys()) {
+      const d = dirname(fp)
+      let set = _storedDirFiles.get(d)
+      if (!set) { set = new Set(); _storedDirFiles.set(d, set) }
+      set.add(basename(fp))
+    }
+  }
   _smartMode        = smart
   _foundPaths       = new Set<string>()
   _updatedCount     = 0
@@ -1044,6 +1076,7 @@ export function scanLibrary(root: string, ffprobePath = '', smart = false): { to
   // Clear session state
   _storedTimes      = new Map()
   _storedDirTimes   = new Map()
+  _storedDirFiles   = new Map()
   _smartMode        = false
   _foundPaths       = new Set()
   _updatedCount     = 0
