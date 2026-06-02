@@ -75,46 +75,46 @@ function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]
 // evidence of change rather than as "unknown media files".
 const SIDECAR_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.nfo', '.txt', '.json'])
 
-// Smart-scan helpers: skip directories whose mtime hasn't changed since last scan.
-// On exFAT (and occasionally NTFS) the parent directory's mtime isn't reliably
-// bumped when files inside are added/renamed/replaced, so an mtime-only check
-// silently misses real changes. We back the mtime check with a one-level file
-// probe: if any direct file has an mtime newer than the cached dir mtime, or
-// has an unrecognized media path, treat the directory as dirty.
+// Smart-scan helpers: skip directories whose contents haven't changed since
+// last scan. On exFAT (and occasionally NTFS) the parent directory's mtime
+// isn't reliably bumped when files inside are added/renamed/replaced, so an
+// mtime-only check silently misses real changes. We back the mtime check with
+// a one-level file probe.
+//
+// `_storedDirTimes` holds a *watermark*: the max of the directory's mtime and
+// every file mtime at last scan. A directory is clean iff the current dir
+// mtime is <= the watermark AND no file inside has an mtime > the watermark.
+// Using a watermark (instead of just the dir mtime) fixes a re-dirty loop —
+// previously, when a file's mtime was newer than the dir's, we'd write the
+// file mtime into the dir slot, and the next scan would see stored != dirMtime
+// and mark the dir dirty again, every scan, forever.
 function isDirChanged(dirPath: string): boolean {
   if (!_smartMode) return true
   try {
-    const { mtimeMs } = statSync(dirPath)
-    const mtime = Math.floor(mtimeMs)
+    const dirMtime = Math.floor(statSync(dirPath).mtimeMs)
     const stored = _storedDirTimes.get(dirPath)
-    if (stored !== mtime) {
-      _storedDirTimes.set(dirPath, mtime)
-      _dirtyDirs.add(dirPath)
-      return true
-    }
-    // mtime claims unchanged — verify by probing direct children.
-    let newest = mtime
-    let dirty = false
+    let watermark = dirMtime
+    let dirty = stored === undefined || dirMtime > stored
+
     for (const e of readdirSync(dirPath, { withFileTypes: true })) {
       if (!e.isFile()) continue
       const fp = join(dirPath, e.name)
-      const ext = extname(e.name).toLowerCase()
       try {
         const fm = Math.floor(statSync(fp).mtimeMs)
-        if (fm > newest) newest = fm
-        if (fm > stored) { dirty = true; break }
+        if (fm > watermark) watermark = fm
+        if (stored !== undefined && fm > stored) dirty = true
       } catch { /* ignore stat failure */ }
-      // Rename detection: file's mtime is unchanged but its name (path) is new.
-      // Only count media files here — sidecars (posters, .nfo) wouldn't be in
+      // Rename detection: file's mtime is unchanged but its path is new to us.
+      // Only count media files — sidecars (posters, .nfo, .json) wouldn't be in
       // _storedTimes and would trigger false positives every scan.
-      if (!SIDECAR_EXTS.has(ext) && !_storedTimes.has(fp)) { dirty = true; break }
+      const ext = extname(e.name).toLowerCase()
+      if (stored !== undefined && !SIDECAR_EXTS.has(ext) && !_storedTimes.has(fp)) dirty = true
     }
-    if (dirty) {
-      _storedDirTimes.set(dirPath, newest)
-      _dirtyDirs.add(dirPath)
-      return true
-    }
-    return false
+
+    if (!dirty) return false
+    _storedDirTimes.set(dirPath, watermark)
+    _dirtyDirs.add(dirPath)
+    return true
   } catch {
     return true
   }
