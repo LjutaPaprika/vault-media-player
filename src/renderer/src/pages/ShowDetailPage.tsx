@@ -132,6 +132,7 @@ function parseEpisode(item: MediaItem): ParsedEpisode {
 type NavItem =
   | { kind: 'header'; seasonNum: number }
   | { kind: 'episode'; ep: ParsedEpisode }
+  | { kind: 'extras-header' }
   | { kind: 'extra'; item: MediaItem }
 
 function formatResolution(height: number): string {
@@ -186,6 +187,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   const [watchGuide, setWatchGuide] = useState<string[] | null>(null)
   const [launchingPath, setLaunchingPath] = useState<string | null>(null)
   const [collapsedSeasons, setCollapsedSeasons] = useState<Set<number>>(new Set())
+  const [collapsedExtras, setCollapsedExtras] = useState<boolean>(false)
   const [focusedIdx, setFocusedIdx] = useState(0)
   const focusedIdxRef = useRef(0)
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([])
@@ -231,6 +233,10 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
       else next.add(n)
       return next
     })
+  }
+
+  function toggleExtras(): void {
+    setCollapsedExtras((prev) => !prev)
   }
 
   const parsed = useMemo(() =>
@@ -352,11 +358,16 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
         for (const ep of eps) items.push({ kind: 'episode', ep })
       }
     }
-    for (const item of sortedExtras) {
-      if (item.filePath) items.push({ kind: 'extra', item })
+    if (sortedExtras.length > 0) {
+      items.push({ kind: 'extras-header' })
+      if (!collapsedExtras) {
+        for (const item of sortedExtras) {
+          if (item.filePath) items.push({ kind: 'extra', item })
+        }
+      }
     }
     return items
-  }, [orderedSeasons, collapsedSeasons, sortedExtras])
+  }, [orderedSeasons, collapsedSeasons, sortedExtras, collapsedExtras])
 
   // Keep ref in sync for controller callbacks
   navItemsRef.current = navItems
@@ -382,6 +393,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
       const item = navItemsRef.current[focusedIdxRef.current]
       if (!item) return
       if (item.kind === 'header')  toggleSeason(item.seasonNum)
+      else if (item.kind === 'extras-header') toggleExtras()
       else if (item.kind === 'episode') playFile(item.ep.filePath)
       else if (item.kind === 'extra' && item.item.filePath) playFile(item.item.filePath as string)
     }
@@ -531,12 +543,21 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
         )
       })}
 
-      {sortedExtras.length > 0 && (
+      {sortedExtras.length > 0 && (() => {
+        const headerIdx = navIdx++
+        return (
         <div className={styles.section}>
-          <div className={styles.sectionHeaderPlain}>
+          <button
+            type="button"
+            ref={(el) => (rowRefs.current[headerIdx] = el)}
+            className={`${styles.sectionHeader} ${headerIdx === focusedIdx ? styles.sectionHeaderFocus : ''}`}
+            onClick={toggleExtras}
+          >
+            <span className={`${styles.chevron} ${collapsedExtras ? '' : styles.chevronOpen}`}>›</span>
             <span className={styles.sectionTitle}>Extras</span>
             <span className={styles.sectionCount}>{sortedExtras.length}</span>
-          </div>
+          </button>
+          {!collapsedExtras && (
           <div className={styles.episodeList}>
             <div className={styles.episodeListInner}>
               {extrasGroups.map((section) => {
@@ -591,8 +612,10 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
               })}
             </div>
           </div>
+          )}
         </div>
-      )}
+        )
+      })()}
       </div>{/* end rightPanel */}
     </div>
   )

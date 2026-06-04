@@ -1,6 +1,6 @@
 {
   "name": "Vault",
-  "version": "1.16.9",
+  "version": "1.16.10",
   "description": "Personal media vault",
   "main": "out/main/index.js",
   "scripts": {
@@ -62,7 +62,13 @@
     "mac": {
       "icon": "build/icon.png",
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
       "artifactName": "Vault-${arch}.dmg"
     },
