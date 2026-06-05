@@ -24,6 +24,7 @@ import Asteroids from '../components/Asteroids'
 import Pacman from '../components/Pacman'
 import Frogger from '../components/Frogger'
 import EndlessRunner from '../components/EndlessRunner'
+import DinoRun from '../components/DinoRun'
 import Survivors from '../components/Survivors'
 import Roguelike from '../components/Roguelike'
 import styles from './ArcadePage.module.css'
@@ -71,6 +72,7 @@ export default function ArcadePage(): JSX.Element {
   const [runnerHi, setRunnerHi] = useState<{ side: number; lane: number; gravity: number }>({ side: 0, lane: 0, gravity: 0 })
   const [survivorsBest, setSurvivorsBest] = useState<{ time: number; kills: number }>({ time: 0, kills: 0 })
   const [roguelikeSouls, setRoguelikeSouls] = useState(0)
+  const [dinoRunBest, setDinoRunBest] = useState<{ distance: number; eggs: number }>({ distance: 0, eggs: 0 })
 
   const { files, prestigeCount, shows, paused, togglePause } = useIdleGameStore()
   const mult = prestigeMultiplier(prestigeCount)
@@ -177,6 +179,12 @@ export default function ArcadePage(): JSX.Element {
       try {
         const d = JSON.parse(v) as { souls?: number }
         setRoguelikeSouls(d.souls ?? 0)
+      } catch { /* ignore */ }
+    })
+    window.api.settings.get('dinoRunBest', '{}').then(v => {
+      try {
+        const d = JSON.parse(v) as { distance?: number; eggs?: number }
+        setDinoRunBest({ distance: d.distance ?? 0, eggs: d.eggs ?? 0 })
       } catch { /* ignore */ }
     })
   }, [])
@@ -410,6 +418,20 @@ export default function ArcadePage(): JSX.Element {
             <span className={styles.cardChevron}>{openCard === 'runner' ? '▲' : '▼'}</span>
           </button>
           {openCard === 'runner' && <EndlessRunner />}
+        </div>
+
+        {/* ── Dino Run ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardGreen}`} onClick={() => toggleCard('dinorun')}>
+            <span className={`${styles.cardTitle} ${styles.titleGreen}`}>🦖 Dino Run</span>
+            <span className={styles.cardMeta}>
+              {dinoRunBest.distance > 0
+                ? <span className={styles.metaRateGreen}>best {fmt(dinoRunBest.distance)}</span>
+                : 'Escape extinction — outrun the wall'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'dinorun' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'dinorun' && <DinoRun />}
         </div>
 
         {/* ── Frogger ── */}

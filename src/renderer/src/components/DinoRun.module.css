@@ -1,0 +1,39 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  position: relative;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.02em;
+}
+
+.header strong {
+  color: #4ade80;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.canvas {
+  display: block;
+  border: 1px solid rgba(74, 222, 128, 0.22);
+  border-radius: 6px;
+  background: #0a1410;
+  outline: none;
+  image-rendering: pixelated;
+}
+
+.hint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
