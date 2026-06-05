@@ -27,3 +27,6 @@ builder-effective-config.yaml
 
 # Cygwin crash dumps
 *.stackdump
+
+# Local-only scripts
+scripts/fetch-bugle-call.ps1
