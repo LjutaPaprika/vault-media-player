@@ -21,14 +21,17 @@ const WHITE = '#ffffff'
 const PLAYED_KEY = (mode: Mode): string => `glyphPlayed${mode}`
 const STATS_KEY = 'glyphStats'
 
-interface Stats {
+interface ModeStats {
   played: number
   wins: number
   streak: number
   bestStreak: number
 }
 
-const INITIAL_STATS: Stats = { played: 0, wins: 0, streak: 0, bestStreak: 0 }
+type AllStats = Record<Mode, ModeStats>
+
+const INITIAL_MODE_STATS: ModeStats = { played: 0, wins: 0, streak: 0, bestStreak: 0 }
+const INITIAL_STATS: AllStats = { 5: { ...INITIAL_MODE_STATS }, 6: { ...INITIAL_MODE_STATS } }
 
 function pickFromPool(words: readonly string[], played: Set<string>): { word: string; reset: boolean } {
   let pool = words.filter((w) => !played.has(w))
@@ -57,7 +60,7 @@ export default function Glyph(): JSX.Element {
   const [evaluations, setEvaluations] = useState<LetterState[][]>([])
   const [current, setCurrent] = useState('')
   const [phase, setPhase] = useState<Phase>('playing')
-  const [stats, setStats] = useState<Stats>(INITIAL_STATS)
+  const [stats, setStats] = useState<AllStats>(INITIAL_STATS)
   const [message, setMessage] = useState('')
   const [shake, setShake] = useState(false)
   const [celebration, setCelebration] = useState<'idle' | 'stacking' | 'fadeout'>('idle')
@@ -70,7 +73,7 @@ export default function Glyph(): JSX.Element {
   const modeRef = useRef<Mode>(5)
   const played5Ref = useRef<Set<string>>(new Set())
   const played6Ref = useRef<Set<string>>(new Set())
-  const statsRef = useRef<Stats>(INITIAL_STATS)
+  const statsRef = useRef<AllStats>(INITIAL_STATS)
   const colorMapRef = useRef<Record<string, string>>({})
 
   useEffect(() => {
@@ -80,13 +83,14 @@ export default function Glyph(): JSX.Element {
       window.api.settings.get(PLAYED_KEY(6), '[]'),
     ]).then(([statsJson, p5Json, p6Json]) => {
       try {
-        const s = JSON.parse(statsJson) as Partial<Stats>
-        statsRef.current = {
-          played: s.played ?? 0,
-          wins: s.wins ?? 0,
-          streak: s.streak ?? 0,
-          bestStreak: s.bestStreak ?? 0,
-        }
+        const s = JSON.parse(statsJson) as Partial<Record<Mode, Partial<ModeStats>>>
+        const read = (m: Mode): ModeStats => ({
+          played: s[m]?.played ?? 0,
+          wins: s[m]?.wins ?? 0,
+          streak: s[m]?.streak ?? 0,
+          bestStreak: s[m]?.bestStreak ?? 0,
+        })
+        statsRef.current = { 5: read(5), 6: read(6) }
         setStats(statsRef.current)
       } catch { /* defaults */ }
       try { played5Ref.current = new Set(JSON.parse(p5Json) as string[]) } catch { /* ignore */ }
@@ -163,11 +167,15 @@ export default function Glyph(): JSX.Element {
       const playedSet = m === 5 ? played5Ref.current : played6Ref.current
       playedSet.add(targetRef.current.toLowerCase())
       persistPlayed(m)
+      const prev = statsRef.current[m]
       statsRef.current = {
-        played: statsRef.current.played + 1,
-        wins: statsRef.current.wins + 1,
-        streak: statsRef.current.streak + 1,
-        bestStreak: Math.max(statsRef.current.bestStreak, statsRef.current.streak + 1),
+        ...statsRef.current,
+        [m]: {
+          played: prev.played + 1,
+          wins: prev.wins + 1,
+          streak: prev.streak + 1,
+          bestStreak: Math.max(prev.bestStreak, prev.streak + 1),
+        },
       }
       setStats(statsRef.current)
       persistStats()
@@ -192,11 +200,15 @@ export default function Glyph(): JSX.Element {
       const playedSet = m === 5 ? played5Ref.current : played6Ref.current
       playedSet.add(targetRef.current.toLowerCase())
       persistPlayed(m)
+      const prev = statsRef.current[m]
       statsRef.current = {
-        played: statsRef.current.played + 1,
-        wins: statsRef.current.wins,
-        streak: 0,
-        bestStreak: statsRef.current.bestStreak,
+        ...statsRef.current,
+        [m]: {
+          played: prev.played + 1,
+          wins: prev.wins,
+          streak: 0,
+          bestStreak: prev.bestStreak,
+        },
       }
       setStats(statsRef.current)
       persistStats()
@@ -296,7 +308,7 @@ export default function Glyph(): JSX.Element {
           ))}
         </div>
         <div>
-          played {stats.played} · wins {stats.wins} · streak {stats.streak} · best {stats.bestStreak}
+          played {stats[mode].played} · wins {stats[mode].wins} · streak {stats[mode].streak} · best {stats[mode].bestStreak}
         </div>
       </div>
 

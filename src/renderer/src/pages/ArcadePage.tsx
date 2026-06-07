@@ -63,7 +63,7 @@ export default function ArcadePage(): JSX.Element {
   const [shmupHi, setShmupHi] = useState(0)
   const [pongRecord, setPongRecord] = useState<{ wins: number; losses: number }>({ wins: 0, losses: 0 })
   const [wordleStreak, setWordleStreak] = useState(0)
-  const [glyphStreak, setGlyphStreak] = useState(0)
+  const [glyphStreak, setGlyphStreak] = useState<{ 5: number; 6: number }>({ 5: 0, 6: 0 })
   const [sokobanCleared, setSokobanCleared] = useState(0)
   const [reversiRecord, setReversiRecord] = useState<{ wins: number; losses: number; draws: number }>({ wins: 0, losses: 0, draws: 0 })
   const [quoridorRecord, setQuoridorRecord] = useState<{ wins: number; losses: number }>({ wins: 0, losses: 0 })
@@ -135,8 +135,8 @@ export default function ArcadePage(): JSX.Element {
     })
     window.api.settings.get('glyphStats', '{}').then(v => {
       try {
-        const data = JSON.parse(v) as { bestStreak?: number }
-        setGlyphStreak(data.bestStreak ?? 0)
+        const data = JSON.parse(v) as Partial<Record<'5' | '6', { bestStreak?: number }>>
+        setGlyphStreak({ 5: data['5']?.bestStreak ?? 0, 6: data['6']?.bestStreak ?? 0 })
       } catch { /* ignore */ }
     })
     window.api.settings.get('sokobanProgress', '{}').then(v => {
@@ -425,7 +425,9 @@ export default function ArcadePage(): JSX.Element {
           <button className={`${styles.cardHeader} ${styles.cardBlue}`} onClick={() => toggleCard('glyph')}>
             <span className={`${styles.cardTitle} ${styles.titleBlue}`}>🔮 Glyph</span>
             <span className={styles.cardMeta}>
-              {glyphStreak > 0 ? `best streak ${glyphStreak}` : 'Decode the word within'}
+              {glyphStreak[5] > 0 || glyphStreak[6] > 0
+                ? `best — 5L: ${glyphStreak[5]} · 6L: ${glyphStreak[6]}`
+                : 'Decode the word within'}
             </span>
             <span className={styles.cardChevron}>{openCard === 'glyph' ? '▲' : '▼'}</span>
           </button>
