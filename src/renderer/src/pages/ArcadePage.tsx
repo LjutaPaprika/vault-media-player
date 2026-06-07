@@ -18,6 +18,7 @@ import Shmup from '../components/Shmup'
 import Pong from '../components/Pong'
 import Wordle from '../components/Wordle'
 import Glyph from '../components/Glyph'
+import Poople from '../components/Poople'
 import Sokoban from '../components/Sokoban'
 import Reversi from '../components/Reversi'
 import Quoridor from '../components/Quoridor'
@@ -64,6 +65,7 @@ export default function ArcadePage(): JSX.Element {
   const [pongRecord, setPongRecord] = useState<{ wins: number; losses: number }>({ wins: 0, losses: 0 })
   const [wordleStreak, setWordleStreak] = useState(0)
   const [glyphStreak, setGlyphStreak] = useState<{ 5: number; 6: number }>({ 5: 0, 6: 0 })
+  const [poopleBest, setPoopleBest] = useState<number | null>(null)
   const [sokobanCleared, setSokobanCleared] = useState(0)
   const [reversiRecord, setReversiRecord] = useState<{ wins: number; losses: number; draws: number }>({ wins: 0, losses: 0, draws: 0 })
   const [quoridorRecord, setQuoridorRecord] = useState<{ wins: number; losses: number }>({ wins: 0, losses: 0 })
@@ -137,6 +139,12 @@ export default function ArcadePage(): JSX.Element {
       try {
         const data = JSON.parse(v) as Partial<Record<'5' | '6', { bestStreak?: number }>>
         setGlyphStreak({ 5: data['5']?.bestStreak ?? 0, 6: data['6']?.bestStreak ?? 0 })
+      } catch { /* ignore */ }
+    })
+    window.api.settings.get('poopleBest', 'null').then(v => {
+      try {
+        const n = JSON.parse(v) as number | null
+        if (typeof n === 'number' && n > 0) setPoopleBest(n)
       } catch { /* ignore */ }
     })
     window.api.settings.get('sokobanProgress', '{}').then(v => {
@@ -418,6 +426,18 @@ export default function ArcadePage(): JSX.Element {
             <span className={styles.cardChevron}>{openCard === 'runner' ? '▲' : '▼'}</span>
           </button>
           {openCard === 'runner' && <EndlessRunner />}
+        </div>
+
+        {/* ── Poople ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardPurple}`} onClick={() => toggleCard('poople')}>
+            <span className={`${styles.cardTitle} ${styles.titlePurple}`}>💩 Poople</span>
+            <span className={styles.cardMeta}>
+              {poopleBest !== null ? `best ${poopleBest} steps` : 'Word ladder to POOP'}
+            </span>
+            <span className={styles.cardChevron}>{openCard === 'poople' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'poople' && <Poople />}
         </div>
 
         {/* ── Glyph ── */}
