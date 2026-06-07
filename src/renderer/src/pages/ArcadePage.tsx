@@ -17,6 +17,7 @@ import Tetris from '../components/Tetris'
 import Shmup from '../components/Shmup'
 import Pong from '../components/Pong'
 import Wordle from '../components/Wordle'
+import Glyph from '../components/Glyph'
 import Sokoban from '../components/Sokoban'
 import Reversi from '../components/Reversi'
 import Quoridor from '../components/Quoridor'
@@ -410,6 +411,16 @@ export default function ArcadePage(): JSX.Element {
             <span className={styles.cardChevron}>{openCard === 'runner' ? '▲' : '▼'}</span>
           </button>
           {openCard === 'runner' && <EndlessRunner />}
+        </div>
+
+        {/* ── Glyph ── */}
+        <div className={styles.card}>
+          <button className={`${styles.cardHeader} ${styles.cardBlue}`} onClick={() => toggleCard('glyph')}>
+            <span className={`${styles.cardTitle} ${styles.titleBlue}`}>🔮 Glyph</span>
+            <span className={styles.cardMeta}>Decode the word within</span>
+            <span className={styles.cardChevron}>{openCard === 'glyph' ? '▲' : '▼'}</span>
+          </button>
+          {openCard === 'glyph' && <Glyph />}
         </div>
 
         {/* ── Frogger ── */}
