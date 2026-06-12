@@ -13,6 +13,7 @@ export const DEFAULT_BINDINGS: ControllerBinding[] = [
   { action: 'quit',         label: 'Quit Player',              command: 'quit',             button: 'GAMEPAD_B',             isLua: false },
   { action: 'audio',        label: 'Cycle Audio Track',        command: 'cycle audio',      button: 'GAMEPAD_X',             isLua: false },
   { action: 'subtitles',    label: 'Toggle Subtitles',         command: 'toggle-subs',      button: 'GAMEPAD_Y',             isLua: true  },
+  { action: 'skip-segment', label: 'Skip OP / ED',             command: 'skip-segment',     button: 'none',                  isLua: true  },
   { action: 'fullscreen',   label: 'Toggle Fullscreen',        command: 'cycle fullscreen', button: 'GAMEPAD_START',         isLua: false },
   { action: 'seek-back-10', label: 'Seek Back 10s',           command: 'seek -10',         button: 'GAMEPAD_LEFTSHOULDER',  isLua: false },
   { action: 'seek-fwd-10',  label: 'Seek Forward 10s',        command: 'seek 10',          button: 'GAMEPAD_RIGHTSHOULDER', isLua: false },

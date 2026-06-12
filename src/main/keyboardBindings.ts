@@ -18,6 +18,7 @@ export const DEFAULT_KEYBOARD_BINDINGS: KeyboardBinding[] = [
   { action: 'mpv-seek-fwd-3',  label: 'Seek forward 3s',          context: 'mpv',   key: 'SHIFT+RIGHT' },
   { action: 'mpv-seek-bwd-3',  label: 'Seek backward 3s',         context: 'mpv',   key: 'SHIFT+LEFT'  },
   { action: 'mpv-subtitles',   label: 'Toggle English subtitles', context: 'mpv',   key: 'j'           },
+  { action: 'mpv-skip-segment',label: 'Skip opening / ending',    context: 'mpv',   key: 's'           },
   { action: 'music-play-pause',label: 'Play / Pause',             context: 'music', key: ' '           },
   { action: 'music-seek-fwd',  label: 'Seek forward 10s',         context: 'music', key: 'ArrowRight'  },
   { action: 'music-seek-bwd',  label: 'Seek backward 10s',        context: 'music', key: 'ArrowLeft'   },

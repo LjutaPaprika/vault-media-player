@@ -256,7 +256,7 @@ bash scripts/setup-drive.sh /Volumes/VAULT
 | `←` | Skip back 10 seconds |
 | `Shift+→` | Skip forward 3 seconds |
 | `Shift+←` | Skip back 3 seconds |
-| `C` | Skip intro (when intro chapter detected) |
+| `S` | Skip opening / ending (when in OP/ED window) |
 | `J` | Toggle English subtitles on/off |
 | `Space` | Play / Pause |
 | `F` | Fullscreen |

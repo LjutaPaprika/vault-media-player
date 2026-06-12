@@ -1,8 +1,9 @@
 import { spawn } from 'child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { basename, dirname, extname, join } from 'path'
 import { getBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings } from './keyboardBindings'
+import { buildSkipSegmentLua } from './skipSegmentLua'
 
 // ─── Emulator map ─────────────────────────────────────────────────────────────
 
@@ -153,6 +154,8 @@ function ensureMpvConfig(mpvExePath: string, hwdec: string): string {
   const kbBindings = getKeyboardBindings()
   const subtitleButton = bindings.find((b) => b.action === 'subtitles')?.button ?? 'GAMEPAD_Y'
   const subtitleKey = kbBindings.find((b) => b.action === 'mpv-subtitles')?.key ?? 'j'
+  const skipKey = kbBindings.find((b) => b.action === 'mpv-skip-segment')?.key ?? 's'
+  const skipButton = bindings.find((b) => b.action === 'skip-segment')?.button ?? 'none'
 
   const configDir = join(dirname(mpvExePath), 'portable_config')
   const configFile = join(configDir, 'mpv.conf')
@@ -160,6 +163,9 @@ function ensureMpvConfig(mpvExePath: string, hwdec: string): string {
   writeFileSync(configFile, buildMpvConf(hwdec), 'utf-8')
   writeFileSync(join(configDir, 'input.conf'), buildInputConf(bindings), 'utf-8')
   writeFileSync(join(configDir, 'scripts', 'sub-english.lua'), buildLuaScript(subtitleButton, subtitleKey), 'utf-8')
+  writeFileSync(join(configDir, 'scripts', 'skip-segment.lua'), buildSkipSegmentLua(skipKey, skipButton), 'utf-8')
+  // Remove legacy skip-intro.lua so its 'C' button doesn't appear alongside ours.
+  rmSync(join(configDir, 'scripts', 'skip-intro.lua'), { force: true })
   return configFile
 }
 
@@ -173,8 +179,10 @@ function spawnDetached(exe: string, args: string[]): void {
   }
   if (process.platform === 'win32') {
     // Shell-wrap to dodge EACCES from CreateProcess on exFAT removable drives.
+    // `start ""` hands foreground rights to the spawned process; without it,
+    // mpv/emulators come up behind whatever else has focus.
     const quoted = [exe, ...args].map(a => `"${a}"`).join(' ')
-    const child = spawn(quoted, [], { ...opts, shell: true })
+    const child = spawn(`start "" ${quoted}`, [], { ...opts, shell: true })
     child.unref()
   } else {
     const child = spawn(exe, args, opts)
