@@ -215,10 +215,17 @@ export function openVideo(filePath: string, driveRoot: string, hwdec = 'off', ca
   const mpv = getMpvPath(driveRoot)
   if (existsSync(mpv)) {
     const configFile = ensureMpvConfig(mpv, hwdec)
+    const configDir = dirname(configFile)
     const langArgs = category === 'anime'
       ? ['--alang=ja,jpn,jp', '--slang=en,eng']
       : []
-    spawnDetached(mpv, ['--fullscreen', `--include=${configFile}`, ...langArgs, filePath])
+    // Windows mpv auto-discovers portable_config next to mpv.exe, so --include is enough.
+    // Mac/Linux builds don't have that convention — point mpv at the config dir explicitly
+    // so input.conf and scripts/ load.
+    const configArg = process.platform === 'win32'
+      ? `--include=${configFile}`
+      : `--config-dir=${configDir}`
+    spawnDetached(mpv, ['--fullscreen', configArg, ...langArgs, filePath])
   } else {
     openWithSystem(filePath)
   }
