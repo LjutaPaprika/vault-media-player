@@ -188,6 +188,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   const [launchingPath, setLaunchingPath] = useState<string | null>(null)
   const [collapsedSeasons, setCollapsedSeasons] = useState<Set<number>>(new Set())
   const [collapsedExtras, setCollapsedExtras] = useState<boolean>(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; ep: ParsedEpisode } | null>(null)
   const [focusedIdx, setFocusedIdx] = useState(0)
   const focusedIdxRef = useRef(0)
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([])
@@ -214,6 +215,17 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     window.api.playback.openVideo(filePath, category)
     const now = Math.floor(Date.now() / 1000)
     setEpisodes((prev) => prev.map((ep) => ep.filePath === filePath ? { ...ep, lastOpenedAt: now } : ep))
+  }
+
+  // Manual watched toggle — covers the case where an episode was watched
+  // outside the app or its row was reset by a rename so the Series Complete
+  // pill is one missing timestamp away.
+  function toggleWatched(filePath: string, currentlyWatched: boolean): void {
+    const next = !currentlyWatched
+    window.api.library.setWatched(filePath, next)
+    const now = next ? Math.floor(Date.now() / 1000) : null
+    setEpisodes((prev) => prev.map((ep) => ep.filePath === filePath ? { ...ep, lastOpenedAt: now } : ep))
+    setContextMenu(null)
   }
 
   function focusRow(idx: number): void {
@@ -522,6 +534,10 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                       ref={(el) => (rowRefs.current[thisIdx] = el)}
                       className={`${styles.episodeRow} ${thisIdx === focusedIdx ? styles.controllerFocus : ''} ${launchingPath === ep.filePath ? styles.episodeRowLaunching : ''}`}
                       onClick={() => playFile(ep.filePath)}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        setContextMenu({ x: e.clientX, y: e.clientY, ep })
+                      }}
                     >
                       {ep.badge && <span className={styles.episodeBadge}>{ep.badge}</span>}
                       <div className={styles.episodeTitleGroup}>
@@ -617,6 +633,24 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
         )
       })()}
       </div>{/* end rightPanel */}
+
+      {contextMenu && (() => {
+        const watched = episodes.find((e) => e.id === contextMenu.ep.id)?.lastOpenedAt != null
+        return (
+          <>
+            <div className={styles.contextMenuShield} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null) }} />
+            <div className={styles.contextMenu} style={{ left: contextMenu.x, top: contextMenu.y }}>
+              <button
+                type="button"
+                className={styles.contextMenuItem}
+                onClick={() => toggleWatched(contextMenu.ep.filePath, watched)}
+              >
+                {watched ? 'Mark as unwatched' : 'Mark as watched'}
+              </button>
+            </div>
+          </>
+        )
+      })()}
     </div>
   )
 }

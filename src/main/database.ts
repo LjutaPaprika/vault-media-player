@@ -398,6 +398,19 @@ export function setLastOpened(filePath: string): void {
     .run(filePath)
 }
 
+// Manual mark/unmark for episodes that were watched outside the app or whose
+// row was reset by a rename. `watched=false` clears the timestamp entirely so
+// the row matches a never-opened item.
+export function setWatched(filePath: string, watched: boolean): void {
+  if (watched) {
+    setLastOpened(filePath)
+  } else {
+    getDb()
+      .prepare('UPDATE media_items SET last_opened_at = NULL WHERE file_path = ?')
+      .run(filePath)
+  }
+}
+
 export function setGenre(filePath: string, genre: string | null): void {
   getDb()
     .prepare('UPDATE media_items SET genre = ? WHERE file_path = ?')

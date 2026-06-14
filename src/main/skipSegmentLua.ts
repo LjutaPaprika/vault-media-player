@@ -29,11 +29,17 @@ local msg = require 'mp.msg'
 
 local SKIP_KEY = '${skipKey}'
 
-local OP_PATTERNS = { '^intro', '^opening', '^op$', '^op%W', '^prologue', '^prelude', '^part a' }
+-- 'intro'/'prologue'/'prelude'/'part a' deliberately excluded: in anime they
+-- almost always label the cold open, not the OP, and offering to skip them
+-- jumps past actual story content.
+local OP_PATTERNS = { '^opening', '^op$', '^op%W' }
 local ED_PATTERNS = { '^outro', '^ending', '^ed$', '^ed%W', '^preview', '^epilogue', '^next episode', '^nep' }
 
 local current = { op = nil, ed = nil, active = nil }
 local last_tick = 0
+local dismissed_active = nil   -- 'op' or 'ed' once the auto-dismiss fired for that instance
+local shown_at = nil           -- mp.get_time() when button was last shown; nil = no countdown
+local AUTO_DISMISS_SECONDS = 5.0
 
 -- Button geometry, in OSD pixel space. set_osd_ass is given osd-dimensions so
 -- these stay constant-size regardless of video resolution. Positioned bottom-
@@ -121,6 +127,8 @@ end
 
 mp.register_event('file-loaded', function()
   current.op, current.ed, current.active = nil, nil, nil
+  dismissed_active = nil
+  shown_at = nil
   last_tick = 0
   local path = mp.get_property('path', '')
   if path == '' or path:match('^https?://') or path:match('^ytdl://') then return end
@@ -147,7 +155,7 @@ local function lerp_alpha(target_hex, a)
   return math.floor(0xFF - (0xFF - target_hex) * a + 0.5)
 end
 
-local function draw_button_at(label, a)
+local function draw_button_at(label, a, progress)
   if a <= 0.01 then
     mp.set_osd_ass(osd_w, osd_h, '')
     return
@@ -164,7 +172,29 @@ local function draw_button_at(label, a)
     [[{\\an7\\pos(%d,%d)\\bord0\\1c&Hffffff&\\1a&H%02x&\\fs44\\b1}%s]],
     x + 32, y + 26, text_a, label
   )
-  mp.set_osd_ass(osd_w, osd_h, bg .. '\\n' .. text)
+
+  -- Countdown bar: thin rectangle hugging the button's bottom inner edge,
+  -- shrinks left-to-right as the auto-dismiss timer drains. Skipped entirely
+  -- once progress hits 0 so it doesn't leave a sliver during the fade-out.
+  -- Joined to bg/text with a real newline (chr 10) so its own \\pos applies;
+  -- ASS soft-break \\n keeps everything on one line and ignores later \\pos.
+  local bar = ''
+  if progress and progress > 0 then
+    local bar_h = 6
+    local bar_margin_x = 12
+    local bar_margin_b = 10
+    local bar_w_max = w - bar_margin_x * 2
+    local bar_w = math.max(1, math.floor(bar_w_max * progress))
+    local bar_x = x + bar_margin_x
+    local bar_y = y + h - bar_h - bar_margin_b
+    local bar_a = lerp_alpha(0x20, a)
+    bar = '\\n' .. string.format(
+      [[{\\an7\\pos(%d,%d)\\bord0\\1c&Hffffff&\\1a&H%02x&\\p1}m 0 0 l %d 0 %d %d 0 %d{\\p0}]],
+      bar_x, bar_y, bar_a, bar_w, bar_w, bar_h, bar_h
+    )
+  end
+
+  mp.set_osd_ass(osd_w, osd_h, bg .. '\\n' .. text .. bar)
 end
 
 local function clear_button()
@@ -181,8 +211,27 @@ local function anim_tick()
   elseif cur_alpha > target_alpha then
     cur_alpha = math.max(target_alpha, cur_alpha - step)
   end
-  draw_button_at(current_label, cur_alpha)
-  if cur_alpha ~= target_alpha then
+
+  -- Auto-dismiss: only counts while the button is fully open. Once it fires,
+  -- remember which segment we dismissed so re-entering this range during the
+  -- same OP/ED window doesn't re-pop the button.
+  local progress = 0
+  if shown_at and target_alpha == 1.0 then
+    local elapsed = now - shown_at
+    progress = math.max(0, 1 - elapsed / AUTO_DISMISS_SECONDS)
+    if elapsed >= AUTO_DISMISS_SECONDS then
+      dismissed_active = current.active
+      target_alpha = 0.0
+      shown_at = nil
+      progress = 0
+    end
+  end
+
+  draw_button_at(current_label, cur_alpha, progress)
+
+  -- Keep ticking while fading OR while the countdown bar needs redrawing.
+  local need_more = (cur_alpha ~= target_alpha) or (shown_at ~= nil)
+  if need_more then
     anim_timer = mp.add_timeout(TICK_SECONDS, anim_tick)
   else
     anim_timer = nil
@@ -225,12 +274,14 @@ local function show_button(label)
     button_visible = true
   end
   target_alpha = 1.0
+  shown_at = mp.get_time()
   start_anim()
 end
 
 local function hide_button()
   if not button_visible then return end
   target_alpha = 0.0
+  shown_at = nil
   start_anim()
 end
 
@@ -250,19 +301,20 @@ mp.observe_property('time-pos', 'number', function(_, t)
   last_tick = now
 
   local was_active = current.active
-  if in_range(t, current.op) then
-    current.active = 'op'
-    if was_active ~= 'op' then
+  local now_active = nil
+  if in_range(t, current.op) then now_active = 'op'
+  elseif in_range(t, current.ed) then now_active = 'ed' end
+  current.active = now_active
+
+  if now_active ~= was_active then
+    if now_active == 'op' and dismissed_active ~= 'op' then
       show_button(string.format('[%s]  Skip Opening', SKIP_KEY:upper()))
-    end
-  elseif in_range(t, current.ed) then
-    current.active = 'ed'
-    if was_active ~= 'ed' then
+    elseif now_active == 'ed' and dismissed_active ~= 'ed' then
       show_button(string.format('[%s]  Skip Ending', SKIP_KEY:upper()))
+    elseif now_active == nil then
+      if button_visible then hide_button() end
+      dismissed_active = nil  -- left the segment; future re-entry can show again
     end
-  else
-    current.active = nil
-    if was_active then hide_button() end
   end
 end)
 

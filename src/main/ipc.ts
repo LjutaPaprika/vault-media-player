@@ -10,7 +10,7 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -206,6 +206,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // ─── Last opened tracking ─────────────────────────────────────────────────
   ipcMain.handle('library:markOpened', (_event, filePath: string) => setLastOpened(filePath))
+  ipcMain.handle('library:setWatched', (_event, filePath: string, watched: boolean) => setWatched(filePath, watched))
 
   // ─── Genre editing (movies) ───────────────────────────────────────────────
   ipcMain.handle('library:setGenre', (_event, filePath: string, genre: string | null) => {

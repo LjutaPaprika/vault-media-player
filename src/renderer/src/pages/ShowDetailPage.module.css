@@ -436,6 +436,38 @@
   width: fit-content;
 }
 
+/* ── Right-click context menu for manual watched toggle ── */
+.contextMenuShield {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+.contextMenu {
+  position: fixed;
+  z-index: 101;
+  background: var(--bg-elevated, #1c1c21);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.contextMenuItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text, #e8e8ee);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.contextMenuItem:hover {
+  background: var(--sidebar-active, #2a2a32);
+}
+
 /* ── Last watched / last read pill ── */
 .lastOpenedPill {
   font-size: 9px;

@@ -163,6 +163,7 @@ interface Window {
       getWatchOrder: (seriesTitle: string, category: string) => Promise<WatchOrderData | null>
       getWatchGuide: (seriesTitle: string, category: string) => Promise<string[] | null>
       markOpened: (filePath: string) => Promise<void>
+      setWatched: (filePath: string, watched: boolean) => Promise<void>
       setGenre: (filePath: string, genre: string | null) => Promise<void>
       getMusicAlbums: () => Promise<MusicAlbumsResult>
       downloadYouTube: (args: { urls: { url: string; title: string; artist?: string }[]; albumPath: string; artist?: string }) => Promise<{ success: boolean }>
