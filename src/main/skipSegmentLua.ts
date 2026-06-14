@@ -162,15 +162,17 @@ local function draw_button_at(label, a, progress)
   end
   local x, y, w, h = button_rect()
   local fill_a   = lerp_alpha(FILL_TARGET_HEX, a)
-  local border_a = lerp_alpha(0x00, a)
   local text_a   = lerp_alpha(0x00, a)
+  -- Borderless translucent slab to match uosc's flat aesthetic. Text centered
+  -- with \an5, biased a touch above center so the countdown bar at the bottom
+  -- doesn't visually crowd the label.
   local bg = string.format(
-    [[{\\an7\\pos(%d,%d)\\bord3\\1c&H1a1a1a&\\3c&Hffffff&\\1a&H%02x&\\3a&H%02x&\\p1}m 0 0 l %d 0 %d %d 0 %d{\\p0}]],
-    x, y, fill_a, border_a, w, w, h, h
+    [[{\\an7\\pos(%d,%d)\\bord0\\1c&H000000&\\1a&H%02x&\\p1}m 0 0 l %d 0 %d %d 0 %d{\\p0}]],
+    x, y, fill_a, w, w, h, h
   )
   local text = string.format(
-    [[{\\an7\\pos(%d,%d)\\bord0\\1c&Hffffff&\\1a&H%02x&\\fs44\\b1}%s]],
-    x + 32, y + 26, text_a, label
+    [[{\\an5\\pos(%d,%d)\\bord0\\1c&Hffffff&\\1a&H%02x&\\fs40\\b1}%s]],
+    x + math.floor(w / 2), y + math.floor(h / 2) - 6, text_a, label
   )
 
   -- Countdown bar: thin rectangle hugging the button's bottom inner edge,
@@ -308,9 +310,9 @@ mp.observe_property('time-pos', 'number', function(_, t)
 
   if now_active ~= was_active then
     if now_active == 'op' and dismissed_active ~= 'op' then
-      show_button(string.format('[%s]  Skip Opening', SKIP_KEY:upper()))
+      show_button('Skip Opening')
     elseif now_active == 'ed' and dismissed_active ~= 'ed' then
-      show_button(string.format('[%s]  Skip Ending', SKIP_KEY:upper()))
+      show_button('Skip Ending')
     elseif now_active == nil then
       if button_visible then hide_button() end
       dismissed_active = nil  -- left the segment; future re-entry can show again

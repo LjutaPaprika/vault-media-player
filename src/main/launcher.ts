@@ -48,6 +48,9 @@ osd-font-size=32
 osd-border-size=1.5
 osd-bar-w=95
 osd-bar-h=2
+# Replace mpv's built-in OSC with uosc (vendored under scripts/uosc/).
+# Without this, both bars try to render and you get a double UI.
+osc=no
 # Enable SDL2 gamepad input
 input-gamepad=yes
 # Hardware decoding
