@@ -131,10 +131,22 @@ export function runAdditiveSync(
       // /NP /NDL — quieter output
       // /FFT     — FAT file-time tolerance
       // (no /MIR, no /PURGE — additive only)
-      const child = spawn('robocopy', [
+      //
+      // chcp 65001 forces the child's console output code page to UTF-8 so
+      // robocopy's stdout doesn't mangle non-ASCII filenames (e.g. "Rôti")
+      // when Node reads the stream as UTF-8. The actual file operations are
+      // already encoding-clean since robocopy talks to NTFS via Win32 APIs —
+      // this only fixes how filenames render in our stdout pipe.
+      const args = [
         sourceRoot, destRoot, '/E', '/MT:8', '/R:3', '/W:5', '/NP', '/NDL', '/FFT',
         '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYSTEM_FOLDERS
-      ], { stdio: ['ignore', 'pipe', 'pipe'] })
+      ]
+      const quoted = args.map((a) => `"${a.replace(/"/g, '""')}"`).join(' ')
+      const child = spawn(`chcp 65001 >nul && robocopy ${quoted}`, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: true,
+        windowsHide: true
+      })
 
       let started = false
       child.stdout.setEncoding('utf-8')
