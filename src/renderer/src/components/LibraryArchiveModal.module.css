@@ -1,0 +1,130 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(460px, 92vw);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+.title {
+  margin: 0;
+  font-size: 17px;
+}
+
+.target {
+  padding: 12px 14px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.targetName {
+  font-weight: 600;
+}
+
+.targetPath {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-family: var(--font-mono, monospace);
+}
+
+.row {
+  font-size: 13px;
+}
+
+.error {
+  padding: 10px 12px;
+  background: color-mix(in srgb, #d96a55 14%, transparent);
+  border: 1px solid color-mix(in srgb, #d96a55 40%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: #f1a292;
+}
+
+.conflictBlock {
+  padding: 12px 14px;
+  background: color-mix(in srgb, #e8b44b 12%, transparent);
+  border: 1px solid color-mix(in srgb, #e8b44b 35%, transparent);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conflictHeader {
+  font-size: 12.5px;
+  margin-bottom: 4px;
+}
+
+.conflictOption {
+  display: flex;
+  gap: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.warning {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cancelBtn,
+.archiveBtn {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text);
+}
+
+.cancelBtn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.archiveBtn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+  font-weight: 600;
+}
+
+.archiveBtn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.cancelBtn:disabled,
+.archiveBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

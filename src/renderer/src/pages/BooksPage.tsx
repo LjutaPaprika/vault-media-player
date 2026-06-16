@@ -30,6 +30,7 @@ export default function BooksPage(): JSX.Element {
       {error   && <p style={{ color: 'var(--danger)',     padding: '24px' }}>{error}</p>}
       {!loading && !error && (
         <MediaGrid
+          category="books"
           items={filtered.map(i => ({
             id:         i.id,
             title:      i.title,

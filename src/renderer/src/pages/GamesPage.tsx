@@ -171,6 +171,7 @@ export default function GamesPage(): JSX.Element {
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
       {!loading && !error && (
         <MediaGrid
+          category="games"
           items={filtered.map((i) => ({
             ...i,
             subtitle: i.platform ? (PLATFORM_LABELS[i.platform] ?? i.platform) : undefined

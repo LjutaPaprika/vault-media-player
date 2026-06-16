@@ -1,7 +1,9 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import PosterImage from './PosterImage'
+import LibraryArchiveModal from './LibraryArchiveModal'
 import { useAppStore } from '../store/appStore'
 import { useController, type ControllerButton } from '../hooks/useController'
+import { deriveArchiveRelPath } from '../utils/archivePath'
 import styles from './MediaGrid.module.css'
 
 export interface MediaCard {
@@ -18,14 +20,43 @@ interface Props {
   items: MediaCard[]
   onSelect: (item: MediaCard) => void
   emptyMessage?: string
+  /** Category of items in this grid — enables right-click Archive action when set. */
+  category?: string
 }
 
-export default function MediaGrid({ items, onSelect, emptyMessage = 'No items found.' }: Props): JSX.Element {
+interface ContextMenuState {
+  x: number
+  y: number
+  relPath: string
+}
+
+export default function MediaGrid({ items, onSelect, emptyMessage = 'No items found.', category }: Props): JSX.Element {
   const { focusZone, setFocusZone } = useAppStore()
   const [focusedIdx, setFocusedIdx] = useState(0)
   const cardRefs = useRef<(HTMLButtonElement | null)[]>([])
   const gridRef = useRef<HTMLDivElement | null>(null)
   const isFocused = focusZone === 'content'
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [archiveTarget, setArchiveTarget] = useState<string | null>(null)
+
+  function handleContextMenu(e: React.MouseEvent, item: MediaCard): void {
+    if (!category || !item.filePath) return
+    const relPath = deriveArchiveRelPath(item.filePath, category)
+    if (!relPath) return
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, relPath })
+  }
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = (): void => setContextMenu(null)
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', close)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', close)
+    }
+  }, [contextMenu])
 
   function getCols(): number {
     const w = gridRef.current?.clientWidth ?? 800
@@ -100,6 +131,7 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
           ref={(el) => (cardRefs.current[i] = el)}
           className={`${styles.card} ${isFocused && i === focusedIdx ? styles.controllerFocus : ''}`}
           onClick={() => onSelect(item)}
+          onContextMenu={(e) => handleContextMenu(e, item)}
           tabIndex={isFocused && i === focusedIdx ? 0 : -1}
         >
           <div className={styles.poster}>
@@ -117,6 +149,27 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
           </div>
         </button>
       ))}
+      {contextMenu && (
+        <div
+          className={styles.contextMenu}
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className={styles.contextMenuItem}
+            onClick={() => {
+              setArchiveTarget(contextMenu.relPath)
+              setContextMenu(null)
+            }}
+          >📦 Archive to cold store</button>
+        </div>
+      )}
+      {archiveTarget && (
+        <LibraryArchiveModal
+          relPath={archiveTarget}
+          onClose={() => setArchiveTarget(null)}
+        />
+      )}
     </div>
   )
 }

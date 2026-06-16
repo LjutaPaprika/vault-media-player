@@ -92,6 +92,8 @@ contextBridge.exposeInMainWorld('api', {
     checkConflicts: (items: { side: 'vault' | 'cold'; relPath: string }[], destSide: 'vault' | 'cold') =>
       ipcRenderer.invoke('storage:checkConflicts', { items, destSide }),
     runTransfer: (req: unknown) => ipcRenderer.invoke('storage:runTransfer', req),
+    getFolderSize: (side: 'vault' | 'cold', relPath: string) =>
+      ipcRenderer.invoke('storage:getFolderSize', { side, relPath }),
     syncNewItems: () => ipcRenderer.invoke('storage:syncNewItems'),
     onProgress: (cb: (p: StorageTransferProgress) => void) => {
       const listener = (_e: unknown, p: StorageTransferProgress): void => cb(p)

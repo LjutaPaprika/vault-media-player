@@ -49,6 +49,7 @@ export default function AnimePage(): JSX.Element {
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
       {!loading && !error && (
         <MediaGrid
+          category="anime"
           items={series}
           onSelect={(item) => setSelected({ title: item.title, year: item.year ?? null, posterPath: item.posterPath ?? null })}
           emptyMessage="No anime found. Add series folders to media/anime/ and scan your library."

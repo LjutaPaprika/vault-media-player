@@ -235,6 +235,7 @@ interface Window {
       checkConflicts: (items: { side: 'vault' | 'cold'; relPath: string }[], destSide: 'vault' | 'cold') =>
         Promise<{ relPath: string; exists: boolean }[]>
       runTransfer: (req: StorageTransferRequest) => Promise<StorageTransferResult>
+      getFolderSize: (side: 'vault' | 'cold', relPath: string) => Promise<{ bytes: number } | null>
       syncNewItems: () => Promise<{ success: boolean; copied: number; skipped: number; message?: string }>
       onProgress: (cb: (p: StorageTransferProgress) => void) => () => void
     }

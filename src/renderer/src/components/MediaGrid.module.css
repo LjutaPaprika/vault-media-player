@@ -109,3 +109,38 @@
   padding: 60px 0;
   text-align: center;
 }
+
+.contextMenu {
+  position: fixed;
+  z-index: 200;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  min-width: 200px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  animation: ctxFadeIn 0.1s ease;
+}
+
+@keyframes ctxFadeIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.contextMenuItem {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.contextMenuItem:hover {
+  background: var(--bg-base);
+  color: var(--accent);
+}

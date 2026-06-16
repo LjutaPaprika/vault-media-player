@@ -136,6 +136,7 @@ export default function MangaPage({
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
       {!loading && !error && (
         <MediaGrid
+          category="manga"
           items={seriesCards}
           onSelect={(card) => {
             const name = card.title

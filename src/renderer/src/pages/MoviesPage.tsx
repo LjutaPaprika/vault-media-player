@@ -85,6 +85,7 @@ export default function MoviesPage(): JSX.Element {
             </div>
           )}
           <MediaGrid
+            category="movies"
             items={filtered.map((i) => ({ ...i, subtitle: i.year?.toString() ?? undefined }))}
             onSelect={(item) => setSelected({
               title: item.title,

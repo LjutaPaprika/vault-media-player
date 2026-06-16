@@ -461,9 +461,6 @@ export default function StoragePage(): JSX.Element {
         />
       </div>
 
-      <div className={styles.phaseNote}>
-        Phase 5 of 6 — per-item Archive / Restore shortcuts on library rows arrive in Phase 6.
-      </div>
 
       {pending && (
         <TransferConfirmModal

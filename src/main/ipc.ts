@@ -838,6 +838,17 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return result
   })
 
+  ipcMain.handle('storage:getFolderSize', async (
+    _event,
+    { side, relPath }: { side: TransferSide; relPath: string }
+  ) => {
+    const root = resolveStorageRoot(side)
+    if (!root) return null
+    const abs = join(root, 'media', ...relPath.split('/').filter(Boolean))
+    if (!existsSync(abs)) return null
+    return { bytes: dirSize(abs) }
+  })
+
   ipcMain.handle('storage:syncNewItems', async () => {
     const vaultRoot = resolveLibraryRoot()
     const coldRoot = resolveStorageRoot('cold')
