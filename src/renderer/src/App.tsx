@@ -25,6 +25,7 @@ import YouTubePage from './pages/YouTubePage'
 import HomePage from './pages/HomePage'
 import ArcadePage from './pages/ArcadePage'
 import StatsPage from './pages/StatsPage'
+import StoragePage from './pages/StoragePage'
 import SettingsPage from './pages/SettingsPage'
 
 const PAGES: Record<string, JSX.Element> = {
@@ -40,6 +41,7 @@ const PAGES: Record<string, JSX.Element> = {
   games:    <GamesPage />,
   arcade:   <ArcadePage />,
   stats:    <StatsPage />,
+  storage:  <StoragePage />,
   settings: <SettingsPage />
 }
 

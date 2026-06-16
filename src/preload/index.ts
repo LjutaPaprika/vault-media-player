@@ -88,6 +88,13 @@ contextBridge.exposeInMainWorld('api', {
     }
   },
 
+  // Storage (cold-store sync)
+  storage: {
+    getDrives: () => ipcRenderer.invoke('storage:getDrives'),
+    listFolder: (side: 'vault' | 'cold', relPath: string) =>
+      ipcRenderer.invoke('storage:listFolder', { side, relPath })
+  },
+
   // App settings
   settings: {
     get: (key: string, fallback: string) => ipcRenderer.invoke('settings:get', key, fallback),

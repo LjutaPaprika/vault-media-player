@@ -207,6 +207,19 @@ interface Window {
       start: () => Promise<void>
       onProgress: (cb: (progress: SyncProgress) => void) => () => void
     }
+    storage: {
+      getDrives: () => Promise<{
+        vault: { label: string | null; path: string; freeBytes: number; totalBytes: number } | null
+        cold:  { label: string | null; path: string; freeBytes: number; totalBytes: number } | null
+        coldConfigured: boolean
+      }>
+      listFolder: (side: 'vault' | 'cold', relPath: string) => Promise<{
+        root: string
+        mediaRoot: string
+        relPath: string
+        folders: { name: string; relPath: string; size: number }[]
+      } | null>
+    }
     settings: {
       get: (key: string, fallback: string) => Promise<string>
       set: (key: string, value: string) => Promise<void>

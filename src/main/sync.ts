@@ -1,7 +1,49 @@
-import { execSync, spawn } from 'child_process'
+import { execSync, spawn, spawnSync } from 'child_process'
 import { BrowserWindow } from 'electron'
 import { existsSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
+
+export interface DriveStats {
+  path: string
+  freeBytes: number
+  totalBytes: number
+}
+
+/** Read free/total bytes for the drive that contains the given path. */
+export async function getDriveStats(rootPath: string): Promise<DriveStats | null> {
+  if (process.platform === 'win32') {
+    if (rootPath.length < 2) return null
+    const driveLetter = rootPath.charAt(0)
+    const stdout = await new Promise<string>((resolve) => {
+      let out = ''
+      const ps = spawn('powershell', [
+        '-NoProfile', '-Command',
+        `Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='${driveLetter}:'" | Select-Object FreeSpace,Size | ConvertTo-Json -Compress`
+      ])
+      ps.stdout.on('data', (d: Buffer) => { out += d.toString() })
+      ps.on('close', () => resolve(out.trim()))
+      ps.on('error', () => resolve(''))
+      setTimeout(() => { try { ps.kill() } catch { /* ignore */ } resolve('') }, 5000)
+    })
+    if (!stdout) return null
+    try {
+      const data = JSON.parse(stdout) as { FreeSpace: number; Size: number }
+      return { path: rootPath, freeBytes: data.FreeSpace, totalBytes: data.Size }
+    } catch { return null }
+  }
+
+  // macOS / Linux: `df -k <path>`
+  try {
+    const dfOut = spawnSync('df', ['-k', rootPath], { encoding: 'utf-8' }).stdout ?? ''
+    const lines = dfOut.trim().split('\n')
+    if (lines.length < 2) return null
+    const parts = lines[1].trim().split(/\s+/)
+    const totalKB = parseInt(parts[1], 10)
+    const freeKB  = parseInt(parts[3], 10)
+    if (isNaN(totalKB) || isNaN(freeKB)) return null
+    return { path: rootPath, freeBytes: freeKB * 1024, totalBytes: totalKB * 1024 }
+  } catch { return null }
+}
 
 export interface SyncProgress {
   status: 'running' | 'done' | 'error'

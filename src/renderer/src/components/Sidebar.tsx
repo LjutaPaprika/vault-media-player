@@ -19,6 +19,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'games',    label: 'Games',    icon: '🎮' },
   { id: 'arcade',   label: 'Arcade',   icon: '🕹️' },
   { id: 'stats',    label: 'Stats',    icon: '📊' },
+  { id: 'storage',  label: 'Storage',  icon: '💾' },
   { id: 'settings', label: 'Settings', icon: '⚙️' }
 ]
 

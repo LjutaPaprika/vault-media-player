@@ -15,7 +15,7 @@ import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTime
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
-import { findDriveByLabel, hideSystemFolders, runSync } from './sync'
+import { findDriveByLabel, hideSystemFolders, runSync, getDriveStats } from './sync'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings, setKeyboardBindings, resetKeyboardBindings, type KeyboardBinding } from './keyboardBindings'
 
@@ -722,43 +722,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       ytdlp:   existsSync(ytdlpPath)
     }
 
-    let driveInfo: { freeBytes: number; totalBytes: number } | null = null
-    if (process.platform === 'win32' && root.length >= 2) {
-      const driveLetter = root.charAt(0)
-      try {
-        const stdout = await new Promise<string>((resolve) => {
-          let out = ''
-          const ps = spawn('powershell', [
-            '-NoProfile', '-Command',
-            `Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='${driveLetter}:'" | Select-Object FreeSpace,Size | ConvertTo-Json -Compress`
-          ])
-          ps.stdout.on('data', (d: Buffer) => { out += d.toString() })
-          ps.on('close', () => resolve(out.trim()))
-          ps.on('error', () => resolve(''))
-          setTimeout(() => { try { ps.kill() } catch { /* ignore */ } resolve('') }, 5000)
-        })
-        if (stdout) {
-          const data = JSON.parse(stdout) as { FreeSpace: number; Size: number }
-          driveInfo = { freeBytes: data.FreeSpace, totalBytes: data.Size }
-        }
-      } catch { /* non-fatal */ }
-    } else if (process.platform !== 'win32') {
-      // macOS / Linux: use `df -k <path>` — output columns are:
-      // Filesystem  1K-blocks  Used  Available  Capacity  Mounted on  (macOS)
-      // Filesystem  1K-blocks  Used  Available  Use%      Mounted on  (Linux)
-      try {
-        const dfOut = spawnSync('df', ['-k', root], { encoding: 'utf-8' }).stdout ?? ''
-        const lines = dfOut.trim().split('\n')
-        if (lines.length >= 2) {
-          const parts = lines[1].trim().split(/\s+/)
-          const totalKB = parseInt(parts[1], 10)
-          const freeKB  = parseInt(parts[3], 10)
-          if (!isNaN(totalKB) && !isNaN(freeKB)) {
-            driveInfo = { freeBytes: freeKB * 1024, totalBytes: totalKB * 1024 }
-          }
-        }
-      } catch { /* non-fatal */ }
-    }
+    const stats = await getDriveStats(root)
+    const driveInfo = stats ? { freeBytes: stats.freeBytes, totalBytes: stats.totalBytes } : null
 
     return { version, runtime, memoryMB, dbSize, tools, driveInfo }
   })
@@ -777,6 +742,90 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const destRoot = findDriveByLabel(backupLabel)
     if (!destRoot) throw new Error(`Backup drive "${backupLabel}" not found. Is it plugged in?`)
     runSync(sourceRoot, destRoot, win)
+  })
+
+  // ─── Storage (cold-store sync) ────────────────────────────────────────────
+
+  // Folder-size cache for the Storage page. Persists for the app session; invalidated
+  // by transfer operations (Phase 4). Keyed by absolute path.
+  const folderSizeCache = new Map<string, number>()
+
+  function dirSize(absPath: string): number {
+    const cached = folderSizeCache.get(absPath)
+    if (cached !== undefined) return cached
+    let total = 0
+    try {
+      for (const entry of readdirSync(absPath, { withFileTypes: true })) {
+        const child = join(absPath, entry.name)
+        try {
+          if (entry.isDirectory()) {
+            total += dirSize(child)
+          } else if (entry.isFile()) {
+            total += statSync(child).size
+          }
+        } catch { /* skip unreadable entries */ }
+      }
+    } catch { /* unreadable dir */ }
+    folderSizeCache.set(absPath, total)
+    return total
+  }
+
+  /** Resolve the root of a drive by side ("vault" or "cold"). null if unavailable. */
+  function resolveStorageRoot(side: 'vault' | 'cold'): string | null {
+    if (side === 'vault') return resolveLibraryRoot()
+    const backupLabel = getConfig('backupLabel')
+    if (!backupLabel) return null
+    return findDriveByLabel(backupLabel)
+  }
+
+  ipcMain.handle('storage:getDrives', async () => {
+    const vaultRoot = resolveLibraryRoot()
+    const backupLabel = getConfig('backupLabel')
+    const coldRoot = backupLabel ? findDriveByLabel(backupLabel) : null
+
+    const [vault, cold] = await Promise.all([
+      getDriveStats(vaultRoot),
+      coldRoot ? getDriveStats(coldRoot) : Promise.resolve(null)
+    ])
+
+    return {
+      vault: vault ? { label: getConfig('libraryLabel'), ...vault } : null,
+      cold:  cold  ? { label: backupLabel, ...cold }  : null,
+      coldConfigured: !!backupLabel
+    }
+  })
+
+  /**
+   * List immediate folder children of `<driveRoot>/media/<relPath>`.
+   * relPath is a forward-slash path under media/, '' for the media/ root itself.
+   * Sizes are recursive byte sums (cached). Returns null if drive unavailable
+   * or the path doesn't exist.
+   */
+  ipcMain.handle('storage:listFolder', async (
+    _event,
+    { side, relPath }: { side: 'vault' | 'cold'; relPath: string }
+  ) => {
+    const root = resolveStorageRoot(side)
+    if (!root) return null
+    const mediaRoot = join(root, 'media')
+    const target = relPath ? join(mediaRoot, ...relPath.split('/').filter(Boolean)) : mediaRoot
+    if (!existsSync(target)) return null
+
+    let entries: import('fs').Dirent[]
+    try {
+      entries = readdirSync(target, { withFileTypes: true })
+    } catch { return null }
+
+    const folders = entries
+      .filter((e) => e.isDirectory())
+      .map((e) => ({
+        name: e.name,
+        relPath: relPath ? `${relPath}/${e.name}` : e.name,
+        size: dirSize(join(target, e.name))
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+
+    return { root, mediaRoot, relPath, folders }
   })
 
   // ─── CBZ Reader ────────────────────────────────────────────────────────────
