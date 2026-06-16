@@ -377,6 +377,65 @@ function ColorSetting({ label, settingsKey, cssVar, defaultColor, applyFn }: {
   )
 }
 
+function YouTubeCookies(): JSX.Element {
+  const [status, setStatus] = useState<YouTubeCookieStatus | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  useEffect(() => {
+    window.api.youtube.getCookieStatus().then(setStatus)
+  }, [])
+
+  async function handleRefresh(): Promise<void> {
+    setRefreshing(true)
+    try {
+      const next = await window.api.youtube.refreshCookies()
+      setStatus(next)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  function fmtDate(unixSec: number | null): string {
+    if (!unixSec) return '—'
+    return new Date(unixSec * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {status === null ? (
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</p>
+      ) : !status.exists ? (
+        <p className={styles.statusError}>No cookies file yet. Click Refresh to sign in.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: 'var(--text-secondary)' }}>
+          <span>Refreshed: {fmtDate(status.refreshedAt)}</span>
+          <span>
+            Auth expires: {fmtDate(status.expiresAt)}
+            {status.daysRemaining !== null && (
+              <span style={{
+                color: status.daysRemaining < 14 ? 'var(--danger, #e57373)'
+                     : status.daysRemaining < 60 ? 'var(--accent, #e8b44b)'
+                     : 'var(--text-muted)',
+                marginLeft: 8
+              }}>
+                ({status.daysRemaining < 0 ? `expired ${-status.daysRemaining}d ago` : `${status.daysRemaining}d left`})
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+      <button className={styles.btn} onClick={handleRefresh} disabled={refreshing} style={{ width: 'fit-content' }}>
+        {refreshing ? 'Waiting for sign-in…' : status?.exists ? 'Refresh cookies' : 'Sign in & save cookies'}
+      </button>
+      {refreshing && (
+        <p style={{ color: 'var(--text-muted)', fontSize: 12, margin: 0 }}>
+          A browser window has opened. Sign in to YouTube, then close it.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function HwdecSelector(): JSX.Element {
   const [value, setValue] = useState('off')
 
@@ -525,6 +584,16 @@ export default function SettingsPage(): JSX.Element {
             <h2 className={styles.sectionTitle}>Keyboard Shortcuts</h2>
             <p className={styles.sectionDesc}>Keyboard bindings active during video/audio playback and in the music player. Click Rebind, then press the key you want to assign. Press Escape to cancel.</p>
             <KeyboardBindings />
+          </section>
+
+          <section className={styles.section}>
+            <h2 className={styles.sectionTitle}>YouTube Cookies</h2>
+            <p className={styles.sectionDesc}>
+              Some YouTube videos (age-restricted, bot-checked) refuse to download without signing in.
+              Click below to open a sign-in window; cookies are saved to the drive and reused for future downloads.
+              Refresh every few months when YouTube logs you out.
+            </p>
+            <YouTubeCookies />
           </section>
 
           <section className={styles.section}>

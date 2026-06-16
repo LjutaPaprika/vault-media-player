@@ -32,6 +32,15 @@ interface DownloadProgress {
   status: 'downloading' | 'converting' | 'done' | 'error'
   percent: number
   error?: string
+  errorKind?: 'age-restricted' | 'bot-check' | 'unavailable' | 'other'
+}
+
+interface YouTubeCookieStatus {
+  exists: boolean
+  path: string
+  expiresAt: number | null
+  daysRemaining: number | null
+  refreshedAt: number | null
 }
 
 interface WatchOrderData {
@@ -206,6 +215,8 @@ interface Window {
     youtube: {
       getPlaylists: () => Promise<string[]>
       downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) => Promise<{ success: boolean }>
+      getCookieStatus: () => Promise<YouTubeCookieStatus>
+      refreshCookies:  () => Promise<YouTubeCookieStatus>
     }
     manga: {
       openCbz: (filePath: string) => Promise<string[]>

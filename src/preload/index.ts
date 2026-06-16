@@ -99,7 +99,9 @@ contextBridge.exposeInMainWorld('api', {
   youtube: {
     getPlaylists: (): Promise<string[]> => ipcRenderer.invoke('youtube:getPlaylists'),
     downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) =>
-      ipcRenderer.invoke('youtube:downloadVideo', args)
+      ipcRenderer.invoke('youtube:downloadVideo', args),
+    getCookieStatus: () => ipcRenderer.invoke('youtube:getCookieStatus'),
+    refreshCookies:  () => ipcRenderer.invoke('youtube:refreshCookies')
   },
 
   // CBZ reader

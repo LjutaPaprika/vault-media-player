@@ -20,7 +20,8 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState<{ index: number; total: number; status: string; percent: number } | null>(null)
-  const [errors, setErrors] = useState<string[]>([])
+  const [errors, setErrors] = useState<{ url: string; kind: DownloadProgress['errorKind'] }[]>([])
+  const [succeeded, setSucceeded] = useState<number | null>(null)
   const unsubRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
@@ -50,11 +51,11 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
 
     setDownloading(true)
     setErrors([])
-    const newErrors: string[] = []
+    const newErrors: { url: string; kind: DownloadProgress['errorKind'] }[] = []
 
     unsubRef.current = window.api.library.onDownloadProgress((p) => {
       setProgress({ index: p.index, total: p.total, status: p.status, percent: p.percent })
-      if (p.status === 'error') newErrors.push(p.url)
+      if (p.status === 'error') newErrors.push({ url: p.url, kind: p.errorKind })
     })
 
     await window.api.youtube.downloadVideo({
@@ -67,7 +68,14 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
     setErrors(newErrors)
     setDownloading(false)
     setProgress(null)
-    onClose(true)
+    // Auto-close only when every URL succeeded. If anything failed, keep the
+    // modal open so the user can read the error explanation and act on it.
+    if (newErrors.length === 0) {
+      setSucceeded(finalUrls.length)
+      // Brief confirmation before auto-close, otherwise fast downloads look
+      // like the modal flashed and disappeared.
+      window.setTimeout(() => onClose(true), 1500)
+    }
   }
 
   const resolvedPlaylist =
@@ -85,7 +93,14 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
           )}
         </div>
 
-        {!downloading ? (
+        {succeeded !== null ? (
+          <div className={styles.progressArea} style={{ alignItems: 'center', textAlign: 'center', gap: 8 }}>
+            <div style={{ fontSize: 48, color: 'var(--accent)' }}>✓</div>
+            <p className={styles.progressLabel}>
+              Downloaded {succeeded} video{succeeded === 1 ? '' : 's'}
+            </p>
+          </div>
+        ) : !downloading ? (
           <>
             {/* URL input */}
             <div className={styles.field}>
@@ -162,7 +177,24 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
             )}
 
             {errors.length > 0 && (
-              <p className={styles.errorMsg}>{errors.length} download(s) failed.</p>
+              <div className={styles.errorMsg}>
+                <p style={{ margin: 0, fontWeight: 600 }}>{errors.length} download(s) failed:</p>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.5 }}>
+                  {errors.map((e, i) => (
+                    <li key={i}>
+                      <span style={{ wordBreak: 'break-all' }}>{e.url}</span>
+                      {' — '}
+                      {e.kind === 'age-restricted'
+                        ? <>age-restricted. Refresh YouTube cookies in <strong>Settings → YouTube Cookies</strong>.</>
+                       : e.kind === 'bot-check'
+                        ? <>YouTube bot check. Refresh YouTube cookies in <strong>Settings → YouTube Cookies</strong>.</>
+                       : e.kind === 'unavailable'
+                        ? <>video unavailable (private, removed, or region-blocked).</>
+                        : <>download failed — see <code>app/logs/yt-dlp.log</code> on the drive.</>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
 
             <div className={styles.modalFooter}>
