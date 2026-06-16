@@ -1,6 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useAppStore } from '../store/appStore'
-import { useSyncStore } from '../store/syncStore'
 import PageShell from '../components/PageShell'
 import styles from './SettingsPage.module.css'
 import {
@@ -463,14 +462,9 @@ function HwdecSelector(): JSX.Element {
 }
 
 export default function SettingsPage(): JSX.Element {
-  const { libraryLabel, libraryPath, setLibrary } = useAppStore()
+  const { libraryLabel, setLibrary } = useAppStore()
 
   const [backupLabelInit, setBackupLabelInit] = useState('')
-
-  // Sync state lives in a global store so progress persists across navigation.
-  const syncing   = useSyncStore((s) => s.syncing)
-  const syncLines = useSyncStore((s) => s.lines)
-  const logRef    = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     window.api.sync.getBackupLabel().then((label) => {
@@ -478,21 +472,11 @@ export default function SettingsPage(): JSX.Element {
     })
   }, [])
 
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
-  }, [syncLines])
-
   async function saveLibraryLabel(label: string): Promise<void> {
     await window.api.library.setLabel(label)
     const path = await window.api.library.findDrive(label)
     setLibrary(label, path)
   }
-
-  async function startSync(): Promise<void> {
-    await useSyncStore.getState().start()
-  }
-
-  const lastLine = syncLines[syncLines.length - 1]
 
   return (
     <PageShell title="Settings">
@@ -507,61 +491,12 @@ export default function SettingsPage(): JSX.Element {
         />
 
         <DriveField
-          title="Backup Drive"
-          description="The volume label of your backup HDD. Set this label on the HDD once and the app will find it when plugged in."
+          title="Cold Store Drive"
+          description="The volume label of your backup/archive drive. Set this label on the HDD once and the app will find it whenever it's plugged in. Used by the Storage page for archiving and restoring media."
           initialLabel={backupLabelInit}
           onSave={async (label) => { await window.api.sync.setBackupLabel(label); setBackupLabelInit(label) }}
           onDetect={(label) => window.api.sync.findDrive(label)}
         />
-
-        {/* Sync */}
-        <section className={`${styles.section} ${styles.sectionFull}`}>
-          <h2 className={styles.sectionTitle}>Sync to Backup</h2>
-          <p className={styles.sectionDesc}>
-            Mirrors your media drive to the backup HDD. New and changed files are copied.
-            Files you have deleted from the main drive are also removed from the backup.
-            Both drives must be plugged in.
-          </p>
-          {libraryPath && (
-            <p className={styles.statusOk}>Main drive: {libraryPath}</p>
-          )}
-          {!libraryPath && libraryLabel && (
-            <p className={styles.statusError}>Main drive "{libraryLabel}" not detected — plug it in first.</p>
-          )}
-          <button
-            className={styles.syncBtn}
-            onClick={startSync}
-            disabled={syncing || !backupLabelInit.trim()}
-          >
-            {syncing ? 'Syncing...' : 'Start Sync'}
-          </button>
-          {!backupLabelInit.trim() && (
-            <p className={styles.statusError}>Configure a backup drive label above first.</p>
-          )}
-          {syncLines.length > 0 && (
-            <div className={styles.log} ref={logRef}>
-              {syncLines.map((line, i) => (
-                <div
-                  key={i}
-                  className={
-                    line.status === 'error' ? styles.logError :
-                    line.status === 'done'  ? styles.logDone  :
-                    styles.logLine
-                  }
-                >
-                  {line.message}
-                </div>
-              ))}
-            </div>
-          )}
-          {lastLine?.status === 'done' && (
-            <div className={styles.summary}>
-              <span>{lastLine.filescopied ?? 0} copied</span>
-              <span>{lastLine.filesskipped ?? 0} skipped</span>
-              <span>{lastLine.filesdeleted ?? 0} deleted</span>
-            </div>
-          )}
-        </section>
 
         {/* Colours */}
         <section className={`${styles.section} ${styles.sectionFull}`}>

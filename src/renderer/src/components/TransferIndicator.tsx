@@ -4,7 +4,8 @@ import { useAppStore } from '../store/appStore'
 import { useStorageStatsStore } from '../store/storageStatsStore'
 import styles from './TransferIndicator.module.css'
 
-function actionVerb(action: 'copy' | 'move' | 'delete' | null, dest: 'vault' | 'cold' | null): string {
+function actionVerb(action: 'copy' | 'move' | 'delete' | 'sync' | null, dest: 'vault' | 'cold' | null): string {
+  if (action === 'sync')   return 'Syncing new items'
   if (action === 'delete') return 'Deleting'
   if (action === 'copy')   return dest === 'cold' ? 'Copying to cold store' : 'Copying to vault'
   if (action === 'move')   return dest === 'cold' ? 'Moving to cold store'  : 'Moving to vault'
@@ -48,10 +49,14 @@ export default function TransferIndicator(): JSX.Element | null {
   const detail = isTerminal
     ? hasErrors
       ? `${errors.length} item(s) failed${skipped > 0 ? ` · ${skipped} skipped` : ''}`
-      : skipped > 0 ? `${skipped} item(s) skipped` : 'All items processed'
+      : action === 'sync'
+        ? (progress?.message ?? 'Done')
+        : skipped > 0 ? `${skipped} item(s) skipped` : 'All items processed'
     : progress && progress.itemTotal > 0
       ? `${progress.itemIndex} of ${progress.itemTotal} folders${phase !== 'copying' && phase !== 'starting' ? ` · ${phase}` : ''}`
-      : 'Preparing…'
+      : action === 'sync'
+        ? (phase === 'starting' ? 'Starting…' : 'In progress…')
+        : 'Preparing…'
 
   return (
     <button

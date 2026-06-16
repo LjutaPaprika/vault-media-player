@@ -327,6 +327,21 @@ export default function StoragePage(): JSX.Element {
     setPending({ req: { action, sourceSide: side, destSide, items }, conflicts })
   }, [vaultSel, coldSel])
 
+  const handleSyncNewItems = useCallback(async () => {
+    if (!vaultAvailable || !coldAvailable) return
+    beginTransfer('sync', 'cold')
+    try {
+      const result = await window.api.storage.syncNewItems()
+      finishTransfer({
+        errors: result.success ? [] : [{ relPath: '(sync)', error: result.message ?? 'sync failed' }],
+        skipped: 0
+      })
+    } catch (err) {
+      finishTransfer({ errors: [{ relPath: '(sync)', error: String(err) }], skipped: 0 })
+    }
+    await refresh()
+  }, [vaultAvailable, coldAvailable, beginTransfer, finishTransfer, refresh])
+
   const handleConfirm = useCallback(async (conflictPolicy: 'skip' | 'replace') => {
     if (!pending) return
     const { req } = pending
@@ -372,9 +387,21 @@ export default function StoragePage(): JSX.Element {
     <PageShell
       title="Storage"
       actions={
-        <button className={styles.refreshBtn} onClick={doRefresh} disabled={loading}>
-          {loading ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div className={styles.headerActions}>
+          <button
+            className={styles.syncBtn}
+            onClick={handleSyncNewItems}
+            disabled={!vaultAvailable || !coldAvailable || transferActive}
+            title={
+              !vaultAvailable ? 'Vault drive not connected' :
+              !coldAvailable  ? 'Cold-store drive not connected' :
+              'Copy items from vault that are missing on cold store'
+            }
+          >Sync new items</button>
+          <button className={styles.refreshBtn} onClick={doRefresh} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       }
     >
       <div className={styles.driveGrid}>
@@ -435,7 +462,7 @@ export default function StoragePage(): JSX.Element {
       </div>
 
       <div className={styles.phaseNote}>
-        Phase 4 of 6 — additive sync arrives in Phase 5, per-item shortcuts in Phase 6.
+        Phase 5 of 6 — per-item Archive / Restore shortcuts on library rows arrive in Phase 6.
       </div>
 
       {pending && (

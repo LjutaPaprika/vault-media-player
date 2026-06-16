@@ -1,6 +1,6 @@
 .pill {
   position: fixed;
-  top: 88px;   /* Below SyncIndicator until Phase 5 retires the legacy sync */
+  top: 48px;
   right: 18px;
   z-index: 50;
 

@@ -1,14 +1,16 @@
 import { create } from 'zustand'
 
+type TransferKind = 'copy' | 'move' | 'delete' | 'sync'
+
 interface TransferState {
   active: boolean
-  action: 'copy' | 'move' | 'delete' | null
+  action: TransferKind | null
   destSide: 'vault' | 'cold' | null
   progress: StorageTransferProgress | null
   terminalAt: number | null  // when the overlay should hide after completion
   errors: { relPath: string; error: string }[]
   skipped: number
-  begin: (action: 'copy' | 'move' | 'delete', destSide: 'vault' | 'cold' | null) => void
+  begin: (action: TransferKind, destSide: 'vault' | 'cold' | null) => void
   update: (p: StorageTransferProgress) => void
   finish: (result: { errors: { relPath: string; error: string }[]; skipped: number }) => void
   dismiss: () => void

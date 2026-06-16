@@ -15,7 +15,7 @@ import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTime
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
-import { findDriveByLabel, hideSystemFolders, runSync, getDriveStats } from './sync'
+import { findDriveByLabel, hideSystemFolders, runAdditiveSync, getDriveStats } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings, setKeyboardBindings, resetKeyboardBindings, type KeyboardBinding } from './keyboardBindings'
@@ -729,21 +729,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return { version, runtime, memoryMB, dbSize, tools, driveInfo }
   })
 
-  // ─── Sync ─────────────────────────────────────────────────────────────────
+  // ─── Cold-store drive label config ────────────────────────────────────────
+  // (Sync IPC retained for the cold-store label flow; the legacy mirror sync
+  // was retired in Phase 5 — additive sync now lives on the Storage page.)
   ipcMain.handle('sync:getBackupLabel', () => getConfig('backupLabel'))
   ipcMain.handle('sync:setBackupLabel', (_event, label: string) => setConfig('backupLabel', label))
   ipcMain.handle('sync:findDrive', (_event, label: string) => findDriveByLabel(label))
-  ipcMain.handle('sync:start', () => {
-    const libraryLabel = getConfig('libraryLabel')
-    const backupLabel  = getConfig('backupLabel')
-    if (!libraryLabel) throw new Error('Library drive label is not configured.')
-    if (!backupLabel)  throw new Error('Backup drive label is not configured.')
-    const sourceRoot = findDriveByLabel(libraryLabel)
-    if (!sourceRoot) throw new Error(`Library drive "${libraryLabel}" not found. Is it plugged in?`)
-    const destRoot = findDriveByLabel(backupLabel)
-    if (!destRoot) throw new Error(`Backup drive "${backupLabel}" not found. Is it plugged in?`)
-    runSync(sourceRoot, destRoot, win)
-  })
 
   // ─── Storage (cold-store sync) ────────────────────────────────────────────
 
@@ -843,6 +834,15 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const coldRoot = resolveStorageRoot('cold')
     const result = await runTransfer(req, vaultRoot, coldRoot, win)
     // Invalidate folder-size cache for any affected paths — quickest is full clear.
+    folderSizeCache.clear()
+    return result
+  })
+
+  ipcMain.handle('storage:syncNewItems', async () => {
+    const vaultRoot = resolveLibraryRoot()
+    const coldRoot = resolveStorageRoot('cold')
+    if (!coldRoot) throw new Error('Cold-store drive not detected. Plug it in and refresh.')
+    const result = await runAdditiveSync(vaultRoot, coldRoot, win)
     folderSizeCache.clear()
     return result
   })

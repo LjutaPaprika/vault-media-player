@@ -17,14 +17,6 @@ interface LibraryConfig {
   resolvedPath: string | null // actual path resolved at runtime, e.g. "E:\" or null if not found
 }
 
-interface SyncProgress {
-  status: 'running' | 'done' | 'error'
-  message: string
-  filescopied?: number
-  filesskipped?: number
-  filesdeleted?: number
-}
-
 interface StorageTransferProgress {
   phase: 'starting' | 'copying' | 'verifying' | 'deleting' | 'done' | 'error' | 'skipped'
   itemIndex: number
@@ -227,8 +219,6 @@ interface Window {
       getBackupLabel: () => Promise<string | null>
       setBackupLabel: (label: string) => Promise<void>
       findDrive: (label: string) => Promise<string | null>
-      start: () => Promise<void>
-      onProgress: (cb: (progress: SyncProgress) => void) => () => void
     }
     storage: {
       getDrives: () => Promise<{
@@ -245,6 +235,7 @@ interface Window {
       checkConflicts: (items: { side: 'vault' | 'cold'; relPath: string }[], destSide: 'vault' | 'cold') =>
         Promise<{ relPath: string; exists: boolean }[]>
       runTransfer: (req: StorageTransferRequest) => Promise<StorageTransferResult>
+      syncNewItems: () => Promise<{ success: boolean; copied: number; skipped: number; message?: string }>
       onProgress: (cb: (p: StorageTransferProgress) => void) => () => void
     }
     settings: {

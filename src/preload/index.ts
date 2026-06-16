@@ -76,16 +76,12 @@ contextBridge.exposeInMainWorld('api', {
     resetBindings: () => ipcRenderer.invoke('keyboard:resetBindings')
   },
 
-  // Sync
+  // Cold-store drive label (retained from legacy sync; the mirror sync itself
+  // is retired — additive sync lives on the Storage page).
   sync: {
     getBackupLabel: () => ipcRenderer.invoke('sync:getBackupLabel'),
     setBackupLabel: (label: string) => ipcRenderer.invoke('sync:setBackupLabel', label),
-    findDrive: (label: string) => ipcRenderer.invoke('sync:findDrive', label),
-    start: () => ipcRenderer.invoke('sync:start'),
-    onProgress: (cb: (progress: SyncProgress) => void) => {
-      ipcRenderer.on('sync:progress', (_event, progress) => cb(progress))
-      return () => ipcRenderer.removeAllListeners('sync:progress')
-    }
+    findDrive: (label: string) => ipcRenderer.invoke('sync:findDrive', label)
   },
 
   // Storage (cold-store sync)
@@ -96,6 +92,7 @@ contextBridge.exposeInMainWorld('api', {
     checkConflicts: (items: { side: 'vault' | 'cold'; relPath: string }[], destSide: 'vault' | 'cold') =>
       ipcRenderer.invoke('storage:checkConflicts', { items, destSide }),
     runTransfer: (req: unknown) => ipcRenderer.invoke('storage:runTransfer', req),
+    syncNewItems: () => ipcRenderer.invoke('storage:syncNewItems'),
     onProgress: (cb: (p: StorageTransferProgress) => void) => {
       const listener = (_e: unknown, p: StorageTransferProgress): void => cb(p)
       ipcRenderer.on('storage:progress', listener)
