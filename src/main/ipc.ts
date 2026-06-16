@@ -849,13 +849,36 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return { bytes: dirSize(abs) }
   })
 
+  // Server-side concurrency guard + cooldown for the additive sync.
+  // Without this, a second click (or any caller that bypasses the UI's
+  // `transferActive` flag) could spawn a second robocopy against the same
+  // tree. Multi-threaded enumeration of the same exFAT volume from two
+  // robocopy processes has been linked to exfat.sys kernel faults — keep
+  // this lock even when the renderer believes it's blocking double-clicks.
+  let syncInProgress = false
+  let lastSyncCompletedAt = 0
+  const SYNC_COOLDOWN_MS = 3000
+
   ipcMain.handle('storage:syncNewItems', async () => {
+    if (syncInProgress) {
+      throw new Error('A sync is already running.')
+    }
+    const sinceLast = Date.now() - lastSyncCompletedAt
+    if (sinceLast < SYNC_COOLDOWN_MS) {
+      throw new Error(`Please wait ${Math.ceil((SYNC_COOLDOWN_MS - sinceLast) / 1000)}s before syncing again.`)
+    }
     const vaultRoot = resolveLibraryRoot()
     const coldRoot = resolveStorageRoot('cold')
     if (!coldRoot) throw new Error('Cold-store drive not detected. Plug it in and refresh.')
-    const result = await runAdditiveSync(vaultRoot, coldRoot, win)
-    folderSizeCache.clear()
-    return result
+    syncInProgress = true
+    try {
+      const result = await runAdditiveSync(vaultRoot, coldRoot, win)
+      folderSizeCache.clear()
+      return result
+    } finally {
+      syncInProgress = false
+      lastSyncCompletedAt = Date.now()
+    }
   })
 
   // ─── CBZ Reader ────────────────────────────────────────────────────────────
