@@ -1,7 +1,12 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useAppStore, type Page } from '../store/appStore'
+import { useStorageStatsStore } from '../store/storageStatsStore'
 import { useController, type ControllerButton } from '../hooks/useController'
 import styles from './Sidebar.module.css'
+
+function pctOf(used: number, total: number): number {
+  return total > 0 ? Math.round((used / total) * 100) : 0
+}
 
 // Pages that render a navigable media grid in the content zone
 const CONTENT_PAGES = new Set<Page>(['movies', 'tv', 'anime', 'youtube', 'music', 'books', 'manga', 'comics', 'games', 'arcade'])
@@ -25,8 +30,16 @@ const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
 
 export default function Sidebar(): JSX.Element {
   const { activePage, setActivePage, focusZone, setFocusZone } = useAppStore()
+  const { vault, cold, refresh: refreshStats } = useStorageStatsStore()
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const isFocused = focusZone === 'sidebar'
+
+  // Refresh drive stats on mount and every 60s so the pill stays roughly current.
+  useEffect(() => {
+    refreshStats()
+    const id = setInterval(refreshStats, 60_000)
+    return () => clearInterval(id)
+  }, [refreshStats])
 
   function navigate(dir: 'up' | 'down'): void {
     const idx = NAV_ITEMS.findIndex((n) => n.id === activePage)
@@ -91,6 +104,43 @@ export default function Sidebar(): JSX.Element {
           </li>
         ))}
       </ul>
+      {(vault || cold) && (
+        <div className={styles.spacer} />
+      )}
+      {(vault || cold) && (
+        <button
+          className={styles.storagePill}
+          onClick={(e) => {
+            e.stopPropagation()
+            setActivePage('storage')
+            setFocusZone('sidebar')
+          }}
+          title="Open Storage page"
+        >
+          {vault && (() => {
+            const used = vault.totalBytes - vault.freeBytes
+            const pct  = pctOf(used, vault.totalBytes)
+            const tone = pct >= 90 ? styles.pillCritical : pct >= 75 ? styles.pillWarn : ''
+            return (
+              <div className={`${styles.pillRow} ${tone}`}>
+                <span className={styles.pillLabel}>Vault</span>
+                <span className={styles.pillPct}>{pct}%</span>
+              </div>
+            )
+          })()}
+          {cold && (() => {
+            const used = cold.totalBytes - cold.freeBytes
+            const pct  = pctOf(used, cold.totalBytes)
+            const tone = pct >= 90 ? styles.pillCritical : pct >= 75 ? styles.pillWarn : ''
+            return (
+              <div className={`${styles.pillRow} ${tone}`}>
+                <span className={styles.pillLabel}>Cold</span>
+                <span className={styles.pillPct}>{pct}%</span>
+              </div>
+            )
+          })()}
+        </button>
+      )}
     </nav>
   )
 }

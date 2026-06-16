@@ -63,7 +63,22 @@
   line-height: 1.5;
 }
 
+.barBlock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.barLabel {
+  width: 44px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .bar {
+  flex: 1;
   height: 18px;
   background: var(--bg-base);
   border-radius: 9px;
@@ -77,12 +92,38 @@
   transition: width 0.3s ease;
 }
 
+.barPredicted {
+  background: color-mix(in srgb, var(--accent) 75%, #6ab97e);
+}
+
 .barWarn {
   background: #e8b44b;
 }
 
 .barCritical {
   background: #d96a55;
+}
+
+.predictedFooter {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding-top: 4px;
+}
+
+.predictedOverflow {
+  color: #d96a55;
+  font-weight: 500;
+}
+
+.previewNote {
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.5;
 }
 
 .driveFooter {
