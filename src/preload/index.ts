@@ -92,7 +92,15 @@ contextBridge.exposeInMainWorld('api', {
   storage: {
     getDrives: () => ipcRenderer.invoke('storage:getDrives'),
     listFolder: (side: 'vault' | 'cold', relPath: string) =>
-      ipcRenderer.invoke('storage:listFolder', { side, relPath })
+      ipcRenderer.invoke('storage:listFolder', { side, relPath }),
+    checkConflicts: (items: { side: 'vault' | 'cold'; relPath: string }[], destSide: 'vault' | 'cold') =>
+      ipcRenderer.invoke('storage:checkConflicts', { items, destSide }),
+    runTransfer: (req: unknown) => ipcRenderer.invoke('storage:runTransfer', req),
+    onProgress: (cb: (p: StorageTransferProgress) => void) => {
+      const listener = (_e: unknown, p: StorageTransferProgress): void => cb(p)
+      ipcRenderer.on('storage:progress', listener)
+      return () => ipcRenderer.removeListener('storage:progress', listener)
+    }
   },
 
   // App settings

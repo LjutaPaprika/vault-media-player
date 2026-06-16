@@ -1,0 +1,94 @@
+.pill {
+  position: fixed;
+  top: 88px;   /* Below SyncIndicator until Phase 5 retires the legacy sync */
+  right: 18px;
+  z-index: 50;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px 8px 12px;
+
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.25);
+
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+
+  animation: slideIn 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.pill:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+}
+
+@keyframes slideIn {
+  from { transform: translateY(-16px); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+.dotWrap {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+}
+
+.dot,
+.dotPulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.dotPulse {
+  background: var(--accent);
+  opacity: 0.6;
+  animation: pulse 1.6s ease-out infinite;
+}
+
+@keyframes pulse {
+  0%   { transform: scale(1);   opacity: 0.6; }
+  100% { transform: scale(2.6); opacity: 0;   }
+}
+
+.running .dot      { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.running .dotPulse { background: var(--accent); }
+
+.done  .dot { background: #4ade80; box-shadow: 0 0 10px rgba(74, 222, 128, 0.6); }
+.error .dot { background: #f87171; box-shadow: 0 0 10px rgba(248, 113, 113, 0.6); }
+
+.text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+  text-align: left;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.detail {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}

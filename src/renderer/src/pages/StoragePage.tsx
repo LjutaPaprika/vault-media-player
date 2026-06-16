@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import PageShell from '../components/PageShell'
 import { useStorageStatsStore } from '../store/storageStatsStore'
+import { useTransferStore } from '../store/transferStore'
+import TransferConfirmModal, { type PendingTransfer } from '../components/TransferConfirmModal'
 import styles from './StoragePage.module.css'
 
 interface DriveInfo {
@@ -118,13 +120,17 @@ function DriveCard({ name, drive, missingMessage, predictedUsed }: DriveCardProp
 interface PaneProps {
   side: Side
   driveAvailable: boolean
+  otherSideAvailable: boolean
   missingMessage: string
   selected: Selection
   onToggleSelect: (side: Side, relPath: string, size: number) => void
   onClearSelection: (side: Side) => void
+  onAction: (side: Side, action: 'copy' | 'move' | 'delete') => void
+  predictedOverflow: boolean
+  transferActive: boolean
 }
 
-function FolderPane({ side, driveAvailable, missingMessage, selected, onToggleSelect, onClearSelection }: PaneProps): JSX.Element {
+function FolderPane({ side, driveAvailable, otherSideAvailable, missingMessage, selected, onToggleSelect, onClearSelection, onAction, predictedOverflow, transferActive }: PaneProps): JSX.Element {
   const [relPath, setRelPath] = useState('')
   const [listing, setListing] = useState<FolderListing | null>(null)
   const [loading, setLoading] = useState(false)
@@ -218,6 +224,48 @@ function FolderPane({ side, driveAvailable, missingMessage, selected, onToggleSe
           : <span className={styles.paneHint}>Click a folder to open · checkbox or ctrl/shift-click to select</span>
         }
       </div>
+      {selected.size > 0 && (
+        <div className={styles.paneActions}>
+          {side === 'cold' && (
+            <>
+              <button
+                className={styles.actionBtn}
+                disabled={!otherSideAvailable || transferActive || predictedOverflow}
+                onClick={() => onAction(side, 'copy')}
+                title={predictedOverflow ? 'Destination would overflow' : `Copy ${selected.size} folder(s) to vault`}
+              >← Copy to vault</button>
+              <button
+                className={styles.actionBtn}
+                disabled={!otherSideAvailable || transferActive || predictedOverflow}
+                onClick={() => onAction(side, 'move')}
+                title={predictedOverflow ? 'Destination would overflow' : `Move ${selected.size} folder(s) to vault`}
+              >← Move to vault</button>
+            </>
+          )}
+          {side === 'vault' && (
+            <>
+              <button
+                className={styles.actionBtn}
+                disabled={!otherSideAvailable || transferActive || predictedOverflow}
+                onClick={() => onAction(side, 'copy')}
+                title={predictedOverflow ? 'Destination would overflow' : `Copy ${selected.size} folder(s) to cold store`}
+              >Copy to cold →</button>
+              <button
+                className={styles.actionBtn}
+                disabled={!otherSideAvailable || transferActive || predictedOverflow}
+                onClick={() => onAction(side, 'move')}
+                title={predictedOverflow ? 'Destination would overflow' : `Move ${selected.size} folder(s) to cold store`}
+              >Move to cold →</button>
+            </>
+          )}
+          <button
+            className={`${styles.actionBtn} ${styles.actionDestructive}`}
+            disabled={transferActive}
+            onClick={() => onAction(side, 'delete')}
+            title={`Delete ${selected.size} folder(s) from ${side}`}
+          >Delete</button>
+        </div>
+      )}
     </div>
   )
 }
@@ -226,9 +274,13 @@ function FolderPane({ side, driveAvailable, missingMessage, selected, onToggleSe
 
 export default function StoragePage(): JSX.Element {
   const { vault, cold, coldConfigured, refresh } = useStorageStatsStore()
+  const transferActive = useTransferStore((s) => s.active && s.terminalAt === null)
+  const beginTransfer = useTransferStore((s) => s.begin)
+  const finishTransfer = useTransferStore((s) => s.finish)
   const [loading, setLoading] = useState(true)
   const [vaultSel, setVaultSel] = useState<Selection>(new Map())
   const [coldSel,  setColdSel]  = useState<Selection>(new Map())
+  const [pending, setPending] = useState<{ req: PendingTransfer; conflicts: { relPath: string; exists: boolean }[] } | null>(null)
 
   const doRefresh = useCallback(async () => {
     setLoading(true)
@@ -259,6 +311,42 @@ export default function StoragePage(): JSX.Element {
   const vaultAvailable = vault !== null
   const coldAvailable  = cold !== null
 
+  const handleAction = useCallback(async (side: Side, action: 'copy' | 'move' | 'delete') => {
+    const sel = side === 'vault' ? vaultSel : coldSel
+    if (sel.size === 0) return
+    const items = Array.from(sel.entries()).map(([relPath, bytes]) => ({ relPath, bytes }))
+    const destSide: Side | null = action === 'delete' ? null : (side === 'vault' ? 'cold' : 'vault')
+
+    let conflicts: { relPath: string; exists: boolean }[] = []
+    if (destSide) {
+      conflicts = await window.api.storage.checkConflicts(
+        items.map((it) => ({ side, relPath: it.relPath })),
+        destSide
+      )
+    }
+    setPending({ req: { action, sourceSide: side, destSide, items }, conflicts })
+  }, [vaultSel, coldSel])
+
+  const handleConfirm = useCallback(async (conflictPolicy: 'skip' | 'replace') => {
+    if (!pending) return
+    const { req } = pending
+    setPending(null)
+    beginTransfer(req.action, req.destSide)
+    const result = await window.api.storage.runTransfer({
+      action: req.action,
+      items: req.items.map((it) => ({ side: req.sourceSide, relPath: it.relPath })),
+      destSide: req.destSide ?? undefined,
+      conflictPolicy
+    })
+    finishTransfer({ errors: result.errors, skipped: result.skipped })
+    // Clear the source-side selection on success — items moved/deleted are gone.
+    if (req.action !== 'copy' && result.success) {
+      if (req.sourceSide === 'vault') setVaultSel(new Map())
+      else                            setColdSel(new Map())
+    }
+    await refresh()
+  }, [pending, beginTransfer, finishTransfer, refresh])
+
   // Predicted state assumes "Move selection to the other side" — the
   // most space-impactful intent and the natural reading of the selection.
   // Phase 4's action buttons will refine this per chosen op (Copy/Delete).
@@ -275,6 +363,10 @@ export default function StoragePage(): JSX.Element {
   const coldPredicted = hasAnySelection && cold
     ? coldUsed - coldSelectedBytes + vaultSelectedBytes
     : undefined
+
+  // For action gating: would moving the vault selection to cold overflow cold?
+  const vaultMoveOverflow = cold ? (coldUsed + vaultSelectedBytes) > cold.totalBytes : false
+  const coldMoveOverflow  = vault ? (vaultUsed + coldSelectedBytes) > vault.totalBytes : false
 
   return (
     <PageShell
@@ -315,14 +407,19 @@ export default function StoragePage(): JSX.Element {
         <FolderPane
           side="vault"
           driveAvailable={vaultAvailable}
+          otherSideAvailable={coldAvailable}
           missingMessage="Vault drive not connected."
           selected={vaultSel}
           onToggleSelect={handleToggleSelect}
           onClearSelection={handleClearSelection}
+          onAction={handleAction}
+          predictedOverflow={vaultMoveOverflow}
+          transferActive={transferActive}
         />
         <FolderPane
           side="cold"
           driveAvailable={coldAvailable}
+          otherSideAvailable={vaultAvailable}
           missingMessage={
             coldConfigured === false
               ? 'Configure the cold-store drive label in Settings.'
@@ -331,12 +428,24 @@ export default function StoragePage(): JSX.Element {
           selected={coldSel}
           onToggleSelect={handleToggleSelect}
           onClearSelection={handleClearSelection}
+          onAction={handleAction}
+          predictedOverflow={coldMoveOverflow}
+          transferActive={transferActive}
         />
       </div>
 
       <div className={styles.phaseNote}>
-        Phase 3 of 6 — Copy/Move/Delete actions and the additive sync arrive in upcoming phases.
+        Phase 4 of 6 — additive sync arrives in Phase 5, per-item shortcuts in Phase 6.
       </div>
+
+      {pending && (
+        <TransferConfirmModal
+          pending={pending.req}
+          conflicts={pending.conflicts}
+          onCancel={() => setPending(null)}
+          onConfirm={handleConfirm}
+        />
+      )}
     </PageShell>
   )
 }

@@ -11,6 +11,7 @@ import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import MusicPlayerBar from './components/MusicPlayerBar'
 import SyncIndicator from './components/SyncIndicator'
+import TransferIndicator from './components/TransferIndicator'
 import { MusicPlayerProvider } from './context/MusicPlayerContext'
 import SetupScreen from './pages/SetupScreen'
 import MoviesPage from './pages/MoviesPage'
@@ -119,6 +120,7 @@ export default function App(): JSX.Element {
         </div>
         <MusicPlayerBar />
         <SyncIndicator />
+        <TransferIndicator />
       </div>
     </MusicPlayerProvider>
   )

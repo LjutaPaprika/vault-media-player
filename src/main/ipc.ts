@@ -16,6 +16,7 @@ import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { findDriveByLabel, hideSystemFolders, runSync, getDriveStats } from './sync'
+import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings, setKeyboardBindings, resetKeyboardBindings, type KeyboardBinding } from './keyboardBindings'
 
@@ -826,6 +827,24 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
 
     return { root, mediaRoot, relPath, folders }
+  })
+
+  ipcMain.handle('storage:checkConflicts', async (
+    _event,
+    { items, destSide }: { items: { side: TransferSide; relPath: string }[]; destSide: TransferSide }
+  ) => {
+    const vaultRoot = resolveLibraryRoot()
+    const coldRoot = resolveStorageRoot('cold')
+    return checkConflicts(items, destSide, vaultRoot, coldRoot)
+  })
+
+  ipcMain.handle('storage:runTransfer', async (_event, req: TransferRequest) => {
+    const vaultRoot = resolveLibraryRoot()
+    const coldRoot = resolveStorageRoot('cold')
+    const result = await runTransfer(req, vaultRoot, coldRoot, win)
+    // Invalidate folder-size cache for any affected paths — quickest is full clear.
+    folderSizeCache.clear()
+    return result
   })
 
   // ─── CBZ Reader ────────────────────────────────────────────────────────────

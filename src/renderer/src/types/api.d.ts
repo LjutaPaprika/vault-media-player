@@ -25,6 +25,29 @@ interface SyncProgress {
   filesdeleted?: number
 }
 
+interface StorageTransferProgress {
+  phase: 'starting' | 'copying' | 'verifying' | 'deleting' | 'done' | 'error' | 'skipped'
+  itemIndex: number
+  itemTotal: number
+  itemName?: string
+  bytesDone?: number
+  bytesTotal?: number
+  message?: string
+}
+
+interface StorageTransferRequest {
+  action: 'copy' | 'move' | 'delete'
+  items: { side: 'vault' | 'cold'; relPath: string }[]
+  destSide?: 'vault' | 'cold'
+  conflictPolicy: 'skip' | 'replace'
+}
+
+interface StorageTransferResult {
+  success: boolean
+  errors: { relPath: string; error: string }[]
+  skipped: number
+}
+
 interface DownloadProgress {
   index: number
   total: number
@@ -219,6 +242,10 @@ interface Window {
         relPath: string
         folders: { name: string; relPath: string; size: number }[]
       } | null>
+      checkConflicts: (items: { side: 'vault' | 'cold'; relPath: string }[], destSide: 'vault' | 'cold') =>
+        Promise<{ relPath: string; exists: boolean }[]>
+      runTransfer: (req: StorageTransferRequest) => Promise<StorageTransferResult>
+      onProgress: (cb: (p: StorageTransferProgress) => void) => () => void
     }
     settings: {
       get: (key: string, fallback: string) => Promise<string>
