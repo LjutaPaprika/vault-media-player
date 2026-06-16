@@ -831,28 +831,23 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       // on Windows, and yt-dlp's atomic writeback fails when replacing a hidden file.
       writeFileSync(tmpCookiesPath, readFileSync(cookiesPath, 'utf-8'), 'utf-8')
     }
-    const cookiesArgs = tmpCookiesPath ? ['--cookies', tmpCookiesPath] : []
     // YouTube wraps format URLs in obfuscated JS challenges (n-sig, signature).
     // yt-dlp delegates these to a JS runtime — deno is the default. Without it,
     // only thumbnails come back. We bundle deno.exe alongside yt-dlp on the drive.
     const denoPath = getToolPath(root, 'deno')
     const denoArgs = denoPath !== 'deno' ? ['--js-runtimes', `deno:${denoPath}`] : []
     const outTemplate = join(targetDir, '%(title)s.%(ext)s')
-    logYtDlp(root, 'video', `start: ${urls.length} video(s), playlist=${playlistName ?? '(none)'}, tool=${ytdlpPath}${ytdlpPath === 'yt-dlp' ? ' (PATH lookup — bundled yt-dlp.exe missing on drive!)' : ''}, cookies=${cookiesArgs.length ? 'yes' : 'no'}, deno=${denoArgs.length ? denoPath : 'no'}`)
+    logYtDlp(root, 'video', `start: ${urls.length} video(s), playlist=${playlistName ?? '(none)'}, tool=${ytdlpPath}${ytdlpPath === 'yt-dlp' ? ' (PATH lookup — bundled yt-dlp.exe missing on drive!)' : ''}, cookies=${tmpCookiesPath ? 'available' : 'none'}, deno=${denoArgs.length ? denoPath : 'no'}`)
 
-    for (let i = 0; i < urls.length; i++) {
-      const { url } = urls[i]
-      win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'downloading', percent: 0 })
-
-      await new Promise<void>((resolve) => {
+    const runAttempt = (i: number, url: string, useCookies: boolean): Promise<{ code: number; stderr: string }> => {
+      return new Promise((resolve) => {
+        const cookiesArgs = useCookies && tmpCookiesPath ? ['--cookies', tmpCookiesPath] : []
         const proc = spawn(ytdlpPath, [
           '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
           '--merge-output-format', 'mp4',
           '--write-thumbnail', '--convert-thumbnails', 'jpg',
           // Cookie-free age-gate workaround: impersonate tv/web_safari clients
           // and accept any age rating. (mweb removed — it demands a GVS PO Token.)
-          // YouTube has tightened server-side enforcement, so this no longer
-          // suffices for many videos — see --cookies fallback below.
           '--extractor-args', 'youtube:player_client=tv,web_safari',
           '--age-limit', '99',
           ...cookiesArgs,
@@ -879,26 +874,41 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         })
 
         proc.on('error', (err) => {
-          console.error('[yt-dlp video] spawn error', url, err)
           logYtDlp(root, 'video', `spawn error for ${url}: ${String(err)}`)
-          win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'error', percent: 0, error: String(err) })
-          resolve()
+          resolve({ code: -1, stderr: String(err) })
         })
         proc.on('close', (code) => {
-          if (code !== 0) {
-            console.error(`[yt-dlp video] exit ${code} for ${url}\n${stderrBuf.trim()}`)
-            logYtDlp(root, 'video', `exit ${code} for ${url}\n${stderrBuf.trim()}`)
-          } else {
-            logYtDlp(root, 'video', `ok: ${url}`)
-          }
-          const errorKind = code === 0 ? undefined : classifyYtDlpError(stderrBuf)
-          win.webContents.send('download:progress', {
-            index: i, total: urls.length, url, status: code === 0 ? 'done' : 'error', percent: 100,
-            error: code === 0 ? undefined : stderrBuf.trim().split('\n').slice(-3).join(' | '),
-            errorKind
-          })
-          resolve()
+          resolve({ code: code ?? -1, stderr: stderrBuf })
         })
+      })
+    }
+
+    for (let i = 0; i < urls.length; i++) {
+      const { url } = urls[i]
+      win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'downloading', percent: 0 })
+
+      // First pass — no cookies (keeps account fingerprint off most downloads).
+      let { code, stderr } = await runAttempt(i, url, false)
+      let kind = code === 0 ? undefined : classifyYtDlpError(stderr)
+
+      // Retry with cookies if the failure is one cookies actually fix.
+      if (code !== 0 && tmpCookiesPath && (kind === 'age-restricted' || kind === 'bot-check')) {
+        logYtDlp(root, 'video', `retrying with cookies (${kind}): ${url}`)
+        win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'downloading', percent: 0 })
+        ;({ code, stderr } = await runAttempt(i, url, true))
+        kind = code === 0 ? undefined : classifyYtDlpError(stderr)
+      }
+
+      if (code === 0) {
+        logYtDlp(root, 'video', `ok: ${url}`)
+      } else {
+        logYtDlp(root, 'video', `exit ${code} for ${url}\n${stderr.trim()}`)
+      }
+      win.webContents.send('download:progress', {
+        index: i, total: urls.length, url,
+        status: code === 0 ? 'done' : 'error', percent: 100,
+        error: code === 0 ? undefined : stderr.trim().split('\n').slice(-3).join(' | '),
+        errorKind: kind
       })
     }
 
