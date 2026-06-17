@@ -124,16 +124,22 @@ interface PaneProps {
   missingMessage: string
   selected: Selection
   onToggleSelect: (side: Side, relPath: string, size: number) => void
+  onAddToSelection: (side: Side, items: { relPath: string; size: number }[]) => void
   onClearSelection: (side: Side) => void
   onAction: (side: Side, action: 'copy' | 'move' | 'delete') => void
   predictedOverflow: boolean
   transferActive: boolean
 }
 
-function FolderPane({ side, driveAvailable, otherSideAvailable, missingMessage, selected, onToggleSelect, onClearSelection, onAction, predictedOverflow, transferActive }: PaneProps): JSX.Element {
+function FolderPane({ side, driveAvailable, otherSideAvailable, missingMessage, selected, onToggleSelect, onAddToSelection, onClearSelection, onAction, predictedOverflow, transferActive }: PaneProps): JSX.Element {
   const [relPath, setRelPath] = useState('')
   const [listing, setListing] = useState<FolderListing | null>(null)
   const [loading, setLoading] = useState(false)
+  // Tracks which row was last clicked, used as the anchor for shift-click range select.
+  const [anchorIndex, setAnchorIndex] = useState<number | null>(null)
+  // relPath of items that also exist on the OTHER drive — shown as a "↔" badge so
+  // the user doesn't copy a folder that's already on the destination.
+  const [existsOnOther, setExistsOnOther] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!driveAvailable) { setListing(null); return }
@@ -143,9 +149,30 @@ function FolderPane({ side, driveAvailable, otherSideAvailable, missingMessage, 
       if (cancelled) return
       setListing(r)
       setLoading(false)
+      setAnchorIndex(null)
     })
     return () => { cancelled = true }
   }, [side, relPath, driveAvailable])
+
+  // Check which of the visible folders also exist on the other drive.
+  useEffect(() => {
+    if (!listing || !otherSideAvailable || listing.folders.length === 0) {
+      setExistsOnOther(new Set())
+      return
+    }
+    let cancelled = false
+    const otherSide: Side = side === 'vault' ? 'cold' : 'vault'
+    window.api.storage
+      .checkConflicts(
+        listing.folders.map((f) => ({ side, relPath: f.relPath })),
+        otherSide
+      )
+      .then((results) => {
+        if (cancelled) return
+        setExistsOnOther(new Set(results.filter((r) => r.exists).map((r) => r.relPath)))
+      })
+    return () => { cancelled = true }
+  }, [listing, otherSideAvailable, side])
 
   const breadcrumbs: { label: string; relPath: string }[] = [
     { label: 'media', relPath: '' },
@@ -155,13 +182,32 @@ function FolderPane({ side, driveAvailable, otherSideAvailable, missingMessage, 
     }))
   ]
 
-  function handleRowClick(e: React.MouseEvent, folderRel: string, size: number): void {
-    if (e.shiftKey || e.ctrlKey || e.metaKey) {
-      onToggleSelect(side, folderRel, size)
-    } else {
-      setRelPath(folderRel)
-      onClearSelection(side)
+  function handleRowClick(e: React.MouseEvent, index: number, folderRel: string, size: number): void {
+    if (e.shiftKey && anchorIndex !== null && listing) {
+      const [lo, hi] = anchorIndex < index ? [anchorIndex, index] : [index, anchorIndex]
+      const range = listing.folders.slice(lo, hi + 1).map((f) => ({ relPath: f.relPath, size: f.size }))
+      onAddToSelection(side, range)
+      return
     }
+    if (e.ctrlKey || e.metaKey) {
+      onToggleSelect(side, folderRel, size)
+      setAnchorIndex(index)
+      return
+    }
+    setRelPath(folderRel)
+    onClearSelection(side)
+  }
+
+  function handleCheckboxClick(e: React.MouseEvent, index: number, folderRel: string, size: number): void {
+    e.stopPropagation()
+    if (e.shiftKey && anchorIndex !== null && listing) {
+      const [lo, hi] = anchorIndex < index ? [anchorIndex, index] : [index, anchorIndex]
+      const range = listing.folders.slice(lo, hi + 1).map((f) => ({ relPath: f.relPath, size: f.size }))
+      onAddToSelection(side, range)
+      return
+    }
+    onToggleSelect(side, folderRel, size)
+    setAnchorIndex(index)
   }
 
   if (!driveAvailable) {
@@ -196,23 +242,37 @@ function FolderPane({ side, driveAvailable, otherSideAvailable, missingMessage, 
         {!loading && listing && listing.folders.length === 0 && (
           <div className={styles.folderEmpty}>No folders here.</div>
         )}
-        {!loading && listing?.folders.map((f) => {
+        {!loading && listing?.folders.map((f, index) => {
           const isSelected = selected.has(f.relPath)
+          const onBoth = existsOnOther.has(f.relPath)
           return (
             <div
               key={f.relPath}
               className={`${styles.folderRow} ${isSelected ? styles.folderRowSelected : ''}`}
-              onClick={(e) => handleRowClick(e, f.relPath, f.size)}
+              onClick={(e) => handleRowClick(e, index, f.relPath, f.size)}
             >
-              <input
-                type="checkbox"
-                className={styles.folderCheck}
-                checked={isSelected}
-                onChange={() => onToggleSelect(side, f.relPath, f.size)}
-                onClick={(e) => e.stopPropagation()}
-              />
+              <span
+                className={styles.checkboxHit}
+                onClick={(e) => handleCheckboxClick(e, index, f.relPath, f.size)}
+              >
+                <input
+                  type="checkbox"
+                  className={styles.folderCheck}
+                  checked={isSelected}
+                  readOnly
+                  tabIndex={-1}
+                />
+              </span>
               <span className={styles.folderIcon}>📁</span>
               <span className={styles.folderName}>{f.name}</span>
+              <span className={styles.bothBadgeSlot}>
+                {onBoth && (
+                  <span
+                    className={styles.bothBadge}
+                    title="A folder with this name exists on the other drive. Contents are NOT compared — this only flags the path, not identical contents."
+                  >↔</span>
+                )}
+              </span>
               <span className={styles.folderSize}>{formatBytes(f.size)}</span>
             </div>
           )
@@ -221,7 +281,7 @@ function FolderPane({ side, driveAvailable, otherSideAvailable, missingMessage, 
       <div className={styles.paneFooter}>
         {selected.size > 0
           ? <span><strong>{selected.size}</strong> selected · {formatBytes(selectedBytes)}</span>
-          : <span className={styles.paneHint}>Click a folder to open · checkbox or ctrl/shift-click to select</span>
+          : <span className={styles.paneHint}>Click to open · checkbox to select · shift-click for range</span>
         }
       </div>
       {selected.size > 0 && (
@@ -300,6 +360,14 @@ export default function StoragePage(): JSX.Element {
       const next = new Map(prev)
       if (next.has(relPath)) next.delete(relPath)
       else                   next.set(relPath, size)
+      return next
+    })
+  }, [])
+
+  const handleAddToSelection = useCallback((side: Side, items: { relPath: string; size: number }[]) => {
+    setSel(side, (prev) => {
+      const next = new Map(prev)
+      for (const it of items) next.set(it.relPath, it.size)
       return next
     })
   }, [])
@@ -438,6 +506,7 @@ export default function StoragePage(): JSX.Element {
           missingMessage="Vault drive not connected."
           selected={vaultSel}
           onToggleSelect={handleToggleSelect}
+          onAddToSelection={handleAddToSelection}
           onClearSelection={handleClearSelection}
           onAction={handleAction}
           predictedOverflow={vaultMoveOverflow}
@@ -454,6 +523,7 @@ export default function StoragePage(): JSX.Element {
           }
           selected={coldSel}
           onToggleSelect={handleToggleSelect}
+          onAddToSelection={handleAddToSelection}
           onClearSelection={handleClearSelection}
           onAction={handleAction}
           predictedOverflow={coldMoveOverflow}
