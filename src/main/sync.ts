@@ -178,15 +178,17 @@ export function runAdditiveSync(
       return
     }
 
-    // macOS / Linux — rsync, no --delete
+    // macOS / Linux — rsync, no --delete.
+    // Avoid --info=progress2 / --human-readable: macOS's built-in /usr/bin/rsync is
+    // openrsync (2.6.9-compat) and rejects those flags. -a + --modify-window is the
+    // common subset that works on both openrsync and GNU rsync.
     const excludes = SYSTEM_FOLDERS.flatMap((f) => ['--exclude', `${f}/`])
-    const child = spawn('rsync', ['-a', '--modify-window=2', '--info=progress2', '--human-readable', ...excludes, `${sourceRoot}/`, `${destRoot}/`], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn('rsync', ['-a', '--modify-window=2', ...excludes, `${sourceRoot}/`, `${destRoot}/`], { stdio: ['ignore', 'pipe', 'pipe'] })
 
-    let started = false
+    // Without progress flags rsync is silent on stdout, so flip to 'copying' immediately.
+    send('copying')
     child.stdout.setEncoding('utf-8')
-    child.stdout.on('data', () => {
-      if (!started) { send('copying'); started = true }
-    })
+    child.stdout.on('data', () => { /* drain */ })
 
     child.on('error', (err) => {
       send('error', { message: `Failed to launch rsync: ${err.message}` })

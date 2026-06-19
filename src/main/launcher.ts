@@ -31,11 +31,32 @@ const EMULATOR_SUBDIR: Partial<Record<string, string>> = {
   dolphin: 'Dolphin-x64',
 }
 
+// Mac emulators distribute as `.app` bundles; the real binary lives inside.
+// Map<emulator-name, path-within-emulators/<name>/mac/>. Same pattern as mpv
+// (see getMpvPath). If an emulator isn't listed here, falls back to the
+// raw-binary layout used by Linux.
+const MAC_EMULATOR_BUNDLE: Partial<Record<string, string>> = {
+  mgba:     'mGBA.app/Contents/MacOS/mGBA',
+  dolphin:  'Dolphin.app/Contents/MacOS/Dolphin',
+  melonds:  'melonDS.app/Contents/MacOS/melonDS',
+  snes9x:   'Snes9x.app/Contents/MacOS/Snes9x',
+  simple64: 'simple64.app/Contents/MacOS/simple64',
+  shadps4:  'shadps4.app/Contents/MacOS/shadps4',
+  // MAME is a true CLI on macOS (Homebrew or self-build) — falls through to raw binary.
+}
+
 function getEmulatorPath(driveRoot: string, name: string): string {
+  const base = join(driveRoot, 'emulators', name, platformFolder())
+
+  if (process.platform === 'darwin') {
+    const bundlePath = MAC_EMULATOR_BUNDLE[name]
+    if (bundlePath) return join(base, bundlePath)
+    return join(base, name) // CLI emulator (mame)
+  }
+
   const ext = process.platform === 'win32' ? '.exe' : ''
   const sub = EMULATOR_SUBDIR[name]
   const exeName = name === 'dolphin' ? 'Dolphin' : name
-  const base = join(driveRoot, 'emulators', name, platformFolder())
   return sub ? join(base, sub, `${exeName}${ext}`) : join(base, `${name}${ext}`)
 }
 
