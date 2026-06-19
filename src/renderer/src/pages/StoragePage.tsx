@@ -333,7 +333,7 @@ function FolderPane({ side, driveAvailable, otherSideAvailable, missingMessage, 
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function StoragePage(): JSX.Element {
-  const { vault, cold, coldConfigured, refresh } = useStorageStatsStore()
+  const { vault, cold, coldConfigured, rsyncAvailable, refresh } = useStorageStatsStore()
   const transferActive = useTransferStore((s) => s.active && s.terminalAt === null)
   const beginTransfer = useTransferStore((s) => s.begin)
   const finishTransfer = useTransferStore((s) => s.finish)
@@ -459,8 +459,9 @@ export default function StoragePage(): JSX.Element {
           <button
             className={styles.syncBtn}
             onClick={handleSyncNewItems}
-            disabled={!vaultAvailable || !coldAvailable || transferActive}
+            disabled={!vaultAvailable || !coldAvailable || !rsyncAvailable || transferActive}
             title={
+              !rsyncAvailable ? 'rsync is required for sync — install it (brew install rsync) and refresh' :
               !vaultAvailable ? 'Vault drive not connected' :
               !coldAvailable  ? 'Cold-store drive not connected' :
               'Copy items from vault that are missing on cold store'
@@ -472,6 +473,13 @@ export default function StoragePage(): JSX.Element {
         </div>
       }
     >
+      {!rsyncAvailable && (
+        <div className={styles.rsyncWarning}>
+          <strong>rsync not found.</strong> Sync to cold store is disabled until <code>rsync</code> is on
+          your PATH. Install with <code>brew install rsync</code>, then click Refresh.
+        </div>
+      )}
+
       <div className={styles.driveGrid}>
         <DriveCard
           name="Vault"

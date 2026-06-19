@@ -225,6 +225,7 @@ interface Window {
         vault: { label: string | null; path: string; freeBytes: number; totalBytes: number } | null
         cold:  { label: string | null; path: string; freeBytes: number; totalBytes: number } | null
         coldConfigured: boolean
+        rsyncAvailable: boolean
       }>
       listFolder: (side: 'vault' | 'cold', relPath: string) => Promise<{
         root: string

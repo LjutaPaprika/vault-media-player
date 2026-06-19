@@ -9,6 +9,20 @@ export interface DriveStats {
   totalBytes: number
 }
 
+/**
+ * Probe whether `rsync` is on PATH. Required for additive sync on macOS/Linux.
+ * Windows uses robocopy which is built into the OS, so this always returns true.
+ * Cached after first call — `rsync` install state doesn't change at runtime.
+ */
+let rsyncAvailableCache: boolean | null = null
+export function isRsyncAvailable(): boolean {
+  if (process.platform === 'win32') return true
+  if (rsyncAvailableCache !== null) return rsyncAvailableCache
+  const r = spawnSync('rsync', ['--version'], { stdio: 'ignore' })
+  rsyncAvailableCache = r.status === 0
+  return rsyncAvailableCache
+}
+
 /** Read free/total bytes for the drive that contains the given path. */
 export async function getDriveStats(rootPath: string): Promise<DriveStats | null> {
   if (process.platform === 'win32') {

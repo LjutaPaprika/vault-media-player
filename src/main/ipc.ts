@@ -15,7 +15,7 @@ import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTime
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
-import { findDriveByLabel, hideSystemFolders, runAdditiveSync, getDriveStats } from './sync'
+import { findDriveByLabel, hideSystemFolders, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings, setKeyboardBindings, resetKeyboardBindings, type KeyboardBinding } from './keyboardBindings'
@@ -783,7 +783,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return {
       vault: vault ? { label: getConfig('libraryLabel'), ...vault } : null,
       cold:  cold  ? { label: backupLabel, ...cold }  : null,
-      coldConfigured: !!backupLabel
+      coldConfigured: !!backupLabel,
+      rsyncAvailable: isRsyncAvailable()
     }
   })
 

@@ -1,48 +1,50 @@
 # Cold-store sync: Mac/Linux verification TODO
 
 > **Note for a future Claude session running on Mac or Linux.**
-> The cold-store feature (shipped on `main` at commit `2120453`) was built and tested on Windows only. The code has macOS/Linux branches throughout, but they have **not** been exercised on real hardware. Validate the items below before treating the feature as cross-platform.
+> The cold-store feature (shipped on `main` at commit `2120453`) was built and tested on Windows only. The code has macOS/Linux branches throughout. Items below were validated on macOS 15.3.1 (Apple Silicon) during work captured in commit `892f1e6`; Linux items remain unverified.
 
-## What needs checking
+## Status legend
+- ✅ done
+- ⚠️ partial — blocked on hardware or live UI walkthrough
+- ⬜ not started
 
-1. **`rsync` presence**
-   - `src/main/sync.ts` → `runAdditiveSync` spawns `rsync -a --modify-window=2 --info=progress2 --human-readable …` on non-Windows.
-   - No startup probe — a missing `rsync` produces a generic "Failed to launch rsync" with no actionable guidance.
-   - Suggested fix: probe `rsync --version` at app startup; surface a "rsync required" banner on the Storage page if absent.
+## Items
 
-2. **`findDriveByLabel` mount-root coverage**
-   - Scans `/Volumes` on macOS, `/mnt` `/media` `/run/media` on Linux.
-   - Some distros mount external drives under `/run/media/<user>/<label>` (covered via prefix scan) or `/media/<user>/<label>` (also covered). Verify on a real distro.
-   - Test: plug in a drive whose volume label matches `backupLabel` in Settings, confirm the cold-store card detects it.
+1. ✅ **`rsync` presence**
+   - `src/main/sync.ts` → `runAdditiveSync` no longer passes openrsync-incompatible flags (`--info=progress2`, `--human-readable`) — `-a + --modify-window=2` works on macOS's bundled openrsync 2.6.9-compat and GNU rsync. Fixed in commit `892f1e6`.
+   - Startup probe added: `isRsyncAvailable()` in `sync.ts`, surfaced as `rsyncAvailable` on `storage:getDrives`. Storage page shows a red "rsync not found — install with `brew install rsync`" banner when absent, and the **Sync new items** button is gated off. (Caches the probe result; install state doesn't change at runtime.)
 
-3. **`getDriveStats` via `df -k`**
-   - Parses `df -k <path>` columns 1 and 3 (1KB blocks: total, available).
-   - macOS BSD-df and Linux GNU-df both use this layout. Confirm by reading the page and watching the bars populate.
+2. ⚠️ **`findDriveByLabel` mount-root coverage**
+   - macOS `/Volumes` confirmed working — `findDriveByLabel('VAULT')` returns `/Volumes/VAULT` on this Mac.
+   - Linux mount roots (`/mnt`, `/media`, `/run/media`) **not** verified — no Linux hardware available. The branches read fine on inspection; will need a real distro to confirm.
 
-4. **Drive-letter assumption properly gated**
-   - `getDriveStats` reads `rootPath.charAt(0)` as a drive letter only inside `if (process.platform === 'win32')`. Confirmed by inspection but worth re-checking after any refactor.
+3. ✅ **`getDriveStats` via `df -k`**
+   - `df -k /Volumes/VAULT` on macOS Sequoia produces the column layout the parser expects (column 1 = 1KB-blocks total, column 3 = 1KB-blocks available). Parsed values match `diskutil` reports.
 
-5. **`fs.promises.cp` recursive behavior on non-NTFS**
-   - Used by `src/main/storageTransfer.ts` for Copy/Move. Confirm the move's size-verify step (`dirSizeSync`) returns identical totals on APFS, ext4, and exFAT-on-mac.
+4. ✅ **Drive-letter assumption properly gated**
+   - `getDriveStats` reads `rootPath.charAt(0)` only inside the `process.platform === 'win32'` branch (line ~14). Re-confirmed.
 
-6. **No multi-threaded scan hazard on POSIX**
-   - The overlap guard + 3s cooldown in `storage:syncNewItems` was added because Windows + robocopy `/MT:8` + exFAT could BSOD the OS. `rsync` is single-threaded; the guard still applies but the underlying hazard does not.
+5. ⚠️ **`fs.promises.cp` recursive behavior on non-NTFS**
+   - Not exercised — requires the cold-store drive mounted alongside vault to trigger Copy/Move from the Storage page. Code inspection of `storageTransfer.ts` shows no NTFS-specific assumptions. Re-check once both drives are simultaneously available.
 
-## How to verify quickly
+6. ℹ️ **No multi-threaded scan hazard on POSIX** (informational, no action)
+   - The overlap guard + 3s cooldown in `storage:syncNewItems` exists because Windows + robocopy `/MT:8` + exFAT could BSOD the OS. `rsync` is single-threaded; the guard still applies harmlessly.
+
+## Still pending — requires both drives mounted
+
+The "How to verify quickly" walkthrough below has **not** been run end-to-end because only one of the two drives was mounted during the verification session. Items to validate when the cold drive is plugged in:
+
+- Cold-store DriveCard shows real free/used numbers
+- Folder listings populate when navigating each pane
+- "↔" badge appears on rows that exist on both drives
+- Copy / Move / Delete on a small test folder works end-to-end
+- "Sync new items" completes without error (this exercises items #1 and #5 together)
 
 ```bash
 git checkout main
 npm install
-npm run dev    # or `npm run build:mac` for a packaged build
+npm run build:mac    # then drag the new Vault.app to /Applications, or run electron-vite dev
 ```
-
-Then on the **Storage** page:
-
-- Both drive cards detected and showing real free/used numbers
-- Folder listings populate when navigating each pane
-- "↔" badge appears on rows that exist on both drives
-- Copy / Move / Delete on a small test folder works end-to-end
-- "Sync new items" completes without error
 
 ## Out of scope
 
@@ -50,6 +52,6 @@ Then on the **Storage** page:
 
 ## What's NOT a concern
 
-- Renderer code: pure React/CSS, no platform branches
-- `existsSync`/`statSync`/`path.join`: platform-neutral
+- Renderer code: pure React/CSS, no platform branches.
+- `existsSync`/`statSync`/`path.join`: platform-neutral.
 - The `chcp 65001 >nul && robocopy …` shell wrapper is inside the Windows-only branch — irrelevant on POSIX.
