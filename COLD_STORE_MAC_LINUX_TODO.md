@@ -14,6 +14,8 @@
    - `src/main/sync.ts` → `runAdditiveSync` no longer passes openrsync-incompatible flags (`--info=progress2`, `--human-readable`) — `-a + --modify-window=2` works on macOS's bundled openrsync 2.6.9-compat and GNU rsync. Fixed in commit `892f1e6`.
    - Startup probe added: `isRsyncAvailable()` in `sync.ts`, surfaced as `rsyncAvailable` on `storage:getDrives`. Storage page shows a red "rsync not found — install with `brew install rsync`" banner when absent, and the **Sync new items** button is gated off. (Caches the probe result; install state doesn't change at runtime.)
 
+   **Bonus**: cross-OS system-junk files (`.DS_Store`, `._*`, `Thumbs.db`, `desktop.ini`) are now excluded from both the rsync (mac/linux) and robocopy (windows) sides of `runAdditiveSync` via the new `SYSTEM_FILE_GLOBS` constant. Prevents Finder/Explorer crumbs from propagating between Mac and Windows when the drive is swapped.
+
 2. ⚠️ **`findDriveByLabel` mount-root coverage**
    - macOS `/Volumes` confirmed working — `findDriveByLabel('VAULT')` returns `/Volumes/VAULT` on this Mac.
    - Linux mount roots (`/mnt`, `/media`, `/run/media`) **not** verified — no Linux hardware available. The branches read fine on inspection; will need a real distro to confirm.

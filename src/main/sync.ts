@@ -95,6 +95,14 @@ export function findDriveByLabel(label: string): string | null {
 /** Folders on the vault drive that belong to the app, not the media library. Never synced to cold storage. */
 const SYSTEM_FOLDERS = ['players']
 
+/**
+ * OS-generated files that shouldn't propagate between drives.
+ * `.DS_Store` and `._*` are macOS Finder metadata; `Thumbs.db` and `desktop.ini`
+ * are Windows Explorer. Without excludes, the drive accumulates the other OS's
+ * crumbs every time it's swapped between machines.
+ */
+const SYSTEM_FILE_GLOBS = ['.DS_Store', '._*', 'Thumbs.db', 'desktop.ini']
+
 /** Mark non-media folders on the drive as hidden so Explorer doesn't show them. Windows-only. */
 export function hideSystemFolders(driveRoot: string): void {
   if (process.platform !== 'win32') return
@@ -153,7 +161,8 @@ export function runAdditiveSync(
       // this only fixes how filenames render in our stdout pipe.
       const args = [
         sourceRoot, destRoot, '/E', '/MT:8', '/R:3', '/W:5', '/NP', '/NDL', '/FFT',
-        '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYSTEM_FOLDERS
+        '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYSTEM_FOLDERS,
+        '/XF', ...SYSTEM_FILE_GLOBS
       ]
       const quoted = args.map((a) => `"${a.replace(/"/g, '""')}"`).join(' ')
       const child = spawn(`chcp 65001 >nul && robocopy ${quoted}`, {
@@ -196,8 +205,9 @@ export function runAdditiveSync(
     // Avoid --info=progress2 / --human-readable: macOS's built-in /usr/bin/rsync is
     // openrsync (2.6.9-compat) and rejects those flags. -a + --modify-window is the
     // common subset that works on both openrsync and GNU rsync.
-    const excludes = SYSTEM_FOLDERS.flatMap((f) => ['--exclude', `${f}/`])
-    const child = spawn('rsync', ['-a', '--modify-window=2', ...excludes, `${sourceRoot}/`, `${destRoot}/`], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const folderExcludes = SYSTEM_FOLDERS.flatMap((f) => ['--exclude', `${f}/`])
+    const fileExcludes   = SYSTEM_FILE_GLOBS.flatMap((g) => ['--exclude', g])
+    const child = spawn('rsync', ['-a', '--modify-window=2', ...folderExcludes, ...fileExcludes, `${sourceRoot}/`, `${destRoot}/`], { stdio: ['ignore', 'pipe', 'pipe'] })
 
     // Without progress flags rsync is silent on stdout, so flip to 'copying' immediately.
     send('copying')
