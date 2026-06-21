@@ -11,6 +11,7 @@ const PLATFORM_EMULATOR: Record<string, string> = {
   n64:      'simple64',
   gamecube: 'dolphin',
   wii:      'dolphin',
+  xbox:     'xemu',
   xbox360:  'xenia',
   ps4:      'shadps4',
   gba:      'mgba',
@@ -42,6 +43,7 @@ const MAC_EMULATOR_BUNDLE: Partial<Record<string, string>> = {
   snes9x:   'Snes9x.app/Contents/MacOS/Snes9x',
   simple64: 'simple64.app/Contents/MacOS/simple64',
   shadps4:  'shadps4.app/Contents/MacOS/shadps4',
+  xemu:     'xemu.app/Contents/MacOS/xemu',
   // MAME is a true CLI on macOS (Homebrew or self-build) — falls through to raw binary.
 }
 
@@ -302,6 +304,12 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
       stdio: 'ignore'
     })
     child.unref()
+    return
+  }
+
+  if (platform === 'xbox') {
+    // xemu picks up xemu.toml next to xemu.exe; cwd ensures the relative bootrom/flashrom/hdd paths resolve.
+    spawnDetached(emulatorExe, ['-dvd_path', filePath])
     return
   }
 

@@ -158,6 +158,7 @@ const ROM_PLATFORM: Record<string, string> = {
   n64: 'n64',
   gamecube: 'gamecube',
   wii: 'wii',
+  xbox: 'xbox',
   xbox360: 'xbox360',
   ps4: 'ps4',
   gba: 'gba',

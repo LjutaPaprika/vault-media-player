@@ -39,7 +39,7 @@ const CATEGORY_ICON: Record<string, string> = {
 const PLATFORM_LABEL: Record<string, string> = {
   pc: 'PC', n64: 'N64', snes: 'SNES', gb: 'Game Boy', gbc: 'Game Boy Color',
   gba: 'GBA', nds: 'DS', gamecube: 'GameCube', wii: 'Wii',
-  xbox360: 'Xbox 360', ps4: 'PS4', mame: 'Arcade (MAME)'
+  xbox: 'Xbox', xbox360: 'Xbox 360', ps4: 'PS4', mame: 'Arcade (MAME)'
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

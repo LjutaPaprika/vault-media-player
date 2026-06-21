@@ -9,6 +9,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   n64:      'Nintendo 64',
   gamecube: 'GameCube',
   wii:      'Wii',
+  xbox:     'Xbox',
   xbox360:  'Xbox 360',
   ps4:      'PS4',
   gba:      'Game Boy Advance',
@@ -24,6 +25,7 @@ const PLATFORM_EMULATOR: Record<string, string> = {
   n64:      'Simple64',
   gamecube: 'Dolphin',
   wii:      'Dolphin',
+  xbox:     'xemu',
   xbox360:  'Xenia Canary',
   ps4:      'ShadPS4',
   gba:      'mGBA',
@@ -63,7 +65,7 @@ function buildComparison(platform: string, sys: SystemInfo): CompareRow[] {
 
   // RAM
   const ramReqs: Record<string, number> = {
-    xbox360: 8, ps4: 16, gamecube: 4, wii: 4, n64: 2, nds: 2
+    xbox360: 8, ps4: 16, gamecube: 4, wii: 4, xbox: 4, n64: 2, nds: 2
   }
   const minRam = ramReqs[platform]
   if (minRam) {
@@ -92,7 +94,7 @@ function buildComparison(platform: string, sys: SystemInfo): CompareRow[] {
       actual:   bestGpu ? `${gpuName} (${vramGB} GB)` : 'Not detected',
       status:   ok ? 'ok' : warn ? 'warn' : 'fail'
     })
-  } else if (platform === 'gamecube' || platform === 'wii') {
+  } else if (platform === 'gamecube' || platform === 'wii' || platform === 'xbox') {
     rows.push({
       label:    'GPU',
       required: 'Dedicated recommended',
