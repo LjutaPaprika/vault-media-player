@@ -164,7 +164,11 @@ export function runAdditiveSync(
         '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYSTEM_FOLDERS,
         '/XF', ...SYSTEM_FILE_GLOBS
       ]
-      const quoted = args.map((a) => `"${a.replace(/"/g, '""')}"`).join(' ')
+      // Double any trailing backslashes before wrapping in quotes. CommandLineToArgvW
+      // treats `\"` as an escaped quote, so an arg like `E:\` would become `"E:\"` and
+      // get parsed as `E:` plus a stray quote that eats the next arg. Doubling makes
+      // `"E:\\"` parse cleanly as `E:\`.
+      const quoted = args.map((a) => `"${a.replace(/"/g, '""').replace(/\\+$/, (m) => m + m)}"`).join(' ')
       const child = spawn(`chcp 65001 >nul && robocopy ${quoted}`, {
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: true,
