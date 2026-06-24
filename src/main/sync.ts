@@ -148,11 +148,15 @@ export function runAdditiveSync(
 
     if (process.platform === 'win32') {
       // /E       — include subdirectories (including empty)
-      // /MT:8    — 8 worker threads
       // /R:3 /W:5 — retry 3 times, 5s between
       // /NP /NDL — quieter output
       // /FFT     — FAT file-time tolerance
       // (no /MIR, no /PURGE — additive only)
+      // (no /MT — single-threaded on purpose: /MT:N on exFAT volumes has
+      //  triggered EXFAT_FILE_SYSTEM 0x12C BSODs because exfat.sys serializes
+      //  hard and several worker threads racing the same volume corrupts its
+      //  internal state. Both Vault and the cold drive are exFAT for
+      //  Windows/Mac portability, so we can't opt out of the filesystem.)
       //
       // chcp 65001 forces the child's console output code page to UTF-8 so
       // robocopy's stdout doesn't mangle non-ASCII filenames (e.g. "Rôti")
@@ -160,7 +164,7 @@ export function runAdditiveSync(
       // already encoding-clean since robocopy talks to NTFS via Win32 APIs —
       // this only fixes how filenames render in our stdout pipe.
       const args = [
-        sourceRoot, destRoot, '/E', '/MT:8', '/R:3', '/W:5', '/NP', '/NDL', '/FFT',
+        sourceRoot, destRoot, '/E', '/R:3', '/W:5', '/NP', '/NDL', '/FFT',
         '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYSTEM_FOLDERS,
         '/XF', ...SYSTEM_FILE_GLOBS
       ]
