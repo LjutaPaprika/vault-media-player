@@ -672,11 +672,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
     if (process.platform === 'win32') {
       try {
+        // Win32_VideoController.AdapterRAM is a UINT32 — caps at 4 GB regardless
+        // of actual VRAM. Read the 64-bit qwMemorySize from the display class
+        // registry instead so 8/12/16/24 GB cards report correctly.
         const stdout = await new Promise<string>((resolve) => {
           let out = ''
           const ps = spawn('powershell', [
             '-NoProfile', '-Command',
-            'Get-WmiObject -Class Win32_VideoController | Select-Object Name,AdapterRAM | ConvertTo-Json -Compress'
+            "Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\*' -ErrorAction SilentlyContinue | Where-Object { $_.DriverDesc -and $_.PSChildName -match '^\\d{4}$' } | Select-Object @{n='Name';e={$_.DriverDesc}}, @{n='AdapterRAM';e={[int64]$_.'HardwareInformation.qwMemorySize'}} | ConvertTo-Json -Compress"
           ])
           ps.stdout.on('data', (d: Buffer) => { out += d.toString() })
           ps.on('close', () => resolve(out.trim()))
