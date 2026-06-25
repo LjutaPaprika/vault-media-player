@@ -324,11 +324,19 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
     if (!existsSync(ebootPath)) {
       throw new Error(`PS4 game ${titleId} is not installed in shadPS4. Expected eboot at ${ebootPath}.`)
     }
+    // Pre-launch cleanup: shadPS4 v0.16 keeps writing a pipeline cache archive
+    // at user/cache/<TitleID>.zip even with pipelineCacheEnable = false, and
+    // then crashes on the next launch with a "read-only archive" assertion
+    // when it tries to update it. Delete the stale zip so the next launch
+    // starts clean.
+    try { rmSync(join(emuDir, 'user', 'cache', `${titleId}.zip`), { force: true }) } catch { /* ignore */ }
     // Skip the start-wrapper spawnDetached because shadPS4 is a console app and
     // `start ""` would create a visible terminal window that persists for the
     // entire gameplay session. windowsHide suppresses that console; the game
     // window (Vulkan-backed, separate from stdout) renders normally.
-    const child = spawn(emulatorExe, ['-g', ebootPath], {
+    // `-f true` forces fullscreen — the config.toml FullscreenMode value isn't
+    // reliably respected in v0.16 but the CLI flag is.
+    const child = spawn(emulatorExe, ['-g', ebootPath, '-f', 'true'], {
       cwd: emuDir,
       detached: true,
       stdio: 'ignore',
