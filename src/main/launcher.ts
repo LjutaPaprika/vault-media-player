@@ -324,7 +324,17 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
     if (!existsSync(ebootPath)) {
       throw new Error(`PS4 game ${titleId} is not installed in shadPS4. Expected eboot at ${ebootPath}.`)
     }
-    spawnDetached(emulatorExe, ['-g', ebootPath])
+    // Skip the start-wrapper spawnDetached because shadPS4 is a console app and
+    // `start ""` would create a visible terminal window that persists for the
+    // entire gameplay session. windowsHide suppresses that console; the game
+    // window (Vulkan-backed, separate from stdout) renders normally.
+    const child = spawn(emulatorExe, ['-g', ebootPath], {
+      cwd: emuDir,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    })
+    child.unref()
     return
   }
 
