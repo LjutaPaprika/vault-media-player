@@ -151,7 +151,7 @@ const VIDEO_EXTS = new Set(['.mkv', '.mp4', '.avi', '.mov', '.m4v', '.wmv'])
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.aac', '.ogg', '.wav', '.m4a'])
 const BOOK_EXTS  = new Set(['.epub', '.pdf', '.mobi'])
 const MANGA_EXTS = new Set(['.cbz', '.cbr', '.epub', '.pdf'])
-const ROM_EXTS   = new Set(['.z64', '.n64', '.iso', '.wbfs', '.rvz', '.xex', '.pkg', '.gba', '.gbc', '.gb', '.nds', '.sfc', '.smc'])
+const ROM_EXTS   = new Set(['.z64', '.n64', '.iso', '.wbfs', '.rvz', '.xex', '.pkg', '.shadps4', '.gba', '.gbc', '.gb', '.nds', '.sfc', '.smc'])
 
 // Map rom subfolder name → platform key
 const ROM_PLATFORM: Record<string, string> = {
