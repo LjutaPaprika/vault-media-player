@@ -313,5 +313,20 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
     return
   }
 
+  if (platform === 'ps4') {
+    // shadPS4 installs games into <emuDir>/user/games/<TitleID>/. The Vault rom
+    // is a marker file whose basename is the title ID (e.g. roms/ps4/Bloodborne/CUSA03173.shadps4).
+    // We launch the SDL backend directly with the eboot path so the qtlauncher
+    // never opens — that avoids the Qt UI-thread "Not Responding" issue.
+    const titleId = basename(filePath, extname(filePath))
+    const emuDir = dirname(emulatorExe)
+    const ebootPath = join(emuDir, 'user', 'games', titleId, 'eboot.bin')
+    if (!existsSync(ebootPath)) {
+      throw new Error(`PS4 game ${titleId} is not installed in shadPS4. Expected eboot at ${ebootPath}.`)
+    }
+    spawnDetached(emulatorExe, ['-g', ebootPath])
+    return
+  }
+
   spawnDetached(emulatorExe, [filePath])
 }
