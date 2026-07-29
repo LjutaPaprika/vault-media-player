@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 export function useLibrary(category: string): {
   items: MediaItem[]
@@ -31,5 +31,6 @@ export function useLibrary(category: string): {
     }
   }, [category, tick])
 
-  return { items, loading, error, reload: () => setTick((t) => t + 1) }
+  const reload = useCallback(() => setTick((t) => t + 1), [])
+  return { items, loading, error, reload }
 }

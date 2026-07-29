@@ -11,7 +11,15 @@
 // emulator's exe — one launch = one process = one session.
 
 import { exec } from 'child_process'
+import { EventEmitter } from 'events'
 import { addPlaySeconds } from './database'
+
+/**
+ * Fires when a play session ends, so the renderer can patch its cached view
+ * of the games list without waiting for a manual refresh. ipc.ts bridges this
+ * to `playtime:updated` on the active window's webContents.
+ */
+export const playtimeEvents = new EventEmitter()
 
 const POLL_INTERVAL_MS = 10_000
 const MAX_SESSION_SECONDS = 12 * 3600
@@ -102,5 +110,9 @@ export function startPlaytimeSession(filePath: string, watchExe: string): void {
     activeSessions.delete(filePath)
     if (seconds > 0) addPlaySeconds(filePath, seconds)
     console.log(`[playtime] session ended (${reason}): +${seconds}s for ${filePath}`)
+    // Notify subscribers (bridged to renderer by ipc.ts). Emit even when
+    // seconds=0 so the renderer knows the session ended in case it wants
+    // to clear any "currently playing" UI in future.
+    playtimeEvents.emit('session-ended', { filePath, secondsAdded: seconds })
   }
 }

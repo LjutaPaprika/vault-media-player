@@ -15,6 +15,7 @@ import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTime
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
+import { playtimeEvents } from './playtime'
 import { findDriveByLabel, hideSystemFolders, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
@@ -451,6 +452,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('playback:launchGame', (_event, filePath: string, platform: string) =>
     launchGame(filePath, platform, resolveLibraryRoot())
   )
+
+  // Bridge play-session-end events to the renderer so games views can refresh
+  // in place without a manual scan. Fires once per session end (~20s after the
+  // game closes). Payload is intentionally minimal — the renderer refetches
+  // authoritative playtime from the DB.
+  playtimeEvents.on('session-ended', (payload: { filePath: string; secondsAdded: number }) => {
+    if (!win.isDestroyed()) win.webContents.send('playtime:updated', payload)
+  })
 
   // ─── YouTube import ───────────────────────────────────────────────────────
   ipcMain.handle('library:getMusicAlbums', () => {

@@ -344,6 +344,13 @@ export default function StatsPage(): JSX.Element {
     window.api.system.getAppInfo().then(setAppInfo)
   }, [])
 
+  // Refresh the games playtime leaderboard when a session ends.
+  useEffect(() => {
+    return window.api.playback.onPlaytimeUpdate(() => {
+      window.api.library.getStats().then(setStats)
+    })
+  }, [])
+
   if (!stats) {
     return (
       <PageShell title="Stats">

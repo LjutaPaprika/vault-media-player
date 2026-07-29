@@ -153,7 +153,7 @@ const STATUS_COLOR: Record<Status, string> = {
 }
 
 export default function GamesPage(): JSX.Element {
-  const { items, loading, error } = useLibrary('games')
+  const { items, loading, error, reload } = useLibrary('games')
   const [query, setQuery]     = useState('')
   const [pending, setPending] = useState<PendingGame | null>(null)
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
@@ -161,6 +161,13 @@ export default function GamesPage(): JSX.Element {
   useEffect(() => {
     window.api.system.getInfo().then(setSysInfo)
   }, [])
+
+  // Re-fetch the games list when a play session ends so the card / launch
+  // modal show the new playtime without needing a manual scan. The event
+  // fires ~20s after the game closes (one poll interval + two-miss confirm).
+  useEffect(() => {
+    return window.api.playback.onPlaytimeUpdate(() => reload())
+  }, [reload])
 
   function handleSelect(item: MediaCard): void {
     if (item.filePath && item.platform) {

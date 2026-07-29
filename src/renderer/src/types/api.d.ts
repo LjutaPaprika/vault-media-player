@@ -218,6 +218,7 @@ interface Window {
       openAudio:    (filePath: string) => Promise<void>
       launchGame:   (gamePath: string, platform: string) => Promise<void>
       onMusicPause: (cb: () => void) => () => void
+      onPlaytimeUpdate: (cb: (p: { filePath: string; secondsAdded: number }) => void) => () => void
     }
     sync: {
       getBackupLabel: () => Promise<string | null>

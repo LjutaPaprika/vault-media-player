@@ -59,6 +59,11 @@ contextBridge.exposeInMainWorld('api', {
     onMusicPause: (cb: () => void) => {
       ipcRenderer.on('music:pause', cb)
       return () => ipcRenderer.removeListener('music:pause', cb)
+    },
+    onPlaytimeUpdate: (cb: (p: { filePath: string; secondsAdded: number }) => void) => {
+      const listener = (_e: unknown, p: { filePath: string; secondsAdded: number }): void => cb(p)
+      ipcRenderer.on('playtime:updated', listener)
+      return () => ipcRenderer.removeListener('playtime:updated', listener)
     }
   },
 
