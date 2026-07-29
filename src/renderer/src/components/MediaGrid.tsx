@@ -14,6 +14,8 @@ export interface MediaCard {
   subtitle?: string
   filePath?: string | null
   complete?: boolean
+  platform?: string | null
+  playSeconds?: number
 }
 
 interface Props {

@@ -10,6 +10,7 @@ interface MediaCard {
   platform?: string | null
   genre?: string | null
   subtitle?: string
+  playSeconds?: number
 }
 
 interface LibraryConfig {
@@ -116,6 +117,7 @@ interface MediaItem {
   platform: string | null
   executable: string | null
   lastOpenedAt: number | null
+  playSeconds: number
 }
 
 interface GpuInfo {
@@ -146,6 +148,8 @@ interface LibraryStats {
   seriesCounts: Record<string, number>
   platforms: { platform: string; count: number }[]
   recentlyOpened: { title: string; category: string; filePath: string; lastOpenedAt: number }[]
+  gamesPlaytime: { title: string; platform: string | null; playSeconds: number }[]
+  gamesPlaytimeTotal: number
   total: number
   extrasByParent: Record<string, number>
   extrasBytesByParent: Record<string, number> | null

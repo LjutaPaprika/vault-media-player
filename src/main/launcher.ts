@@ -4,6 +4,7 @@ import { basename, dirname, extname, join } from 'path'
 import { getBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings } from './keyboardBindings'
 import { buildSkipSegmentLua } from './skipSegmentLua'
+import { startPlaytimeSession } from './playtime'
 
 // ─── Emulator map ─────────────────────────────────────────────────────────────
 
@@ -272,6 +273,7 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
       throw new Error('PC games are Windows-only and cannot be launched on this OS.')
     }
     spawnDetached(filePath, [])
+    startPlaytimeSession(filePath, basename(filePath))
     return
   }
 
@@ -304,12 +306,14 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
       stdio: 'ignore'
     })
     child.unref()
+    startPlaytimeSession(filePath, basename(emulatorExe))
     return
   }
 
   if (platform === 'xbox') {
     // xemu picks up xemu.toml next to xemu.exe; cwd ensures the relative bootrom/flashrom/hdd paths resolve.
     spawnDetached(emulatorExe, ['-dvd_path', filePath])
+    startPlaytimeSession(filePath, basename(emulatorExe))
     return
   }
 
@@ -343,8 +347,10 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
       windowsHide: true
     })
     child.unref()
+    startPlaytimeSession(filePath, basename(emulatorExe))
     return
   }
 
   spawnDetached(emulatorExe, [filePath])
+  startPlaytimeSession(filePath, basename(emulatorExe))
 }

@@ -36,6 +36,17 @@ const PLATFORM_EMULATOR: Record<string, string> = {
   mame:     'MAME'
 }
 
+// Wall-clock time the game's process (or its emulator) was running. Undercounts
+// paused/idle time but matches how Steam tallies playtime.
+function formatPlaytime(seconds: number | undefined): string | null {
+  if (!seconds || seconds < 60) return null
+  const hours   = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours === 0) return `${minutes}m`
+  if (minutes === 0) return `${hours}h`
+  return `${hours}h ${minutes}m`
+}
+
 type Status = 'ok' | 'warn' | 'fail' | 'info'
 
 interface CompareRow {
@@ -130,6 +141,7 @@ interface PendingGame {
   filePath: string
   platform: string
   title: string
+  playSeconds?: number
 }
 
 const STATUS_ICON: Record<Status, string> = { ok: '✓', warn: '⚠', fail: '✗', info: '·' }
@@ -152,7 +164,7 @@ export default function GamesPage(): JSX.Element {
 
   function handleSelect(item: MediaCard): void {
     if (item.filePath && item.platform) {
-      setPending({ filePath: item.filePath, platform: item.platform, title: item.title })
+      setPending({ filePath: item.filePath, platform: item.platform, title: item.title, playSeconds: item.playSeconds })
     }
   }
 
@@ -194,6 +206,13 @@ export default function GamesPage(): JSX.Element {
                 {' · '}
                 {PLATFORM_EMULATOR[pending.platform] ?? pending.platform}
               </span>
+              {formatPlaytime(pending.playSeconds) && (
+                <div className={styles.playtimeRow}>
+                  <span className={styles.playtimeIcon}>●</span>
+                  <span className={styles.playtimeValue}>{formatPlaytime(pending.playSeconds)}</span>
+                  <span className={styles.playtimeLabel}>played</span>
+                </div>
+              )}
             </div>
 
             <div className={styles.divider} />

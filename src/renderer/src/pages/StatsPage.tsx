@@ -24,6 +24,17 @@ function epochAgo(epoch: number): string {
   return timeAgo(epoch * 1000)
 }
 
+// Compact `Xh Ym` — matches the popup so the two surfaces read consistently.
+// Sub-minute values return null (nothing worth showing).
+function formatPlaytime(seconds: number): string | null {
+  if (seconds < 60) return null
+  const hours   = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours === 0) return `${minutes}m`
+  if (minutes === 0) return `${hours}h`
+  return `${hours}h ${minutes}m`
+}
+
 const CATEGORY_LABEL: Record<string, string> = {
   movies: 'Movies', tv: 'TV Shows', anime: 'Anime',
   music: 'Playlists', books: 'Books', manga: 'Manga', comics: 'Comics', games: 'Games',
@@ -149,6 +160,52 @@ function StorageSection({ storage, driveInfo }: {
                 <div className={styles.barFill} style={{ width: `${pct}%` }} />
               </div>
               <span className={styles.storageValue}>{formatBytes(bytes)}</span>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function GamesPlaytimeSection({ games, total }: {
+  games: LibraryStats['gamesPlaytime']
+  total: LibraryStats['gamesPlaytimeTotal']
+}): JSX.Element | null {
+  // Defensive: field is undefined when the running main process predates this
+  // feature (renderer HMR reloaded but `npm run dev` didn't restart Electron).
+  if (!games || games.length === 0) return null
+  // Max in the list drives the bar scale; the top row is always full so shorter
+  // sessions read as proportional rather than tiny.
+  const max = games[0]?.playSeconds ?? 1
+  const displayed = games.slice(0, 10)
+
+  return (
+    <section className={styles.section}>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.sectionTitle}>Games Playtime</h2>
+        <span className={styles.muted} style={{ fontSize: 11 }}>
+          {games.length} played
+        </span>
+      </div>
+      <div className={styles.storageTotalRow}>
+        <span className={styles.storageTotal}>{formatPlaytime(total) ?? '0m'}</span>
+        <span className={styles.driveFree}>total across all games</span>
+      </div>
+      <div className={styles.storageBars}>
+        {displayed.map((g) => {
+          const pct = max > 0 ? (g.playSeconds / max) * 100 : 0
+          const platform = g.platform ? (PLATFORM_LABEL[g.platform] ?? g.platform) : null
+          return (
+            <div key={`${g.title}:${g.platform}`} className={styles.playtimeRow}>
+              <span className={styles.playtimeLabel} title={`${platform ? `${platform} · ` : ''}${g.title}`}>
+                {platform && <span className={styles.playtimePlatform}>{platform} ·</span>}
+                {g.title}
+              </span>
+              <div className={styles.barTrack}>
+                <div className={styles.barFill} style={{ width: `${pct}%` }} />
+              </div>
+              <span className={styles.storageValue}>{formatPlaytime(g.playSeconds) ?? '<1m'}</span>
             </div>
           )
         })}
@@ -301,6 +358,7 @@ export default function StatsPage(): JSX.Element {
         <LibraryOverview stats={stats} />
         <StorageSection storage={stats.storage} driveInfo={appInfo?.driveInfo ?? null} />
         <RecentlyOpened items={stats.recentlyOpened} />
+        <GamesPlaytimeSection games={stats.gamesPlaytime} total={stats.gamesPlaytimeTotal} />
         <PlatformsSection platforms={stats.platforms} />
         {sysInfo && <SystemSection info={sysInfo} />}
         {appInfo && <AppSection appInfo={appInfo} />}

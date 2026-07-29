@@ -127,6 +127,7 @@ function getDb(): Database.Database {
   try { db.exec('ALTER TABLE media_items ADD COLUMN file_modified INTEGER DEFAULT 0') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE media_items ADD COLUMN tech_info TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE media_items ADD COLUMN last_opened_at INTEGER DEFAULT NULL') } catch { /* already exists */ }
+  try { db.exec('ALTER TABLE media_items ADD COLUMN play_seconds INTEGER NOT NULL DEFAULT 0') } catch { /* already exists */ }
 
   return db
 }
@@ -398,6 +399,13 @@ export function setLastOpened(filePath: string): void {
     .run(filePath)
 }
 
+export function addPlaySeconds(filePath: string, seconds: number): void {
+  if (seconds <= 0) return
+  getDb()
+    .prepare('UPDATE media_items SET play_seconds = play_seconds + ? WHERE file_path = ?')
+    .run(Math.floor(seconds), filePath)
+}
+
 // Manual mark/unmark for episodes that were watched outside the app or whose
 // row was reset by a rename. `watched=false` clears the timestamp entirely so
 // the row matches a never-opened item.
@@ -422,7 +430,7 @@ export function getItems(category: string): object[] {
     .prepare(
       `SELECT id, title, year, category, file_path as filePath,
               poster_path as posterPath, description, genre, platform, executable,
-              last_opened_at as lastOpenedAt
+              last_opened_at as lastOpenedAt, play_seconds as playSeconds
        FROM media_items WHERE category = ? ORDER BY title ASC`
     )
     .all(category)
@@ -434,7 +442,7 @@ export function getItem(id: number): object | null {
       .prepare(
         `SELECT id, title, year, category, file_path as filePath,
                 poster_path as posterPath, description, genre, platform, executable,
-                last_opened_at as lastOpenedAt
+                last_opened_at as lastOpenedAt, play_seconds as playSeconds
          FROM media_items WHERE id = ?`
       )
       .get(id) as object | undefined) ?? null
@@ -446,7 +454,7 @@ export function getExtras(seriesTitle: string): object[] {
     .prepare(
       `SELECT id, title, year, category, file_path as filePath,
               poster_path as posterPath, description, genre, platform, executable,
-              last_opened_at as lastOpenedAt
+              last_opened_at as lastOpenedAt, play_seconds as playSeconds
        FROM media_items WHERE category = 'extras' AND genre = ? ORDER BY title ASC`
     )
     .all(seriesTitle)
@@ -470,6 +478,10 @@ export interface LibraryStats {
   seriesCounts: Record<string, number>
   platforms: { platform: string; count: number }[]
   recentlyOpened: { title: string; category: string; filePath: string; lastOpenedAt: number }[]
+  /** Games sorted by playtime, descending. Empty rows (play_seconds = 0) are excluded. */
+  gamesPlaytime: { title: string; platform: string | null; playSeconds: number }[]
+  /** Sum of play_seconds across all game rows. */
+  gamesPlaytimeTotal: number
   total: number
   /** Number of extras attributed to each parent category. Derived from file_path prefix. */
   extrasByParent: Record<string, number>
@@ -555,8 +567,14 @@ export function getStats(): LibraryStats {
     if (parent) extrasByParent[parent] = (extrasByParent[parent] ?? 0) + 1
   }
 
+  const gamesPlaytime = db
+    .prepare("SELECT title, platform, play_seconds as playSeconds FROM media_items WHERE category = 'games' AND play_seconds > 0 ORDER BY play_seconds DESC")
+    .all() as { title: string; platform: string | null; playSeconds: number }[]
+  const gamesPlaytimeTotal = gamesPlaytime.reduce((sum, g) => sum + g.playSeconds, 0)
+
   return {
     counts, seriesCounts, platforms, recentlyOpened, total: totalRow.total,
+    gamesPlaytime, gamesPlaytimeTotal,
     extrasByParent,
     extrasBytesByParent: storage?.extrasBytesByParent ?? null,
     storage
