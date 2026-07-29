@@ -4,6 +4,21 @@ import { execSync } from 'child_process'
 import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, migrateRenamedPaths, updateTechInfo, needsTechInfo, setConfig, getStoredDirTimes, setStoredDirTimes } from './database'
 import { probeFile, probeAudioFileSync } from './mediaInfo'
 
+// macOS Finder drops these into any directory it touches — `.DS_Store` for
+// folder metadata, `._<name>` AppleDouble sidecars carrying resource forks and
+// extended attributes for each real file. On a drive that's been to a Mac and
+// back, `readdirSync` on Windows will happily return them, and the scanner's
+// `find(...)` calls can end up picking `._Halo.iso` or `._poster.jpg` as the
+// "real" file. That silently rewrites DB rows to point at 4KB stub files, or —
+// worse — the AppleDouble file passes the extension filter but the real one
+// doesn't get counted, so the real path gets orphan-deleted.
+//
+// Filtering these at every readdir touchpoint is cheaper than trying to fix each
+// call site individually, and matches the ignore list in sync.ts's SYSTEM_FILE_GLOBS.
+function isOsMetadata(name: string): boolean {
+  return name === '.DS_Store' || name.startsWith('._') || name === 'Thumbs.db' || name === 'desktop.ini'
+}
+
 // Returns the set of subdirectory names inside `dir` flagged as hidden by the OS.
 // Windows: parses `attrib /D <dir>\*` for the H bit.
 // Mac/Linux: honors the dot-prefix convention (caller can also check directly).
@@ -100,6 +115,7 @@ function isDirChanged(dirPath: string): boolean {
     const onDiskNames = new Set<string>()
     for (const e of readdirSync(dirPath, { withFileTypes: true })) {
       if (!e.isFile()) continue
+      if (isOsMetadata(e.name)) continue
       onDiskNames.add(e.name)
       const fp = join(dirPath, e.name)
       try {
@@ -185,7 +201,7 @@ export function findPoster(dir: string): string | null {
   }
   // Fall back to any image file in the folder
   try {
-    const img = readdirSync(dir).find((f) => /\.(jpe?g|png|webp)$/i.test(f))
+    const img = readdirSync(dir).find((f) => !isOsMetadata(f) && /\.(jpe?g|png|webp)$/i.test(f))
     if (img) return join(dir, img)
   } catch { /* ignore */ }
   return null
@@ -495,7 +511,7 @@ function findFirstMovieVideo(dir: string): string | null {
   const entries = readdirSync(dir, { withFileTypes: true })
   // Check files in this directory first
   for (const entry of entries) {
-    if (entry.isFile() && VIDEO_EXTS.has(extname(entry.name).toLowerCase())) {
+    if (entry.isFile() && !isOsMetadata(entry.name) && VIDEO_EXTS.has(extname(entry.name).toLowerCase())) {
       return join(dir, entry.name)
     }
   }
@@ -809,8 +825,13 @@ function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): num
 
 function scanPcGames(rootDir: string): number {
   // PC games are Windows .exe binaries — not runnable on Mac/Linux without a
-  // compatibility layer. Skip the shelf entirely on non-Windows hosts.
-  if (process.platform !== 'win32') return 0
+  // compatibility layer. Skip the shelf entirely on non-Windows hosts, but
+  // preserve any PC-game rows already in the DB so orphan cleanup doesn't
+  // wipe them out when the drive gets scanned on a Mac and plugged back in.
+  if (process.platform !== 'win32') {
+    if (existsSync(rootDir)) preserveStoredPaths(rootDir)
+    return 0
+  }
   if (!existsSync(rootDir)) return 0
   let count = 0
   const hidden = listHiddenDirs(rootDir)
@@ -862,7 +883,7 @@ function walkDirBytes(dir: string): number {
 const NON_GAME_EXE_RE = /^(unins\d*|uninstall|setup|installer|redist|vcredist|dxsetup|directx|crashreport|launcher_settings)/i
 
 function findExe(dir: string): string | null {
-  const entries = readdirSync(dir)
+  const entries = readdirSync(dir).filter((f) => !isOsMetadata(f))
 
   if (process.platform === 'win32') {
     const exes = entries.filter((f) => extname(f).toLowerCase() === '.exe')
@@ -905,8 +926,13 @@ function scanRoms(rootDir: string): number {
         if (!entry.isDirectory()) continue
         const gameDir = join(platformDir, entry.name)
         if (!isDirChanged(gameDir)) { preserveStoredPaths(gameDir); count++; continue }
-        const zips = readdirSync(gameDir).filter((f) => extname(f).toLowerCase() === '.zip')
-        if (!zips.length) continue
+        const zips = readdirSync(gameDir).filter((f) => !isOsMetadata(f) && extname(f).toLowerCase() === '.zip')
+        // Safety net: if the dir is dirty but we couldn't find a ROM this pass
+        // (transient FS hiccup, macOS metadata shuffling readdir order, missing
+        // extension in ROM_EXTS after an external tool touched things), keep
+        // the previously-indexed rows so `deleteOrphanedEntries` doesn't wipe
+        // real games. Force Rescan is still available to correct real changes.
+        if (!zips.length) { preserveStoredPaths(gameDir); continue }
         // When multiple zips exist (e.g. parent + clone), prefer the one whose
         // name shares the longest common prefix with the folder name.
         const folderKey = entry.name.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -938,8 +964,10 @@ function scanRoms(rootDir: string): number {
         if (entry.isDirectory()) {
           const gameDir = join(platformDir, entry.name)
           if (!isDirChanged(gameDir)) { preserveStoredPaths(gameDir); count++; continue }
-          const rom = readdirSync(gameDir).find((f) => ROM_EXTS.has(extname(f).toLowerCase()))
-          if (!rom) continue
+          const rom = readdirSync(gameDir).find((f) => !isOsMetadata(f) && ROM_EXTS.has(extname(f).toLowerCase()))
+          // Same safety net as MAME above — don't let a transient miss drop
+          // real ROM entries from the DB.
+          if (!rom) { preserveStoredPaths(gameDir); continue }
           const romPath = join(gameDir, rom)
           checkAndUpsert(romPath, {
             title: entry.name,
