@@ -118,6 +118,14 @@ function getDb(): Database.Database {
       dir_path TEXT PRIMARY KEY,
       mtime    INTEGER NOT NULL
     );
+
+    -- Separated from media_items so playtime survives orphan cleanup of a
+    -- media row. Otherwise a Mac-side scan that transiently drops PC-game
+    -- rows would nuke every session count on the next Force Rescan.
+    CREATE TABLE IF NOT EXISTS game_playtime (
+      file_path    TEXT PRIMARY KEY,
+      play_seconds INTEGER NOT NULL DEFAULT 0
+    );
   `)
 
   // One-time cleanup: superseded by the dir_mtimes table
@@ -128,6 +136,19 @@ function getDb(): Database.Database {
   try { db.exec('ALTER TABLE media_items ADD COLUMN tech_info TEXT') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE media_items ADD COLUMN last_opened_at INTEGER DEFAULT NULL') } catch { /* already exists */ }
   try { db.exec('ALTER TABLE media_items ADD COLUMN play_seconds INTEGER NOT NULL DEFAULT 0') } catch { /* already exists */ }
+
+  // One-time backfill: copy any existing play_seconds values out of
+  // media_items into game_playtime. INSERT OR IGNORE makes this idempotent —
+  // once the row exists in game_playtime we never overwrite from the (now
+  // legacy) column. The media_items.play_seconds column is left in place
+  // rather than dropped because ALTER TABLE DROP COLUMN is only well-
+  // supported in newer SQLite builds and nothing reads it anymore.
+  try {
+    db.exec(`
+      INSERT OR IGNORE INTO game_playtime (file_path, play_seconds)
+      SELECT file_path, play_seconds FROM media_items WHERE play_seconds > 0
+    `)
+  } catch { /* first-run without media_items.play_seconds column — no-op */ }
 
   return db
 }
@@ -371,6 +392,14 @@ export function rerootPaths(oldRoot: string, newRoot: string): void {
   const deleteDir = db.prepare('DELETE FROM dir_mtimes WHERE dir_path = ?')
   const insertDir = db.prepare('INSERT OR REPLACE INTO dir_mtimes (dir_path, mtime) VALUES (?, ?)')
 
+  // Game playtime is keyed by file_path — same reroot treatment or the JOIN
+  // in getItems misses after a drive-letter swap and playtime looks wiped.
+  const playtimeRows = db
+    .prepare('SELECT file_path, play_seconds FROM game_playtime')
+    .all() as { file_path: string; play_seconds: number }[]
+  const deletePlaytime = db.prepare('DELETE FROM game_playtime WHERE file_path = ?')
+  const insertPlaytime = db.prepare('INSERT OR REPLACE INTO game_playtime (file_path, play_seconds) VALUES (?, ?)')
+
   db.transaction(() => {
     for (const row of mediaRows) {
       const nf = reroot(row.file_path)
@@ -390,6 +419,13 @@ export function rerootPaths(oldRoot: string, newRoot: string): void {
         insertDir.run(nd, row.mtime)
       }
     }
+    for (const row of playtimeRows) {
+      const nf = reroot(row.file_path)
+      if (nf && nf !== row.file_path) {
+        deletePlaytime.run(row.file_path)
+        insertPlaytime.run(nf, row.play_seconds)
+      }
+    }
   })()
 }
 
@@ -401,9 +437,14 @@ export function setLastOpened(filePath: string): void {
 
 export function addPlaySeconds(filePath: string, seconds: number): void {
   if (seconds <= 0) return
+  // UPSERT into game_playtime — writes to a table decoupled from media_items
+  // so orphan cleanup of the media row never loses accumulated playtime.
   getDb()
-    .prepare('UPDATE media_items SET play_seconds = play_seconds + ? WHERE file_path = ?')
-    .run(Math.floor(seconds), filePath)
+    .prepare(`
+      INSERT INTO game_playtime (file_path, play_seconds) VALUES (?, ?)
+      ON CONFLICT(file_path) DO UPDATE SET play_seconds = play_seconds + excluded.play_seconds
+    `)
+    .run(filePath, Math.floor(seconds))
 }
 
 // Manual mark/unmark for episodes that were watched outside the app or whose
@@ -428,10 +469,12 @@ export function setGenre(filePath: string, genre: string | null): void {
 export function getItems(category: string): object[] {
   return getDb()
     .prepare(
-      `SELECT id, title, year, category, file_path as filePath,
-              poster_path as posterPath, description, genre, platform, executable,
-              last_opened_at as lastOpenedAt, play_seconds as playSeconds
-       FROM media_items WHERE category = ? ORDER BY title ASC`
+      `SELECT m.id, m.title, m.year, m.category, m.file_path as filePath,
+              m.poster_path as posterPath, m.description, m.genre, m.platform, m.executable,
+              m.last_opened_at as lastOpenedAt, COALESCE(gp.play_seconds, 0) as playSeconds
+       FROM media_items m
+       LEFT JOIN game_playtime gp ON gp.file_path = m.file_path
+       WHERE m.category = ? ORDER BY m.title ASC`
     )
     .all(category)
 }
@@ -440,10 +483,12 @@ export function getItem(id: number): object | null {
   return (
     (getDb()
       .prepare(
-        `SELECT id, title, year, category, file_path as filePath,
-                poster_path as posterPath, description, genre, platform, executable,
-                last_opened_at as lastOpenedAt, play_seconds as playSeconds
-         FROM media_items WHERE id = ?`
+        `SELECT m.id, m.title, m.year, m.category, m.file_path as filePath,
+                m.poster_path as posterPath, m.description, m.genre, m.platform, m.executable,
+                m.last_opened_at as lastOpenedAt, COALESCE(gp.play_seconds, 0) as playSeconds
+         FROM media_items m
+         LEFT JOIN game_playtime gp ON gp.file_path = m.file_path
+         WHERE m.id = ?`
       )
       .get(id) as object | undefined) ?? null
   )
@@ -452,10 +497,12 @@ export function getItem(id: number): object | null {
 export function getExtras(seriesTitle: string): object[] {
   return getDb()
     .prepare(
-      `SELECT id, title, year, category, file_path as filePath,
-              poster_path as posterPath, description, genre, platform, executable,
-              last_opened_at as lastOpenedAt, play_seconds as playSeconds
-       FROM media_items WHERE category = 'extras' AND genre = ? ORDER BY title ASC`
+      `SELECT m.id, m.title, m.year, m.category, m.file_path as filePath,
+              m.poster_path as posterPath, m.description, m.genre, m.platform, m.executable,
+              m.last_opened_at as lastOpenedAt, COALESCE(gp.play_seconds, 0) as playSeconds
+       FROM media_items m
+       LEFT JOIN game_playtime gp ON gp.file_path = m.file_path
+       WHERE m.category = 'extras' AND m.genre = ? ORDER BY m.title ASC`
     )
     .all(seriesTitle)
 }
@@ -568,7 +615,13 @@ export function getStats(): LibraryStats {
   }
 
   const gamesPlaytime = db
-    .prepare("SELECT title, platform, play_seconds as playSeconds FROM media_items WHERE category = 'games' AND play_seconds > 0 ORDER BY play_seconds DESC")
+    .prepare(`
+      SELECT m.title, m.platform, gp.play_seconds as playSeconds
+      FROM media_items m
+      JOIN game_playtime gp ON gp.file_path = m.file_path
+      WHERE m.category = 'games' AND gp.play_seconds > 0
+      ORDER BY gp.play_seconds DESC
+    `)
     .all() as { title: string; platform: string | null; playSeconds: number }[]
   const gamesPlaytimeTotal = gamesPlaytime.reduce((sum, g) => sum + g.playSeconds, 0)
 
