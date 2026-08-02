@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join, dirname, basename } from 'path'
-import { mkdirSync, existsSync, readdirSync, copyFileSync } from 'fs'
+import { mkdirSync, existsSync, readdirSync, copyFileSync, statSync } from 'fs'
 import type { MediaTechInfo } from './mediaInfo'
 
 let db: Database.Database | null = null
@@ -212,7 +212,18 @@ export function upsertItem(item: {
   platform?: string | null
   executable?: string | null
   fileModified?: number
+  /**
+   * When true, an incoming null posterPath is treated as "unknown, keep existing"
+   * instead of "clear the poster". Set by scanner sites where the source
+   * directory's readdir failed and we can't confirm the poster is really gone.
+   * Without this flag, a transient readdir hiccup wipes covers off every child
+   * row when checkAndUpsert re-fires on a dirty dir.
+   */
+  keepPosterOnNull?: boolean
 }): void {
+  const posterSql = item.keepPosterOnNull
+    ? 'poster_path = COALESCE(excluded.poster_path, poster_path)'
+    : 'poster_path = excluded.poster_path'
   getDb()
     .prepare(
       `INSERT INTO media_items
@@ -222,7 +233,7 @@ export function upsertItem(item: {
          title         = excluded.title,
          year          = excluded.year,
          category      = excluded.category,
-         poster_path   = excluded.poster_path,
+         ${posterSql},
          description   = excluded.description,
          genre         = COALESCE(excluded.genre, genre),
          platform      = excluded.platform,
@@ -378,12 +389,37 @@ export function deleteOrphanedEntries(foundPaths: Set<string>): void {
   const all = getDb()
     .prepare('SELECT file_path FROM media_items')
     .all() as { file_path: string }[]
-  const toDelete = all.map((r) => r.file_path).filter((p) => !foundPaths.has(p))
-  if (toDelete.length === 0) return
-  // Batch to avoid SQLite parameter limits
+  const candidates = all.map((r) => r.file_path).filter((p) => !foundPaths.has(p))
+  if (candidates.length === 0) return
+
+  // Confirm each candidate is really gone from disk before we delete its row.
+  // Universal safety net for every scanner branch that failed to add a stored
+  // path to _foundPaths — transient readdir empty, category root slow to
+  // enumerate, a `continue` without preservation, whatever. Only ENOENT is a
+  // confirmed delete; any other stat error (EPERM, EIO, drive hiccup) means
+  // we can't be sure, so we bail out entirely rather than risk deleting real
+  // rows. Force Rescan still corrects legitimate mass removals — the file
+  // being gone from disk is what allows the delete, not any scan flag.
+  const confirmed: string[] = []
+  for (const p of candidates) {
+    try {
+      statSync(p)
+      // File exists → scan missed it, keep the row.
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') {
+        confirmed.push(p)
+      } else {
+        console.warn(`[db] aborting orphan cleanup: statSync ${code} on ${p}`)
+        return
+      }
+    }
+  }
+  if (confirmed.length === 0) return
+
   const BATCH = 500
-  for (let i = 0; i < toDelete.length; i += BATCH) {
-    const batch = toDelete.slice(i, i + BATCH)
+  for (let i = 0; i < confirmed.length; i += BATCH) {
+    const batch = confirmed.slice(i, i + BATCH)
     const placeholders = batch.map(() => '?').join(',')
     getDb().prepare(`DELETE FROM media_items WHERE file_path IN (${placeholders})`).run(...batch)
   }

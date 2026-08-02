@@ -63,6 +63,8 @@ let _mangaSeriesCount = 0
 let _smartMode       = false
 
 // Call instead of upsertItem directly. Skips files whose mtime hasn't changed.
+// (Note: `force` here just bypasses the mtime skip — it does NOT relate to the
+// keepPosterOnNull flag on the upsert; that one rides along in `item`.)
 function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0], force = false): boolean {
   const { mtimeMs, size } = statSync(filePath)
   const mtime = Math.floor(mtimeMs)
@@ -193,18 +195,29 @@ function tryReadJson(filePath: string): Record<string, unknown> {
   }
 }
 
-export function findPoster(dir: string): string | null {
-  // Check preferred names first
+/**
+ * Detailed poster lookup. Distinguishes "readable directory, no image inside"
+ * (path=null, readable=true — safe to clear DB poster) from "readdir failed"
+ * (path=null, readable=false — DB poster must be preserved). Without this
+ * split, a transient readdir hiccup on the series/album/movie folder wipes
+ * covers off every child row when checkAndUpsert next fires.
+ */
+export function findPosterStrict(dir: string): { path: string | null; readable: boolean } {
   for (const name of ['poster.jpg', 'poster.png', 'cover.jpg', 'cover.png', 'folder.jpg']) {
     const p = join(dir, name)
-    if (existsSync(p)) return p
+    if (existsSync(p)) return { path: p, readable: true }
   }
-  // Fall back to any image file in the folder
   try {
     const img = readdirSync(dir).find((f) => !isOsMetadata(f) && /\.(jpe?g|png|webp)$/i.test(f))
-    if (img) return join(dir, img)
-  } catch { /* ignore */ }
-  return null
+    return { path: img ? join(dir, img) : null, readable: true }
+  } catch {
+    return { path: null, readable: false }
+  }
+}
+
+/** Back-compat shim for external callers that don't need the readable flag. */
+export function findPoster(dir: string): string | null {
+  return findPosterStrict(dir).path
 }
 
 function stableSeasonHash(name: string): number {
@@ -485,7 +498,7 @@ function scanMovies(rootDir: string, ffprobePath = ''): number {
     const movieDir = join(rootDir, entry.name)
     if (!isDirChanged(movieDir)) { preserveStoredPaths(movieDir); count++; continue }
     const meta = tryReadJson(join(movieDir, 'movie.json'))
-    const poster = findPoster(movieDir)
+    const posterRes = findPosterStrict(movieDir)
     const firstVideo = findFirstMovieVideo(movieDir)
     if (firstVideo) {
       const movieTitle = (meta.title as string) ?? titleFromFilename(entry.name)
@@ -494,13 +507,20 @@ function scanMovies(rootDir: string, ffprobePath = ''): number {
         year: (meta.year as number) ?? yearFromFilename(entry.name) ?? yearFromFilename(basename(firstVideo)),
         category: 'movies',
         filePath: firstVideo,
-        posterPath: poster,
+        posterPath: posterRes.path,
+        keepPosterOnNull: !posterRes.readable,
         description: (meta.description as string) ?? null,
         genre: Array.isArray(meta.genre) ? (meta.genre as string[]).join(',') : typeof meta.genre === 'string' ? meta.genre : null
       })
       probeMovieIfNeeded(firstVideo, ffprobePath)
-      scanMovieExtras(movieDir, movieTitle, poster)
+      scanMovieExtras(movieDir, movieTitle, posterRes.path)
       count++
+    } else {
+      // Movie folder is dirty but we couldn't find a video file this pass
+      // (transient readdir miss on shared exFAT, macOS metadata shuffle).
+      // Keep the previously-indexed rows so the DB doesn't blank out the
+      // whole movie shelf on a bad enumeration.
+      preserveStoredPaths(movieDir)
     }
   }
   return count
@@ -557,11 +577,11 @@ function scanEpisodeCategory(rootDir: string, category: string): number {
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const showDir = join(rootDir, entry.name)
-    const poster = findPoster(showDir)
+    const posterRes = findPosterStrict(showDir)
     const seriesTitle = titleFromFilename(entry.name)
     const year = yearFromFilename(entry.name)
     const episodeMap = loadEpisodeMap(showDir)
-    count += scanEpisodes(showDir, seriesTitle, year, poster, category, undefined, episodeMap)
+    count += scanEpisodes(showDir, seriesTitle, year, posterRes.path, category, undefined, episodeMap, undefined, !posterRes.readable)
   }
   return count
 }
@@ -574,7 +594,8 @@ function scanEpisodes(
   category: string,
   season?: number,
   episodeMap?: Record<string, string> | null,
-  subSeriesLabel?: string
+  subSeriesLabel?: string,
+  keepPosterOnNull = false
 ): number {
   let count = 0
   const dirChanged = isDirChanged(dir)
@@ -586,12 +607,12 @@ function scanEpisodes(
       if (type === 'skip') continue
       if (type === 'extras') {
         const ctx = subSeriesLabel ?? (season !== undefined ? `Season ${season}` : undefined)
-        scanExtrasFolder(join(dir, entry.name), seriesTitle, poster, undefined, ctx)
+        scanExtrasFolder(join(dir, entry.name), seriesTitle, poster, undefined, ctx, keepPosterOnNull)
       } else {
         // Detect season folder (S01, S02, Season 1, etc.)
         const seasonMatch = entry.name.match(/^(?:S|Season\s*)(\d+)$/i)
         if (seasonMatch) {
-          count += scanEpisodes(join(dir, entry.name), seriesTitle, year, poster, category, parseInt(seasonMatch[1], 10), episodeMap)
+          count += scanEpisodes(join(dir, entry.name), seriesTitle, year, poster, category, parseInt(seasonMatch[1], 10), episodeMap, undefined, keepPosterOnNull)
         } else {
           // Named subfolder (e.g. "Heya Camp", "OVA") — check if it contains multiple video files
           const subDir = join(dir, entry.name)
@@ -600,10 +621,10 @@ function scanEpisodes(
           if (subVideoCount >= 1) {
             // Named sub-series (single or multi-file): description is stored as "§Label§Exx · Title".
             // episodes.json uses bare Exx keys (E01, E02, ...).
-            count += scanEpisodes(subDir, seriesTitle, year, poster, category, stableSeasonHash(entry.name), loadEpisodeMap(subDir), entry.name)
+            count += scanEpisodes(subDir, seriesTitle, year, poster, category, stableSeasonHash(entry.name), loadEpisodeMap(subDir), entry.name, keepPosterOnNull)
           } else {
             // No video files directly in folder — recurse without a sub-series label
-            count += scanEpisodes(subDir, seriesTitle, year, poster, category, season, episodeMap)
+            count += scanEpisodes(subDir, seriesTitle, year, poster, category, season, episodeMap, undefined, keepPosterOnNull)
           }
         }
       }
@@ -639,6 +660,7 @@ function scanEpisodes(
       category,
       filePath: epPath,
       posterPath: poster,
+      keepPosterOnNull,
       description: episodeInfo
     })
     count++
@@ -646,7 +668,7 @@ function scanEpisodes(
   return count
 }
 
-function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | null, prefix?: string, seasonContext?: string): void {
+function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | null, prefix?: string, seasonContext?: string, keepPosterOnNull = false): void {
   if (!existsSync(dir)) return
   const entries = readdirSync(dir, { withFileTypes: true })
 
@@ -669,7 +691,7 @@ function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | nul
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
-      scanExtrasFolder(join(dir, entry.name), seriesTitle, poster, entry.name, seasonContext)
+      scanExtrasFolder(join(dir, entry.name), seriesTitle, poster, entry.name, seasonContext, keepPosterOnNull)
       continue
     }
     if (!entry.isFile() || !VIDEO_EXTS.has(extname(entry.name).toLowerCase())) continue
@@ -685,6 +707,7 @@ function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | nul
       category: 'extras',
       filePath: extraPath,
       posterPath: poster,
+      keepPosterOnNull,
       genre: seriesTitle
     })
   }
@@ -700,8 +723,10 @@ function scanMusic(rootDir: string, ffprobePath = ''): number {
     if (!entry.isDirectory()) continue
     const albumDir = join(rootDir, entry.name)
     if (!isDirChanged(albumDir)) { preserveStoredPaths(albumDir); count++; continue }
-    const audioFiles = readdirSync(albumDir).filter((f) => AUDIO_EXTS.has(extname(f).toLowerCase())).sort()
-    if (audioFiles.length === 0) continue
+    let audioFiles: string[] = []
+    try { audioFiles = readdirSync(albumDir).filter((f) => AUDIO_EXTS.has(extname(f).toLowerCase())).sort() }
+    catch { preserveStoredPaths(albumDir); continue }
+    if (audioFiles.length === 0) { preserveStoredPaths(albumDir); continue }
     _musicTrackCount += audioFiles.length
 
     // Probe and cache full audio metadata during scan so album opens are instant
@@ -729,12 +754,14 @@ function scanMusic(rootDir: string, ffprobePath = ''): number {
     const firstTrack = audioFiles[0]
     const trackPath = join(albumDir, firstTrack)
     const albumMeta = tryReadJson(join(albumDir, 'album.json'))
+    const albumPoster = findPosterStrict(albumDir)
     checkAndUpsert(trackPath, {
       title: entry.name.replace(/\s*\(\d{4}\)$/, '').trim(),
       year: yearFromFilename(entry.name),
       category: 'music',
       filePath: trackPath,
-      posterPath: findPoster(albumDir),
+      posterPath: albumPoster.path,
+      keepPosterOnNull: !albumPoster.readable,
       genre: (albumMeta.artist as string) ?? null
     })
     count++
@@ -765,17 +792,18 @@ function scanBooks(rootDir: string): number {
     let bookFile: string | null = null
     try {
       bookFile = readdirSync(bookDir).find(f => BOOK_EXTS.has(extname(f).toLowerCase())) ?? null
-    } catch { continue }
-    if (!bookFile) continue
+    } catch { preserveStoredPaths(bookDir); continue }
+    if (!bookFile) { preserveStoredPaths(bookDir); continue }
 
-    const filePath   = join(bookDir, bookFile)
-    const posterPath = findPoster(bookDir)
+    const filePath = join(bookDir, bookFile)
+    const posterRes = findPosterStrict(bookDir)
 
     checkAndUpsert(filePath, {
       title,
       category: 'books',
       filePath,
-      posterPath: posterPath ?? null,
+      posterPath: posterRes.path,
+      keepPosterOnNull: !posterRes.readable,
       genre: author   // repurpose genre field for author
     })
     count++
@@ -801,10 +829,10 @@ function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): num
     if (!isDirChanged(seriesDir)) { preserveStoredPaths(seriesDir); count++; continue }
     let files: string[] = []
     try { files = readdirSync(seriesDir).filter(f => MANGA_EXTS.has(extname(f).toLowerCase())).sort() }
-    catch { continue }
-    if (!files.length) continue
+    catch { preserveStoredPaths(seriesDir); continue }
+    if (!files.length) { preserveStoredPaths(seriesDir); continue }
     _mangaSeriesCount++
-    const poster = findPoster(seriesDir)
+    const posterRes = findPosterStrict(seriesDir)
     for (const file of files) {
       const filePath = join(seriesDir, file)
       // Single file in folder → use folder name as title; multiple → use filename
@@ -813,7 +841,8 @@ function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): num
         title,
         category,
         filePath,
-        posterPath: poster
+        posterPath: posterRes.path,
+        keepPosterOnNull: !posterRes.readable
       })
       count++
     }
@@ -842,14 +871,16 @@ function scanPcGames(rootDir: string): number {
     if (!isDirChanged(gameDir)) { preserveStoredPaths(gameDir); count++; continue }
     const meta = tryReadJson(join(gameDir, 'game.json'))
     const execName = (meta.executable as string) ?? findExe(gameDir)
-    if (!execName) continue
+    if (!execName) { preserveStoredPaths(gameDir); continue }
     const exePath = join(gameDir, execName)
+    const posterRes = findPosterStrict(gameDir)
     checkAndUpsert(exePath, {
       title: (meta.title as string) ?? entry.name,
       year: (meta.year as number) ?? null,
       category: 'games',
       filePath: exePath,
-      posterPath: findPoster(gameDir),
+      posterPath: posterRes.path,
+      keepPosterOnNull: !posterRes.readable,
       description: (meta.description as string) ?? null,
       genre: Array.isArray(meta.genre) ? (meta.genre as string[]).join(', ') : null,
       platform: 'pc',
@@ -950,11 +981,13 @@ function scanRoms(rootDir: string): number {
         })
         if (!zip) continue
         const romPath = join(gameDir, zip)
+        const posterRes = findPosterStrict(gameDir)
         checkAndUpsert(romPath, {
           title: entry.name,
           category: 'games',
           filePath: romPath,
-          posterPath: findPoster(gameDir),
+          posterPath: posterRes.path,
+          keepPosterOnNull: !posterRes.readable,
           platform
         })
         count++
@@ -969,11 +1002,13 @@ function scanRoms(rootDir: string): number {
           // real ROM entries from the DB.
           if (!rom) { preserveStoredPaths(gameDir); continue }
           const romPath = join(gameDir, rom)
+          const posterRes = findPosterStrict(gameDir)
           checkAndUpsert(romPath, {
             title: entry.name,
             category: 'games',
             filePath: romPath,
-            posterPath: findPoster(gameDir),
+            posterPath: posterRes.path,
+            keepPosterOnNull: !posterRes.readable,
             platform
           })
           count++
@@ -1025,11 +1060,17 @@ function scanYouTube(rootDir: string, ffprobePath = ''): number {
     if (entry.isDirectory()) {
       const playlistDir = join(rootDir, entry.name)
       if (!isDirChanged(playlistDir)) { preserveStoredPaths(playlistDir); continue }
-      for (const file of readdirSync(playlistDir, { withFileTypes: true })) {
-        if (file.isFile() && VIDEO_EXTS.has(extname(file.name).toLowerCase())) {
-          scanVideoFile(join(playlistDir, file.name), entry.name)
+      // Wrap the inner readdir so a transient EPERM/EIO on one playlist doesn't
+      // throw out of scanYouTube (which would abort the whole scanLibrary run
+      // and skip every category that runs after this one). Preserve the
+      // playlist's stored rows in that case.
+      try {
+        for (const file of readdirSync(playlistDir, { withFileTypes: true })) {
+          if (file.isFile() && VIDEO_EXTS.has(extname(file.name).toLowerCase())) {
+            scanVideoFile(join(playlistDir, file.name), entry.name)
+          }
         }
-      }
+      } catch { preserveStoredPaths(playlistDir) }
     } else if (entry.isFile() && VIDEO_EXTS.has(extname(entry.name).toLowerCase())) {
       scanVideoFile(join(rootDir, entry.name), null)
     }
