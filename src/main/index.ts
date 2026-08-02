@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, protocol } from 'electron'
+import { app, BrowserWindow, dialog, shell, protocol } from 'electron'
 import { join, dirname } from 'path'
 import { createReadStream, statSync, existsSync } from 'fs'
 import { Readable } from 'stream'
@@ -14,7 +14,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'cbz',   privileges: { bypassCSP: true, supportFetchAPI: true } }
 ])
 import { registerIpcHandlers } from './ipc'
-import { closeDb } from './database'
+import { closeDb, probeDrive } from './database'
 
 if (app.isPackaged && process.platform === 'win32') {
   spawnSync('attrib', ['-h', '-s', dirname(app.getPath('exe'))], { shell: true })
@@ -50,7 +50,42 @@ function createWindow(): void {
   }
 }
 
+/**
+ * Startup guard: refuse to boot without the Vault drive. Before this existed,
+ * a missing drive silently fell back to app.getPath('userData'), which wrote a
+ * phantom library.db (and later stranded WAL/SHM files) into
+ *   ~/Library/Application Support/Vault (macOS)
+ *   %APPDATA%\Vault (Windows)
+ * On the next launch SQLite would try to recover a WAL against a nonexistent
+ * main DB and hang the app on the loading spinner.
+ *
+ * The two failure modes get distinct guidance: "not-found" means the drive
+ * isn't plugged in; "permission-denied" (macOS) means TCC revoked the
+ * Removable Volumes grant, which decays after OS updates or long sleep.
+ */
+function guardVaultDrive(): boolean {
+  const probe = probeDrive()
+  if (probe.ok) return true
+
+  const isMac = process.platform === 'darwin'
+  const message = probe.reason === 'permission-denied'
+    ? 'Vault cannot read your removable volumes.'
+    : 'Vault drive not detected.'
+  const detail = probe.reason === 'permission-denied'
+    ? (isMac
+        ? 'macOS revoked Vault\'s Removable Volumes permission.\n\n' +
+          'Open System Settings → Privacy & Security → Files and Folders, ' +
+          'expand "Vault", enable "Removable Volumes", then relaunch Vault.'
+        : 'The app does not have permission to read the mount root. Grant read access and relaunch.')
+    : 'Plug in the Vault drive and relaunch. Vault stores its library on the drive and cannot run without it.'
+
+  dialog.showErrorBox(message, detail)
+  return false
+}
+
 app.whenReady().then(() => {
+  if (!guardVaultDrive()) { app.quit(); return }
+
   // Serve local media files via media:// with proper Range/206 support so seeking works.
   protocol.handle('media', (request) => {
     try {

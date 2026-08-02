@@ -7,23 +7,31 @@ import type { MediaTechInfo } from './mediaInfo'
 let db: Database.Database | null = null
 
 /**
- * Walk up from the packaged exe location until we find the .vault marker file
- * at the drive root (e.g. E:\). Returns the drive root path, or null in dev mode
- * or if the marker isn't found.
+ * Startup drive probe. Discriminated union so callers can distinguish
+ * "drive isn't plugged in" from "we can't read the mount root because macOS
+ * revoked our Removable Volumes permission" — the two failure modes need
+ * different user guidance.
  */
-export function findDriveRoot(): string | null {
-  if (!app.isPackaged) return null
+export type DriveProbeResult =
+  | { ok: true;  root: string }
+  | { ok: false; reason: 'not-found' | 'permission-denied' }
+
+let cachedProbe: DriveProbeResult | null = null
+
+function doProbe(): DriveProbeResult {
+  // Dev mode has no drive — callers that need a real root should check app.isPackaged first.
+  if (!app.isPackaged) return { ok: true, root: process.cwd() }
 
   if (process.platform === 'win32') {
     // On Windows the app runs from the drive itself — walk up from the exe.
     let dir = dirname(app.getPath('exe'))
     for (let i = 0; i < 10; i++) {
-      if (existsSync(join(dir, '.vault'))) return dir
+      if (existsSync(join(dir, '.vault'))) return { ok: true, root: dir }
       const parent = dirname(dir)
       if (parent === dir) break // reached filesystem root
       dir = parent
     }
-    return null
+    return { ok: false, reason: 'not-found' }
   }
 
   // On macOS / Linux the .app lives outside the drive (Applications, DMG, etc.),
@@ -32,16 +40,41 @@ export function findDriveRoot(): string | null {
     ? ['/Volumes']
     : ['/mnt', '/media', '/run/media']
 
+  // On macOS, readdirSync('/Volumes') throws EPERM when the app has lost the
+  // Files & Folders → Removable Volumes TCC grant (which decays after OS updates
+  // or long sleep). Track that separately from ENOENT so we can surface an
+  // actionable error at startup instead of silently falling back to userData.
+  let sawPermissionError = false
   for (const root of mountRoots) {
     try {
       for (const entry of readdirSync(root)) {
         const candidate = join(root, entry)
-        if (existsSync(join(candidate, '.vault'))) return candidate
+        try {
+          if (existsSync(join(candidate, '.vault'))) return { ok: true, root: candidate }
+        } catch { /* candidate unreadable — skip */ }
       }
-    } catch { /* mount root doesn't exist on this system */ }
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'EPERM' || code === 'EACCES') sawPermissionError = true
+      // ENOENT / other codes: mount root doesn't exist on this system, try next.
+    }
   }
 
-  return null
+  return { ok: false, reason: sawPermissionError ? 'permission-denied' : 'not-found' }
+}
+
+/** Startup drive probe with structured error. Cached — result doesn't change at runtime. */
+export function probeDrive(): DriveProbeResult {
+  if (cachedProbe) return cachedProbe
+  cachedProbe = doProbe()
+  return cachedProbe
+}
+
+/** Legacy shim. Returns the drive root or null; callers that need error detail should use probeDrive(). */
+export function findDriveRoot(): string | null {
+  if (!app.isPackaged) return null
+  const p = probeDrive()
+  return p.ok ? p.root : null
 }
 
 /**
@@ -60,7 +93,11 @@ function getDbDir(): string {
   if (!app.isPackaged) return join(process.cwd(), 'dev-data')
   const driveRoot = findDriveRoot()
   if (driveRoot) return join(driveRoot, 'data')
-  return app.getPath('userData') // fallback if .vault marker not found
+  // No fallback. The startup guard in main/index.ts is expected to catch a
+  // missing drive before any DB code runs. Throwing here means a bug in that
+  // guard surfaces immediately, instead of silently writing a phantom DB to
+  // userData that then WAL-recovers into an endless spinner on next launch.
+  throw new Error('Vault drive not found — startup guard should have caught this before any DB access.')
 }
 
 function getDb(): Database.Database {
