@@ -470,7 +470,9 @@ function probeMovieIfNeeded(filePath: string, ffprobePath: string): void {
 }
 
 function scanMovies(rootDir: string, ffprobePath = ''): number {
-  if (!existsSync(rootDir)) return 0
+  // Category root not reachable this instant (transient TCC / USB / mount race).
+  // Preserve every stored row under it so orphan cleanup doesn't wipe the shelf.
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
 
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -571,7 +573,7 @@ function applyEpisodeMap(info: string, map: Record<string, string>): string {
 }
 
 function scanEpisodeCategory(rootDir: string, category: string): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
 
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -716,7 +718,7 @@ function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | nul
 // ─── Music ─────────────────────────────────────────────────────────────────
 
 function scanMusic(rootDir: string, ffprobePath = ''): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
   // Each top-level folder is an album or playlist
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -775,7 +777,7 @@ function scanMusic(rootDir: string, ffprobePath = ''): number {
 
 
 function scanBooks(rootDir: string): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
 
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -821,7 +823,7 @@ function cleanMangaTitle(raw: string): string {
 }
 
 function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
   for (const series of readdirSync(rootDir, { withFileTypes: true })) {
     if (!series.isDirectory()) continue
@@ -861,7 +863,7 @@ function scanPcGames(rootDir: string): number {
     if (existsSync(rootDir)) preserveStoredPaths(rootDir)
     return 0
   }
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
   const hidden = listHiddenDirs(rootDir)
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -945,7 +947,7 @@ function findExe(dir: string): string | null {
 // ─── ROMs ───────────────────────────────────────────────────────────────────
 
 function scanRoms(rootDir: string): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
   for (const platformFolder of readdirSync(rootDir, { withFileTypes: true })) {
     if (!platformFolder.isDirectory()) continue
@@ -1032,7 +1034,7 @@ function scanRoms(rootDir: string): number {
 // ─── YouTube videos ──────────────────────────────────────────────────────────
 
 function scanYouTube(rootDir: string, ffprobePath = ''): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
 
   function scanVideoFile(filePath: string, playlist: string | null): void {
@@ -1122,8 +1124,33 @@ export function scanLibrary(root: string, ffprobePath = '', smart = false): { to
   // Carry last_opened_at / tech_info from renamed-or-moved files (matched by
   // basename + mtime) to their new path before orphan cleanup wipes them.
   migrateRenamedPaths(_foundPaths, new Set(_storedTimes.keys()))
-  // Remove DB entries for files that no longer exist on disk
-  deleteOrphanedEntries(_foundPaths)
+
+  // Wrong-OS paths detector. If any stored path doesn't start with the current
+  // `root` (e.g. rerootPaths missed a row, or the reroot in library:getConfig
+  // never fired due to a drive-detection race), then deleteOrphanedEntries
+  // would call statSync on those wrong-OS paths, hit ENOENT, and delete rows
+  // that correspond to files still on disk under the correct path. Detect the
+  // condition and abort the delete step entirely. Duplicate rows may exist for
+  // one scan cycle; the next scan (with paths now correctly formatted after
+  // reroot completes) cleans them up. Losing zero user data outweighs a brief
+  // duplicate-row window.
+  const rootPrefix = root.endsWith(sep) ? root : root + sep
+  let strayCount = 0
+  for (const storedPath of _storedTimes.keys()) {
+    if (!storedPath.startsWith(rootPrefix) && !storedPath.startsWith(root)) {
+      strayCount++
+      if (strayCount >= 3) break // enough evidence — abort
+    }
+  }
+  if (strayCount >= 3) {
+    console.warn(
+      `[scanner] Aborting orphan cleanup — ${strayCount}+ stored paths don't start with root ${root}. ` +
+      `Likely a reroot race. Re-run scan after next launch to reconcile.`
+    )
+  } else {
+    // Remove DB entries for files that no longer exist on disk
+    deleteOrphanedEntries(_foundPaths)
+  }
 
   const updated = _updatedCount
 
