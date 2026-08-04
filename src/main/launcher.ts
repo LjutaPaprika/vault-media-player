@@ -118,18 +118,46 @@ function buildLuaScript(subtitleButton: string, subtitleKey: string): string {
   return `\
 -- Auto-select English subtitles on file load.
 -- Overrides 'j' to toggle only between English and off.
+--
+-- Anime releases frequently ship multiple English tracks — a "Signs & Songs"
+-- track for on-screen text only and a "Full Subtitles" track for dialogue.
+-- The first-match approach picked whichever the muxer ordered first, often
+-- Signs & Songs. Score each English track by title/flag signals and pick the
+-- highest scorer, so Full Subtitles wins when both exist.
+local function score_track(title, forced, is_default)
+  local score = 100
+  local t = (title or ''):lower()
+  if t:find('sign') or t:find('song') then score = score - 50 end
+  if t:find('full') or t:find('dialog') then score = score + 30 end
+  if t:find('commentary') then score = score - 80 end
+  if t:find('sdh') or t:find('hearing') then score = score - 20 end
+  if forced then score = score - 50 end
+  if is_default then score = score + 10 end
+  return score
+end
+
 local function find_english_sid()
   local count = mp.get_property_number('track-list/count', 0)
+  local best_id, best_score = nil, -math.huge
   for i = 0, count - 1 do
     local t = mp.get_property(string.format('track-list/%d/type', i))
     if t == 'sub' then
-      local lang = mp.get_property(string.format('track-list/%d/lang', i)) or ''
-      if lang:lower():match('^en') then
-        return mp.get_property_number(string.format('track-list/%d/id', i))
+      local lang  = (mp.get_property(string.format('track-list/%d/lang', i))  or ''):lower()
+      local title =  mp.get_property(string.format('track-list/%d/title', i)) or ''
+      -- Some tracks lack a lang code but declare English in the title (fansub muxes).
+      local is_english = lang:match('^en') or title:lower():find('english')
+      if is_english then
+        local forced     = mp.get_property_bool(string.format('track-list/%d/forced', i), false)
+        local is_default = mp.get_property_bool(string.format('track-list/%d/default', i), false)
+        local score      = score_track(title, forced, is_default)
+        if score > best_score then
+          best_score = score
+          best_id    = mp.get_property_number(string.format('track-list/%d/id', i))
+        end
       end
     end
   end
-  return nil
+  return best_id
 end
 
 mp.register_event('file-loaded', function()
