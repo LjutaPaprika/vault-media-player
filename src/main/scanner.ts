@@ -61,6 +61,12 @@ let _extrasBytesByParent = new Map<string, number>()
 let _musicTrackCount = 0
 let _mangaSeriesCount = 0
 let _smartMode       = false
+// Set by a Force Rescan. Bypasses the per-file mtime skip for this run without
+// touching the stored mtimes themselves — those are the match key
+// migrateRenamedPaths needs to carry last_opened_at across a path change, so
+// destroying them (as clearStoredFileTimes used to) guaranteed total state loss
+// on every drive swap.
+let _forceRescan     = false
 
 // Call instead of upsertItem directly. Skips files whose mtime hasn't changed.
 // (Note: `force` here just bypasses the mtime skip — it does NOT relate to the
@@ -86,7 +92,7 @@ function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]
   // Sidecar changes (new poster, edited episodes.json) leave media mtimes
   // alone but still require us to push fresh metadata into the DB; the
   // _dirtyDirs membership check propagates that signal from isDirChanged.
-  if (!force && !_dirtyDirs.has(dirname(filePath)) && _storedTimes.get(filePath) === mtime) return false
+  if (!force && !_forceRescan && !_dirtyDirs.has(dirname(filePath)) && _storedTimes.get(filePath) === mtime) return false
   upsertItem({ ...item, fileModified: mtime })
   _updatedCount++
   return true
@@ -470,7 +476,9 @@ function probeMovieIfNeeded(filePath: string, ffprobePath: string): void {
 }
 
 function scanMovies(rootDir: string, ffprobePath = ''): number {
-  if (!existsSync(rootDir)) return 0
+  // Category root not reachable this instant (transient TCC / USB / mount race).
+  // Preserve every stored row under it so orphan cleanup doesn't wipe the shelf.
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
 
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -571,7 +579,7 @@ function applyEpisodeMap(info: string, map: Record<string, string>): string {
 }
 
 function scanEpisodeCategory(rootDir: string, category: string): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
 
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -716,7 +724,7 @@ function scanExtrasFolder(dir: string, seriesTitle: string, poster: string | nul
 // ─── Music ─────────────────────────────────────────────────────────────────
 
 function scanMusic(rootDir: string, ffprobePath = ''): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
   // Each top-level folder is an album or playlist
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -775,7 +783,7 @@ function scanMusic(rootDir: string, ffprobePath = ''): number {
 
 
 function scanBooks(rootDir: string): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
 
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -821,7 +829,7 @@ function cleanMangaTitle(raw: string): string {
 }
 
 function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
   for (const series of readdirSync(rootDir, { withFileTypes: true })) {
     if (!series.isDirectory()) continue
@@ -861,7 +869,7 @@ function scanPcGames(rootDir: string): number {
     if (existsSync(rootDir)) preserveStoredPaths(rootDir)
     return 0
   }
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
   const hidden = listHiddenDirs(rootDir)
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
@@ -945,7 +953,7 @@ function findExe(dir: string): string | null {
 // ─── ROMs ───────────────────────────────────────────────────────────────────
 
 function scanRoms(rootDir: string): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
   for (const platformFolder of readdirSync(rootDir, { withFileTypes: true })) {
     if (!platformFolder.isDirectory()) continue
@@ -1032,7 +1040,7 @@ function scanRoms(rootDir: string): number {
 // ─── YouTube videos ──────────────────────────────────────────────────────────
 
 function scanYouTube(rootDir: string, ffprobePath = ''): number {
-  if (!existsSync(rootDir)) return 0
+  if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
 
   function scanVideoFile(filePath: string, playlist: string | null): void {
@@ -1080,7 +1088,7 @@ function scanYouTube(rootDir: string, ffprobePath = ''): number {
 
 // ─── Main entry ─────────────────────────────────────────────────────────────
 
-export function scanLibrary(root: string, ffprobePath = '', smart = false): { total: number; updated: number } {
+export function scanLibrary(root: string, ffprobePath = '', smart = false, force = false): { total: number; updated: number } {
   const m = (sub: string) => join(root, 'media', sub)
   const g = (sub: string) => join(root, 'games', sub)
 
@@ -1100,6 +1108,7 @@ export function scanLibrary(root: string, ffprobePath = '', smart = false): { to
     }
   }
   _smartMode        = smart
+  _forceRescan      = force
   _foundPaths       = new Set<string>()
   _updatedCount     = 0
   _categoryBytes    = new Map<string, number>()
@@ -1148,6 +1157,7 @@ export function scanLibrary(root: string, ffprobePath = '', smart = false): { to
   _storedDirTimes   = new Map()
   _storedDirFiles   = new Map()
   _smartMode        = false
+  _forceRescan      = false
   _foundPaths       = new Set()
   _updatedCount     = 0
   _categoryBytes    = new Map()

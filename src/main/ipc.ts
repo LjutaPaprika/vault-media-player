@@ -11,7 +11,7 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredFileTimes, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -221,9 +221,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (!label) throw new Error('Library drive label is not configured.')
     const root = resolveRootForScan(label)
     hideSystemFolders(root)
-    clearStoredFileTimes()
+    // Only the dir-mtime cache is cleared. The per-file mtimes stay — they are
+    // migrateRenamedPaths' match key, and the `force` flag below is what makes
+    // this a full re-upsert.
     clearStoredDirTimes()
-    const { total } = scanLibrary(root, getToolPath(root, 'ffprobe'))
+    const { total } = scanLibrary(root, getToolPath(root, 'ffprobe'), false, true)
     return { count: total }
   })
 

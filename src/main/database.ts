@@ -291,9 +291,14 @@ export function getDurationsForCategory(category: string): Record<string, number
   return out
 }
 
-export function clearStoredFileTimes(): void {
-  getDb().prepare('UPDATE media_items SET file_modified = 0').run()
-}
+// NOTE: there is deliberately no clearStoredFileTimes() any more. Zeroing
+// media_items.file_modified was how Force Rescan used to force every upsert,
+// but file_modified is also migrateRenamedPaths' match key — wiping it meant
+// orphans keyed `basename|0` could never match fresh rows keyed
+// `basename|<real mtime>`, so a Force Rescan carried across zero state and
+// deleteOrphanedEntries then deleted the whole library. Force Rescan now passes
+// `force` into scanLibrary, which bypasses the mtime skip for that run without
+// destroying the stored mtimes.
 
 export function clearStoredDirTimes(): void {
   getDb().prepare('DELETE FROM dir_mtimes').run()
@@ -322,11 +327,31 @@ export function getStoredFileTimes(): Map<string, number> {
   return new Map(rows.map((r) => [r.file_path, r.file_modified]))
 }
 
+/**
+ * A path's identity *within the library*, independent of drive root, path
+ * separator, and Unicode composition. Both `E:\media\tv\X.mkv` and
+ * `/Volumes/VAULT/media/tv/X.mkv` reduce to `/media/tv/X.mkv`.
+ *
+ * NFC normalization is load-bearing: macOS writes filenames decomposed
+ * (`o` + U+0304) while Windows writes them composed (U+014D). Same file, same
+ * bytes on disk, different bytes in the string — so without this, every path
+ * containing a decomposable character looks like a different file after a swap
+ * and gets orphan-deleted.
+ *
+ * Returns null for paths outside media/ and games/, which can't be identified
+ * this way and fall through to the rename heuristics.
+ */
+function libraryRelKey(p: string): string | null {
+  const fwd = p.replace(/\\/g, '/')
+  const m = /\/(media|games)\//.exec(fwd)
+  if (!m) return null
+  return fwd.slice(m.index).normalize('NFC')
+}
+
 // Same file renamed or moved on disk → its old DB row is about to become an
 // orphan and the new path was just inserted with no last_opened_at / tech_info.
-// Match orphans to new rows by (basename, file_modified) and carry per-file
-// state across. Run before deleteOrphanedEntries so the orphan row is then
-// cleaned up normally.
+// Match orphans to new rows and carry per-file state across. Run before
+// deleteOrphanedEntries so the orphan row is then cleaned up normally.
 export function migrateRenamedPaths(foundPaths: Set<string>, storedPaths: Set<string>): void {
   const db = getDb()
   const orphans = [...storedPaths].filter((p) => !foundPaths.has(p))
@@ -346,13 +371,22 @@ export function migrateRenamedPaths(foundPaths: Set<string>, storedPaths: Set<st
     .prepare(`SELECT file_path, file_modified FROM media_items WHERE file_path IN (${fresh.map(() => '?').join(',')})`)
     .all(...fresh) as { file_path: string; file_modified: number }[]
 
-  // Two indices: exact (basename + mtime) for the common rename case,
-  // and mtime-only as a fallback when basename changed (e.g. batch prefix
-  // rename like "Foo.mkv" → "E01 - Foo.mkv"). Mtime alone is reliable when
-  // unique across the orphan set.
+  // Three indices, tried in order of confidence:
+  //   rel   — library-relative path. Exact identity, not a heuristic. Catches
+  //           the drive-swap case where nothing moved but every path changed.
+  //   exact — (basename + mtime) for the common rename.
+  //   mtime — alone, when the basename also changed (e.g. batch prefix rename
+  //           like "Foo.mkv" → "E01 - Foo.mkv"). Reliable when unique.
+  const orphansByRel   = new Map<string, Row[]>()
   const orphansByExact = new Map<string, Row[]>()
   const orphansByMtime = new Map<number, Row[]>()
   for (const r of orphanRows) {
+    const relKey = libraryRelKey(r.file_path)
+    if (relKey) {
+      const relArr = orphansByRel.get(relKey) ?? []
+      relArr.push(r)
+      orphansByRel.set(relKey, relArr)
+    }
     const exactKey = `${basename(r.file_path)}|${r.file_modified}`
     const exactArr = orphansByExact.get(exactKey) ?? []
     exactArr.push(r)
@@ -363,24 +397,36 @@ export function migrateRenamedPaths(foundPaths: Set<string>, storedPaths: Set<st
   }
 
   const update = db.prepare('UPDATE media_items SET last_opened_at = ?, tech_info = COALESCE(?, tech_info) WHERE file_path = ?')
+  // One orphan can only be claimed once, across all three indices.
+  const consumed = new Set<string>()
+  const unclaimed = (rows: Row[] | undefined): Row[] | undefined =>
+    rows?.filter((r) => !consumed.has(r.file_path))
+
   db.transaction(() => {
     for (const f of freshRows) {
-      const exactKey = `${basename(f.file_path)}|${f.file_modified}`
       let matched: Row | undefined
-      const exactCandidates = orphansByExact.get(exactKey)
-      if (exactCandidates?.length === 1) {
-        matched = exactCandidates[0]
-      } else if (!exactCandidates) {
-        const mtimeCandidates = orphansByMtime.get(f.file_modified)
-        if (mtimeCandidates?.length === 1) matched = mtimeCandidates[0]
+
+      const relKey = libraryRelKey(f.file_path)
+      if (relKey) {
+        const relCandidates = unclaimed(orphansByRel.get(relKey))
+        if (relCandidates?.length === 1) matched = relCandidates[0]
       }
+
+      if (!matched) {
+        const exactKey = `${basename(f.file_path)}|${f.file_modified}`
+        const exactCandidates = unclaimed(orphansByExact.get(exactKey))
+        if (exactCandidates?.length === 1) {
+          matched = exactCandidates[0]
+        } else if (!exactCandidates?.length) {
+          const mtimeCandidates = unclaimed(orphansByMtime.get(f.file_modified))
+          if (mtimeCandidates?.length === 1) matched = mtimeCandidates[0]
+        }
+      }
+
       if (!matched) continue
+      consumed.add(matched.file_path)
       if (matched.last_opened_at === null && matched.tech_info === null) continue
       update.run(matched.last_opened_at, matched.tech_info, f.file_path)
-      // Consume the orphan from both indices so it can't be claimed twice
-      const consumedExact = `${basename(matched.file_path)}|${matched.file_modified}`
-      orphansByExact.delete(consumedExact)
-      orphansByMtime.delete(matched.file_modified)
     }
   })()
 }
@@ -471,7 +517,13 @@ export function rerootPaths(oldRoot: string, newRoot: string): void {
     .prepare('SELECT file_path, play_seconds FROM game_playtime')
     .all() as { file_path: string; play_seconds: number }[]
   const deletePlaytime = db.prepare('DELETE FROM game_playtime WHERE file_path = ?')
-  const insertPlaytime = db.prepare('INSERT OR REPLACE INTO game_playtime (file_path, play_seconds) VALUES (?, ?)')
+  // MAX, not REPLACE. If a session was ever recorded under an unrerooted path,
+  // rerooting it onto an existing row must not overwrite a larger accumulated
+  // total with a smaller stray one — that silently destroys hours of playtime.
+  const insertPlaytime = db.prepare(`
+    INSERT INTO game_playtime (file_path, play_seconds) VALUES (?, ?)
+    ON CONFLICT(file_path) DO UPDATE SET play_seconds = MAX(play_seconds, excluded.play_seconds)
+  `)
 
   db.transaction(() => {
     for (const row of mediaRows) {
