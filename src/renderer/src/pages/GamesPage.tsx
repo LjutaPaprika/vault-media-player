@@ -157,6 +157,7 @@ export default function GamesPage(): JSX.Element {
   const [query, setQuery]     = useState('')
   const [pending, setPending] = useState<PendingGame | null>(null)
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
+  const [launchError, setLaunchError] = useState<string | null>(null)
 
   useEffect(() => {
     window.api.system.getInfo().then(setSysInfo)
@@ -171,14 +172,28 @@ export default function GamesPage(): JSX.Element {
 
   function handleSelect(item: MediaCard): void {
     if (item.filePath && item.platform) {
+      setLaunchError(null)
       setPending({ filePath: item.filePath, platform: item.platform, title: item.title, playSeconds: item.playSeconds })
     }
   }
 
-  function handleLaunch(): void {
+  // The main process throws for anything it can't run here — a Windows .exe on
+  // macOS, an emulator with no build for this OS. The PC shelf is now indexed
+  // on every host, so that rejection is a normal thing for a user to hit and
+  // has to be shown rather than lost as an unhandled rejection.
+  async function handleLaunch(): Promise<void> {
     if (!pending) return
-    window.api.playback.launchGame(pending.filePath, pending.platform)
-    setPending(null)
+    setLaunchError(null)
+    try {
+      await window.api.playback.launchGame(pending.filePath, pending.platform)
+      setPending(null)
+    } catch (e) {
+      // ipcRenderer.invoke wraps the main-process error as
+      // "Error invoking remote method 'playback:launchGame': Error: <real msg>".
+      // Show only the part written for a human.
+      const raw = e instanceof Error ? e.message : String(e)
+      setLaunchError(raw.split(/Error:\s*/).pop()?.trim() || 'Launch failed.')
+    }
   }
 
   const filtered    = items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase()))
@@ -251,6 +266,13 @@ export default function GamesPage(): JSX.Element {
               <>
                 <div className={styles.divider} />
                 <div className={styles.warning}>{warning}</div>
+              </>
+            )}
+
+            {launchError && (
+              <>
+                <div className={styles.divider} />
+                <div className={styles.warning} style={{ color: 'var(--danger, #e05252)' }}>{launchError}</div>
               </>
             )}
 

@@ -113,12 +113,19 @@ function checkAndUpsert(filePath: string, item: Parameters<typeof upsertItem>[0]
 // file mtime into the dir slot, and the next scan would see stored != dirMtime
 // and mark the dir dirty again, every scan, forever.
 function isDirChanged(dirPath: string): boolean {
-  if (!_smartMode) return true
   try {
     const dirMtime = Math.floor(statSync(dirPath).mtimeMs)
-    const stored = _storedDirTimes.get(dirPath)
+    // A full scan has nothing to compare against — every directory is dirty by
+    // definition — but it still walks the files below, because the watermark it
+    // records is what the *next* smart scan trusts. Force Rescan wipes
+    // dir_mtimes and then runs full, so without this the table stayed empty and
+    // the next "Scan Library" degraded into a full walk. Seeding the watermark
+    // from the directory's mtime alone isn't enough either: a directory holding
+    // files the scanner doesn't index (posters, episodes.json, subtitles) that
+    // are newer than the directory itself would re-dirty on the next scan.
+    const stored = _smartMode ? _storedDirTimes.get(dirPath) : undefined
     let watermark = dirMtime
-    let dirty = stored === undefined || dirMtime > stored
+    let dirty = !_smartMode || stored === undefined || dirMtime > stored
 
     const onDiskNames = new Set<string>()
     for (const e of readdirSync(dirPath, { withFileTypes: true })) {
@@ -132,6 +139,24 @@ function isDirChanged(dirPath: string): boolean {
         if (stored !== undefined && fm > stored) dirty = true
       } catch { /* ignore stat failure */ }
     }
+
+    // Desync guard: the mtime cache remembers this directory but the DB holds
+    // no rows under it. The cache and the rows have drifted apart, so the
+    // "unchanged since last scan" answer is meaningless — re-index instead.
+    //
+    // This is the load-bearing fix for drive swaps. Directory mtimes survive a
+    // Mac↔Windows swap byte-identical (measured: 586/586 stored watermarks
+    // compare clean after a swap), so an mtime-only check finds *nothing*
+    // dirty and a regular scan re-indexes nothing at all. Any shelf whose rows
+    // were dropped — orphan-cleaned under the other OS's paths, or never
+    // indexed on that OS in the first place — then stays invisible no matter
+    // how many times you press Scan Library, and only a Force Rescan brings it
+    // back. It also covers the stale-root case: when rows still carry the other
+    // OS's paths, _storedDirFiles is keyed by those paths, so every directory
+    // looks row-less here, goes dirty, and gets re-indexed — which gives
+    // migrateRenamedPaths the fresh rows it needs to carry last_opened_at
+    // across before orphan cleanup runs.
+    if (!dirty && onDiskNames.size > 0 && !_storedDirFiles.has(dirPath)) dirty = true
 
     // Rename detection that survives stale dir mtimes (NTFS / exFAT don't bump
     // the parent dir mtime on rename-within-dir). If a file the DB knew about
@@ -861,14 +886,13 @@ function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): num
 // ─── PC Games ──────────────────────────────────────────────────────────────
 
 function scanPcGames(rootDir: string): number {
-  // PC games are Windows .exe binaries — not runnable on Mac/Linux without a
-  // compatibility layer. Skip the shelf entirely on non-Windows hosts, but
-  // preserve any PC-game rows already in the DB so orphan cleanup doesn't
-  // wipe them out when the drive gets scanned on a Mac and plugged back in.
-  if (process.platform !== 'win32') {
-    if (existsSync(rootDir)) preserveStoredPaths(rootDir)
-    return 0
-  }
+  // Indexed on every OS, Windows or not. This shelf used to be skipped outright
+  // on non-Windows hosts (rows merely preserved), which made the library's
+  // contents depend on which machine last scanned it: once the rows were gone,
+  // a Mac scan could never recreate them, and the shelf stayed empty until the
+  // drive next saw Windows. Cataloguing is not launching — findExe picks the
+  // same .exe on every host so the row is byte-identical after a reroot, and
+  // launchGame is what refuses to run a Windows binary on macOS.
   if (!existsSync(rootDir)) { preserveStoredPaths(rootDir); return 0 }
   let count = 0
   const hidden = listHiddenDirs(rootDir)
@@ -924,10 +948,16 @@ const NON_GAME_EXE_RE = /^(unins\d*|uninstall|setup|installer|redist|vcredist|dx
 function findExe(dir: string): string | null {
   const entries = readdirSync(dir).filter((f) => !isOsMetadata(f))
 
-  if (process.platform === 'win32') {
-    const exes = entries.filter((f) => extname(f).toLowerCase() === '.exe')
-    return exes.find((f) => !NON_GAME_EXE_RE.test(f)) ?? exes[0] ?? null
-  }
+  // The .exe wins on every host, not just Windows. games/pc holds Windows
+  // games; resolving to a host-specific binary instead (the inner Mach-O of a
+  // .app on macOS) would give one game two different file_paths depending on
+  // where it was scanned, and every drive swap would orphan-delete the shelf
+  // and reinsert it under the other name.
+  const exes = entries.filter((f) => extname(f).toLowerCase() === '.exe')
+  const exe = exes.find((f) => !NON_GAME_EXE_RE.test(f)) ?? exes[0]
+  if (exe) return exe
+
+  if (process.platform === 'win32') return null
 
   if (process.platform === 'darwin') {
     // .app bundles are directories — return the path to the inner binary so it can be spawned directly
@@ -1130,14 +1160,20 @@ export function scanLibrary(root: string, ffprobePath = '', smart = false, force
 
   // Carry last_opened_at / tech_info from renamed-or-moved files (matched by
   // basename + mtime) to their new path before orphan cleanup wipes them.
-  migrateRenamedPaths(_foundPaths, new Set(_storedTimes.keys()))
-  // Remove DB entries for files that no longer exist on disk
-  deleteOrphanedEntries(_foundPaths)
+  const relocated = migrateRenamedPaths(_foundPaths, new Set(_storedTimes.keys()))
+  // Remove DB entries for files that no longer exist on disk, plus the rows
+  // migrateRenamedPaths positively re-identified under a new path.
+  deleteOrphanedEntries(_foundPaths, relocated)
 
   const updated = _updatedCount
 
-  // Persist directory mtimes for smart scan
-  if (_smartMode) setStoredDirTimes(_storedDirTimes)
+  // Persist directory mtimes. Both scan modes now rebuild the cache: a smart
+  // scan updates the map it loaded, a full scan builds one from scratch (it
+  // starts empty and isDirChanged fills it per directory walked). Directories
+  // that weren't reached this run — missing category root, unreadable dir —
+  // simply drop out of the cache and read as unknown next time, which makes
+  // the next scan re-walk them.
+  setStoredDirTimes(_storedDirTimes)
 
   // Persist storage stats only during full scan (smart scan skips directories → incomplete bytes)
   if (!_smartMode) {

@@ -11,7 +11,7 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -52,6 +52,54 @@ function probeAudioMeta(filePath: string, ffprobePath: string): Promise<{ durati
 
 /** Cached drive root — findDriveByLabel runs execSync in a loop, so we only do it once per session. */
 let cachedLibraryRoot: string | null = null
+
+/**
+ * Resolve the Vault drive's current mount point.
+ *
+ * The volume label is the primary signal, but `findDriveByLabel` shells out to
+ * `vol` for all 26 drive letters and comes back null whenever a just-plugged
+ * USB volume is still enumerating. Every caller treated null as "no drive", so
+ * a slow enumeration silently skipped the startup reroot and left all 10k
+ * stored paths — and every poster_path — pointing at the other OS's mount
+ * point, which is what a coverless library after a Mac→PC swap actually is.
+ *
+ * probeDrive() finds the same drive by its `.vault` marker (on Windows by
+ * walking up from the running exe, which lives on the drive) and doesn't
+ * depend on shelling out at all, so it's the fallback. Label first, though:
+ * the cold-storage backup is a byte-for-byte copy and carries a `.vault`
+ * marker of its own, so on a Mac with both volumes mounted the marker alone
+ * could resolve to the backup.
+ */
+function resolveVaultRoot(): string | null {
+  const label = getConfig('libraryLabel')
+  const byLabel = label ? findDriveByLabel(label) : null
+  if (byLabel) return byLabel
+  // probeDrive() reports cwd in a dev build (there is no drive), so only trust
+  // it when packaged — otherwise a dev run would "resolve" the repo directory
+  // as the library root.
+  if (!app.isPackaged) return null
+  const probe = probeDrive()
+  return probe.ok ? probe.root : null
+}
+
+/**
+ * Bring stored absolute paths in line with where the drive is mounted *now*,
+ * then remember that root. Called once at startup, before any window exists,
+ * so the first render already reads correct paths — the reroot used to happen
+ * inside the `library:getConfig` handler, which meant it was skipped entirely
+ * whenever the label lookup came up empty, and the library rendered against
+ * the previous machine's paths until the user happened to run a scan.
+ */
+export function reconcileDriveRoot(): void {
+  // Never auto-reroot the dev DB at startup. A dev run against a plugged-in
+  // drive would otherwise rewrite ./dev-data's paths on launch.
+  if (!app.isPackaged) return
+  const root = resolveVaultRoot()
+  if (!root) return
+  const storedRoot = getConfig('driveRoot')
+  if (storedRoot && storedRoot !== root) rerootPaths(storedRoot, root)
+  setConfig('driveRoot', root)
+}
 
 /**
  * Append a timestamped line to <driveRoot>/app/logs/yt-dlp.log so YouTube download
@@ -178,10 +226,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // Returns the saved label AND resolves it to a path (or null if drive not found)
   ipcMain.handle('library:getConfig', () => {
     const label = getConfig('libraryLabel')
-    const resolvedPath = label ? findDriveByLabel(label) : null
-    // If the drive's mount point changed since last run (different PC, different
-    // letter, or Windows↔Mac swap), reroot stored paths now so posters resolve
-    // without requiring a manual scan.
+    const resolvedPath = resolveVaultRoot()
+    // Backstop for reconcileDriveRoot(), which already ran at startup. Still
+    // worth repeating here: this handler re-runs after library:setLabel, and a
+    // drive that lost a letter race at boot can resolve by the time the
+    // renderer asks.
     if (resolvedPath) {
       const storedRoot = getConfig('driveRoot')
       if (storedRoot && storedRoot !== resolvedPath) rerootPaths(storedRoot, resolvedPath)
@@ -199,7 +248,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // ─── Library scan ─────────────────────────────────────────────────────────
   function resolveRootForScan(label: string): string {
-    const root = findDriveByLabel(label)
+    const root = resolveVaultRoot()
     if (!root) throw new Error(`Library drive "${label}" not found. Is it plugged in?`)
     const storedRoot = getConfig('driveRoot')
     if (storedRoot && storedRoot !== root) rerootPaths(storedRoot, root)
@@ -425,10 +474,15 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // ─── Playback ─────────────────────────────────────────────────────────────
   function resolveLibraryRoot(): string {
     if (!cachedLibraryRoot) {
-      const label = getConfig('libraryLabel')
-      const resolved = label ? findDriveByLabel(label) : null
-      if (!resolved) console.error('[vault] Library drive not found — falling back to cwd. Playback may fail.')
-      cachedLibraryRoot = resolved ?? process.cwd()
+      const resolved = resolveVaultRoot()
+      // Only cache a real answer. Caching the cwd fallback would pin every
+      // emulator and mpv path for the rest of the session to a wrong root
+      // because of one unlucky lookup during drive enumeration.
+      if (!resolved) {
+        console.error('[vault] Library drive not found — falling back to cwd. Playback may fail.')
+        return process.cwd()
+      }
+      cachedLibraryRoot = resolved
     }
     return cachedLibraryRoot
   }

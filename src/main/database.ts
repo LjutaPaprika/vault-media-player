@@ -352,11 +352,16 @@ function libraryRelKey(p: string): string | null {
 // orphan and the new path was just inserted with no last_opened_at / tech_info.
 // Match orphans to new rows and carry per-file state across. Run before
 // deleteOrphanedEntries so the orphan row is then cleaned up normally.
-export function migrateRenamedPaths(foundPaths: Set<string>, storedPaths: Set<string>): void {
+export function migrateRenamedPaths(foundPaths: Set<string>, storedPaths: Set<string>): Set<string> {
   const db = getDb()
+  // Orphans re-identified by library-relative path — exact identity, not a
+  // heuristic. Returned so orphan cleanup can drop them without asking the
+  // filesystem: the same file was just indexed under a different string, so the
+  // old row is a duplicate by construction. See deleteOrphanedEntries.
+  const relocated = new Set<string>()
   const orphans = [...storedPaths].filter((p) => !foundPaths.has(p))
   const fresh = [...foundPaths].filter((p) => !storedPaths.has(p))
-  if (orphans.length === 0 || fresh.length === 0) return
+  if (orphans.length === 0 || fresh.length === 0) return relocated
 
   const basename = (p: string): string => {
     const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'))
@@ -409,7 +414,10 @@ export function migrateRenamedPaths(foundPaths: Set<string>, storedPaths: Set<st
       const relKey = libraryRelKey(f.file_path)
       if (relKey) {
         const relCandidates = unclaimed(orphansByRel.get(relKey))
-        if (relCandidates?.length === 1) matched = relCandidates[0]
+        if (relCandidates?.length === 1) {
+          matched = relCandidates[0]
+          relocated.add(matched.file_path)
+        }
       }
 
       if (!matched) {
@@ -429,9 +437,11 @@ export function migrateRenamedPaths(foundPaths: Set<string>, storedPaths: Set<st
       update.run(matched.last_opened_at, matched.tech_info, f.file_path)
     }
   })()
+
+  return relocated
 }
 
-export function deleteOrphanedEntries(foundPaths: Set<string>): void {
+export function deleteOrphanedEntries(foundPaths: Set<string>, relocated = new Set<string>()): void {
   const all = getDb()
     .prepare('SELECT file_path FROM media_items')
     .all() as { file_path: string }[]
@@ -448,6 +458,14 @@ export function deleteOrphanedEntries(foundPaths: Set<string>): void {
   // being gone from disk is what allows the delete, not any scan flag.
   const confirmed: string[] = []
   for (const p of candidates) {
+    // migrateRenamedPaths matched this row to a freshly indexed one by exact
+    // library-relative path, and already moved its watch state across. Don't
+    // ask the filesystem — the file does still exist, just under the string the
+    // fresh row holds, so statSync would "confirm" it and strand a duplicate.
+    // That happens whenever the same name has two spellings: a decomposed
+    // filename from a macOS readdir against its composed form, or a path under
+    // the previous mount point on a platform that still resolves it.
+    if (relocated.has(p)) { confirmed.push(p); continue }
     try {
       statSync(p)
       // File exists → scan missed it, keep the row.
@@ -485,15 +503,40 @@ export function rerootPaths(oldRoot: string, newRoot: string): void {
     const normP = fwd(p)
     if (!normP.startsWith(normOld)) return p
     let result = normNew + normP.slice(normOld.length)
-    if (process.platform === 'win32') result = result.replace(/\//g, '\\')
+    if (process.platform === 'win32') {
+      // Composed form, and only on Windows. macOS hands back decomposed
+      // filenames from readdir (`o` + U+0304), so a path stored by a Mac scan
+      // does not match the same file's on-disk name here and won't open. NFC is
+      // what Windows has on disk — verified against this drive, where all 16
+      // decomposed rows resolve once composed.
+      //
+      // Not applied in the other direction: macOS resolves both forms, so
+      // leaving Mac-side paths as readdir produced them avoids asserting
+      // anything about exFAT normalization behaviour there.
+      result = result.replace(/\//g, '\\').normalize('NFC')
+    }
     return result
   }
 
+  // Key on `id`, never on `rowid`. media_items declares `id INTEGER PRIMARY KEY`,
+  // which makes `id` an *alias* for the rowid — so SQLite hands back the column
+  // from `SELECT rowid, ...` under the name "id", and better-sqlite3's row
+  // object has no `rowid` key at all. `row.rowid` was therefore undefined,
+  // `WHERE rowid = ?` matched nothing, and this whole function silently updated
+  // zero media rows while quietly succeeding.
+  //
+  // That is the bug behind a coverless library after a drive swap: dir_mtimes,
+  // favourites and game_playtime (keyed by path, not rowid) rerooted fine while
+  // every file_path and poster_path stayed pointing at the previous machine's
+  // mount point. The next scan then found no stored path under the new root,
+  // treated the entire library as orphaned, and rebuilt it from disk — which is
+  // why a swap churned every row's id and why shelves the smart scan skipped
+  // (nothing re-indexed, stale rows still deleted) disappeared outright.
   const mediaRows = db
-    .prepare('SELECT rowid, file_path, poster_path FROM media_items')
-    .all() as { rowid: number; file_path: string; poster_path: string | null }[]
+    .prepare('SELECT id, file_path, poster_path FROM media_items')
+    .all() as { id: number; file_path: string; poster_path: string | null }[]
   const updateMedia = db.prepare(
-    'UPDATE media_items SET file_path = ?, poster_path = ? WHERE rowid = ?'
+    'UPDATE media_items SET file_path = ?, poster_path = ? WHERE id = ?'
   )
 
   // Favourites are keyed by absolute album path — must be rerooted too or they
@@ -525,17 +568,28 @@ export function rerootPaths(oldRoot: string, newRoot: string): void {
     ON CONFLICT(file_path) DO UPDATE SET play_seconds = MAX(play_seconds, excluded.play_seconds)
   `)
 
+  // file_path and album_path are UNIQUE. A rewrite can therefore collide with a
+  // row that already holds the target path — most plausibly the composed and
+  // decomposed spellings of one filename both being present after a round trip.
+  // Skip just that row instead of letting the exception abort the transaction
+  // and leave the entire library unrerooted; the loser is a duplicate of a row
+  // that already exists, and the next scan retires it through
+  // migrateRenamedPaths → deleteOrphanedEntries with its watch state carried
+  // over.
+  let collisions = 0
   db.transaction(() => {
     for (const row of mediaRows) {
       const nf = reroot(row.file_path)
       const np = reroot(row.poster_path)
       if (nf !== row.file_path || np !== row.poster_path) {
-        updateMedia.run(nf, np, row.rowid)
+        try { updateMedia.run(nf, np, row.id) } catch { collisions++ }
       }
     }
     for (const row of favRows) {
       const na = reroot(row.album_path)
-      if (na && na !== row.album_path) updateFav.run(na, row.album_path)
+      if (na && na !== row.album_path) {
+        try { updateFav.run(na, row.album_path) } catch { collisions++ }
+      }
     }
     for (const row of dirRows) {
       const nd = reroot(row.dir_path)
@@ -552,6 +606,10 @@ export function rerootPaths(oldRoot: string, newRoot: string): void {
       }
     }
   })()
+
+  if (collisions > 0) {
+    console.warn(`[db] reroot skipped ${collisions} row(s) whose new path already exists — the next scan will retire the duplicates`)
+  }
 }
 
 export function setLastOpened(filePath: string): void {

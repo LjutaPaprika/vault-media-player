@@ -13,7 +13,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { stream: true, bypassCSP: true, supportFetchAPI: true } },
   { scheme: 'cbz',   privileges: { bypassCSP: true, supportFetchAPI: true } }
 ])
-import { registerIpcHandlers } from './ipc'
+import { registerIpcHandlers, reconcileDriveRoot } from './ipc'
 import { closeDb, probeDrive } from './database'
 
 if (app.isPackaged && process.platform === 'win32') {
@@ -85,6 +85,12 @@ function guardVaultDrive(): boolean {
 
 app.whenReady().then(() => {
   if (!guardVaultDrive()) { app.quit(); return }
+
+  // The drive may be mounted somewhere new since the last run — a different
+  // letter, or the other OS entirely. Rewrite stored paths to match before the
+  // window exists, so the first render already resolves posters and media
+  // instead of showing a coverless library until someone runs a scan.
+  try { reconcileDriveRoot() } catch (e) { console.error('[vault] drive-root reconcile failed:', e) }
 
   // Serve local media files via media:// with proper Range/206 support so seeking works.
   protocol.handle('media', (request) => {
