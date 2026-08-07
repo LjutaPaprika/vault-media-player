@@ -529,7 +529,24 @@ function scanMovies(rootDir: string, ffprobePath = ''): number {
     }
 
     const movieDir = join(rootDir, entry.name)
-    if (!isDirChanged(movieDir)) { preserveStoredPaths(movieDir); count++; continue }
+    if (!isDirChanged(movieDir)) {
+      preserveStoredPaths(movieDir)
+      count++
+      // An unchanged movie folder still has to descend into its extras
+      // subfolders. Their rows live in directories of their own, and bailing
+      // outright here was the only reason a missing featurette row could never
+      // come back without a Force Rescan — isDirChanged(movieDir) looks only at
+      // files directly in movieDir, so a subfolder can never make it dirty.
+      // Gated on the folder actually having subdirectories, so the common flat
+      // movie folder pays nothing beyond one readdir, and the movie.json read
+      // and poster probe happen only when there is something to descend into.
+      if (hasSubdirectory(movieDir)) {
+        const cleanMeta = tryReadJson(join(movieDir, 'movie.json'))
+        const cleanTitle = (cleanMeta.title as string) ?? titleFromFilename(entry.name)
+        scanMovieExtras(movieDir, cleanTitle, findPosterStrict(movieDir).path)
+      }
+      continue
+    }
     const meta = tryReadJson(join(movieDir, 'movie.json'))
     const posterRes = findPosterStrict(movieDir)
     const firstVideo = findFirstMovieVideo(movieDir)
@@ -557,6 +574,16 @@ function scanMovies(rootDir: string, ffprobePath = ''): number {
     }
   }
   return count
+}
+
+// Cheap probe: does this directory contain any subdirectory at all? Used to
+// decide whether an unchanged movie folder is worth descending into for extras.
+// Most movie folders are flat, so this keeps the common case at one readdir.
+function hasSubdirectory(dir: string): boolean {
+  try {
+    for (const e of readdirSync(dir, { withFileTypes: true })) if (e.isDirectory()) return true
+  } catch { /* unreadable → nothing to descend into */ }
+  return false
 }
 
 // Find the first video in a movie folder, ignoring extras subfolders
@@ -859,15 +886,27 @@ function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): num
   for (const series of readdirSync(rootDir, { withFileTypes: true })) {
     if (!series.isDirectory()) continue
     const seriesDir = join(rootDir, series.name)
-    if (!isDirChanged(seriesDir)) { preserveStoredPaths(seriesDir); count++; continue }
+    // Walk the directory and short-circuit per file rather than skipping the
+    // whole series when it looks unchanged (the scanEpisodes pattern). A
+    // whole-directory skip cannot notice a chapter whose row is missing while
+    // its siblings' rows survive — the desync guard in isDirChanged only fires
+    // when a directory has *no* rows — so those chapters stayed invisible until
+    // a Force Rescan. Per file, a chapter with no stored mtime falls through to
+    // checkAndUpsert and is re-indexed. Crucially this leaves the dirty
+    // predicate untouched, so re-indexing never marks the directory changed and
+    // there is no way to form the re-dirty loop the watermark logic guards.
+    const dirChanged = isDirChanged(seriesDir)
     let files: string[] = []
     try { files = readdirSync(seriesDir).filter(f => MANGA_EXTS.has(extname(f).toLowerCase())).sort() }
     catch { preserveStoredPaths(seriesDir); continue }
     if (!files.length) { preserveStoredPaths(seriesDir); continue }
     _mangaSeriesCount++
-    const posterRes = findPosterStrict(seriesDir)
+    // Resolved lazily: an unchanged series must not pay a poster probe every scan.
+    let posterRes: ReturnType<typeof findPosterStrict> | null = null
     for (const file of files) {
       const filePath = join(seriesDir, file)
+      if (!dirChanged && _storedTimes.has(filePath)) { _foundPaths.add(filePath); count++; continue }
+      if (!posterRes) posterRes = findPosterStrict(seriesDir)
       // Single file in folder → use folder name as title; multiple → use filename
       const title = files.length === 1 ? series.name : cleanMangaTitle(basename(file, extname(file)))
       checkAndUpsert(filePath, {
@@ -1097,16 +1136,21 @@ function scanYouTube(rootDir: string, ffprobePath = ''): number {
   for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       const playlistDir = join(rootDir, entry.name)
-      if (!isDirChanged(playlistDir)) { preserveStoredPaths(playlistDir); continue }
+      // Per-file short-circuit instead of a whole-playlist skip — see scanManga
+      // for why. The check lives here rather than inside scanVideoFile because
+      // that function probes four sidecar poster candidates per video; on an
+      // unchanged playlist those stats would be pure waste.
+      const dirChanged = isDirChanged(playlistDir)
       // Wrap the inner readdir so a transient EPERM/EIO on one playlist doesn't
       // throw out of scanYouTube (which would abort the whole scanLibrary run
       // and skip every category that runs after this one). Preserve the
       // playlist's stored rows in that case.
       try {
         for (const file of readdirSync(playlistDir, { withFileTypes: true })) {
-          if (file.isFile() && VIDEO_EXTS.has(extname(file.name).toLowerCase())) {
-            scanVideoFile(join(playlistDir, file.name), entry.name)
-          }
+          if (!file.isFile() || !VIDEO_EXTS.has(extname(file.name).toLowerCase())) continue
+          const filePath = join(playlistDir, file.name)
+          if (!dirChanged && _storedTimes.has(filePath)) { _foundPaths.add(filePath); count++; continue }
+          scanVideoFile(filePath, entry.name)
         }
       } catch { preserveStoredPaths(playlistDir) }
     } else if (entry.isFile() && VIDEO_EXTS.has(extname(entry.name).toLowerCase())) {
