@@ -905,6 +905,18 @@ function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): num
     let posterRes: ReturnType<typeof findPosterStrict> | null = null
     for (const file of files) {
       const filePath = join(seriesDir, file)
+      // TODO(macos): this is an exact string lookup. macOS readdir returns NFD
+      // (decomposed) filenames while every stored path is NFC (composed) — as of
+      // 2026-08-07 all 10,125 rows are NFC, none NFD. So on a Mac the accented
+      // filenames miss here, fall through, and re-upsert on EVERY scan, meaning
+      // `updated` never settles to 0 there. Churn only, not loss: upsertItem
+      // preserves last_opened_at and migrateRenamedPaths already handles the
+      // decomposed-vs-composed case. Affects 7 paths in the categories changed in
+      // 1.24.9 (Frieren ch.88/90, Bleach ch.91/253/379, one Sunshine featurette)
+      // plus 9 that already existed in tv/anime via the same pattern below.
+      // Fix by normalizing BOTH sides of the comparison — never by renaming files
+      // on disk or rewriting stored paths, either of which would make a drive
+      // swap churn every row. Verify: two smart scans on macOS, second must be 0.
       if (!dirChanged && _storedTimes.has(filePath)) { _foundPaths.add(filePath); count++; continue }
       if (!posterRes) posterRes = findPosterStrict(seriesDir)
       // Single file in folder → use folder name as title; multiple → use filename
@@ -1149,6 +1161,8 @@ function scanYouTube(rootDir: string, ffprobePath = ''): number {
         for (const file of readdirSync(playlistDir, { withFileTypes: true })) {
           if (!file.isFile() || !VIDEO_EXTS.has(extname(file.name).toLowerCase())) continue
           const filePath = join(playlistDir, file.name)
+          // TODO(macos): same NFC/NFD exact-match caveat as scanManga — see the
+          // full note there. Fix both call sites together.
           if (!dirChanged && _storedTimes.has(filePath)) { _foundPaths.add(filePath); count++; continue }
           scanVideoFile(filePath, entry.name)
         }
