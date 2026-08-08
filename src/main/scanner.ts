@@ -131,7 +131,14 @@ function isDirChanged(dirPath: string): boolean {
     for (const e of readdirSync(dirPath, { withFileTypes: true })) {
       if (!e.isFile()) continue
       if (isOsMetadata(e.name)) continue
-      onDiskNames.add(e.name)
+      // NFC-normalize the readdir'd name so the has()-check against `expected`
+      // (below) is composition-agnostic. macOS readdir returns NFD; DB-derived
+      // basenames in _storedDirFiles are NFC. Without this, any directory that
+      // holds even one accented file has its rename-detection loop conclude
+      // "expected name missing from disk" — bytewise NFC vs NFD miss — and
+      // gets marked dirty on every scan, forcing every file in the dir back
+      // through checkAndUpsert. Windows readdir is already NFC → no-op.
+      onDiskNames.add(e.name.normalize('NFC'))
       const fp = join(dirPath, e.name)
       try {
         const fm = Math.floor(statSync(fp).mtimeMs)
@@ -694,8 +701,14 @@ function scanEpisodes(
     // Smart-scan short-circuit only applies to files we already know about.
     // Unknown files (e.g. renamed via Windows, which doesn't bump parent dir
     // mtime) must fall through to full processing or they'd never get indexed.
-    const epPathEarly = join(dir, entry.name)
-    if (!dirChanged && _storedTimes.has(epPathEarly)) { _foundPaths.add(epPathEarly); count++; continue }
+    //
+    // NFC-normalize the joined path so the has() check, the _foundPaths.add()
+    // and the eventual upsert all key by the same form. macOS readdir returns
+    // NFD (decomposed) filenames while every stored path is NFC; without this
+    // the accented filenames miss here on Mac and re-upsert every scan.
+    // Windows readdir already returns NFC, so this is a no-op there.
+    const epPath = join(dir, entry.name).normalize('NFC')
+    if (!dirChanged && _storedTimes.has(epPath)) { _foundPaths.add(epPath); count++; continue }
 
     let episodeInfo: string
     if (subSeriesLabel) {
@@ -713,7 +726,6 @@ function scanEpisodes(
       episodeInfo = parseEpisodeInfo(entry.name, season) ?? titleFromFilename(entry.name)
       if (episodeMap) episodeInfo = applyEpisodeMap(episodeInfo, episodeMap)
     }
-    const epPath = join(dir, entry.name)
     checkAndUpsert(epPath, {
       title: seriesTitle,
       year,
@@ -904,19 +916,12 @@ function scanManga(rootDir: string, category: 'manga' | 'comics' = 'manga'): num
     // Resolved lazily: an unchanged series must not pay a poster probe every scan.
     let posterRes: ReturnType<typeof findPosterStrict> | null = null
     for (const file of files) {
-      const filePath = join(seriesDir, file)
-      // TODO(macos): this is an exact string lookup. macOS readdir returns NFD
-      // (decomposed) filenames while every stored path is NFC (composed) — as of
-      // 2026-08-07 all 10,125 rows are NFC, none NFD. So on a Mac the accented
-      // filenames miss here, fall through, and re-upsert on EVERY scan, meaning
-      // `updated` never settles to 0 there. Churn only, not loss: upsertItem
-      // preserves last_opened_at and migrateRenamedPaths already handles the
-      // decomposed-vs-composed case. Affects 7 paths in the categories changed in
-      // 1.24.9 (Frieren ch.88/90, Bleach ch.91/253/379, one Sunshine featurette)
-      // plus 9 that already existed in tv/anime via the same pattern below.
-      // Fix by normalizing BOTH sides of the comparison — never by renaming files
-      // on disk or rewriting stored paths, either of which would make a drive
-      // swap churn every row. Verify: two smart scans on macOS, second must be 0.
+      // NFC-normalize so has()/add()/upsert all key by the same form as the DB
+      // (all-NFC). macOS readdir returns NFD, so without this the accented
+      // filenames (e.g. Frieren ch.88 Solitär, Bleach ch.91) would miss the
+      // short-circuit and re-upsert every scan. Windows readdir is already NFC
+      // → no-op. See scanEpisodes for the full rationale.
+      const filePath = join(seriesDir, file).normalize('NFC')
       if (!dirChanged && _storedTimes.has(filePath)) { _foundPaths.add(filePath); count++; continue }
       if (!posterRes) posterRes = findPosterStrict(seriesDir)
       // Single file in folder → use folder name as title; multiple → use filename
@@ -1160,9 +1165,9 @@ function scanYouTube(rootDir: string, ffprobePath = ''): number {
       try {
         for (const file of readdirSync(playlistDir, { withFileTypes: true })) {
           if (!file.isFile() || !VIDEO_EXTS.has(extname(file.name).toLowerCase())) continue
-          const filePath = join(playlistDir, file.name)
-          // TODO(macos): same NFC/NFD exact-match caveat as scanManga — see the
-          // full note there. Fix both call sites together.
+          // NFC-normalize — see scanEpisodes for the full rationale. No-op on
+          // Windows, essential on macOS.
+          const filePath = join(playlistDir, file.name).normalize('NFC')
           if (!dirChanged && _storedTimes.has(filePath)) { _foundPaths.add(filePath); count++; continue }
           scanVideoFile(filePath, entry.name)
         }
@@ -1192,7 +1197,12 @@ export function scanLibrary(root: string, ffprobePath = '', smart = false, force
       const d = dirname(fp)
       let set = _storedDirFiles.get(d)
       if (!set) { set = new Set(); _storedDirFiles.set(d, set) }
-      set.add(basename(fp))
+      // NFC-normalize so this set matches isDirChanged's onDiskNames (also NFC-
+      // normalized). Most stored paths are NFC already, but any NFD stragglers
+      // (e.g. rows written before the reroot's Windows-side NFC pass) would
+      // otherwise fail the rename-detection has()-check and mark their whole
+      // directory dirty every scan. No-op for the ASCII majority.
+      set.add(basename(fp).normalize('NFC'))
     }
   }
   _smartMode        = smart
