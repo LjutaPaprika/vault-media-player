@@ -213,6 +213,55 @@ function classifyYtDlpError(stderr: string): 'age-restricted' | 'bot-check' | 'u
   return 'other'
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** Distinct from any real yt-dlp exit code, so a spawn failure is never mistaken for one. */
+const SPAWN_FAILED = -999
+
+// Music download retry/pacing. YouTube's media endpoint intermittently rejects
+// requests that carry no PO Token — measured 2026-08-17 at roughly a 50%
+// per-attempt success rate on the same track with identical arguments. Each
+// fresh extraction lands on a different edge server, so re-spawning yt-dlp is
+// what re-rolls the outcome; retrying the HTTP fetch alone would re-hit the same
+// rejecting URL. Separately, a back-to-back batch of 3 went 0/3 while spaced
+// single downloads went 7/12, so consecutive tracks are given breathing room.
+const MUSIC_MAX_ATTEMPTS = 3
+const MUSIC_RETRY_BACKOFF_MS = [3000, 8000]
+const MUSIC_TRACK_GAP_MS = 3000
+
+/**
+ * Is this yt-dlp stderr worth another attempt? Deliberately narrow — only the
+ * transient failures a fresh extraction can clear, chiefly the bare 403 on the
+ * media endpoint that PO Token enforcement produces. Permanent conditions are
+ * excluded first so no amount of retrying is wasted on them.
+ *
+ * Kept separate from classifyYtDlpError on purpose: adding a kind there would
+ * widen the shared DownloadProgress.errorKind union and change what the video
+ * page renders. This predicate is music-only and touches nothing else.
+ */
+function isRetryableYtDlpError(stderr: string): boolean {
+  // Weigh only fatal ERROR lines. yt-dlp's WARNING output routinely mentions
+  // "HTTP Error 403" while explaining why it skipped a client (the mweb GVS
+  // PO Token notice does exactly that), so matching the whole blob would retry
+  // runs that actually failed for a permanent reason.
+  const s = stderr
+    .split(/\r?\n/)
+    .filter((l) => l.trim().toLowerCase().startsWith('error:'))
+    .join('\n')
+    .toLowerCase()
+  if (!s) return false
+  if (s.includes('video unavailable') || s.includes('private video') ||
+      s.includes('members-only') || s.includes('removed')) return false
+  return s.includes('http error 403') ||
+         s.includes('http error 429') ||
+         s.includes('unable to download video data') ||
+         s.includes('read timed out') ||
+         s.includes('connection reset') ||
+         s.includes('temporary failure')
+}
+
 export function registerIpcHandlers(win: BrowserWindow): void {
   // ─── Window controls ──────────────────────────────────────────────────────
   ipcMain.handle('window:minimize', () => win.minimize())
@@ -364,7 +413,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('library:getStats',        () => getStats())
   ipcMain.handle('library:getItems',        (_event, category: string) => getItems(category))
   ipcMain.handle('library:getItem',         (_event, id: number) => getItem(id))
-  ipcMain.handle('library:getExtras',       (_event, seriesTitle: string) => getExtras(seriesTitle))
+  ipcMain.handle('library:getExtras',       (_event, seriesTitle: string, parentCategory?: string) => getExtras(seriesTitle, parentCategory))
   ipcMain.handle('library:getTechInfo',     (_event, filePath: string) => getTechInfo(filePath))
   ipcMain.handle('library:getDurations',    (_event, category: string) => getDurationsForCategory(category))
   ipcMain.handle('library:getEpubInfo',     (_event, filePath: string) => getEpubInfo(filePath))
@@ -553,15 +602,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const ytdlpPath = getToolPath(root, 'yt-dlp')
     logYtDlp(root, 'music', `start: ${urls.length} track(s), tool=${ytdlpPath}${ytdlpPath === 'yt-dlp' ? ' (PATH lookup — bundled yt-dlp.exe missing on drive!)' : ''}`)
 
-    for (let i = 0; i < urls.length; i++) {
-      const { url, title, artist: trackArtist } = urls[i]
-      const trackNum = (nextTrack + i).toString().padStart(2, '0')
-      const suffix = trackArtist ? ` - ${trackArtist}` : ''
-      const outTemplate = join(albumPath, `${trackNum} - ${title}${suffix}.%(ext)s`)
-
-      win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'downloading', percent: 0 })
-
-      await new Promise<void>((resolve) => {
+    // One attempt at one track. Resolves rather than rejects so the retry loop
+    // below can inspect the outcome — same shape as the video handler's runAttempt.
+    const runAttempt = (i: number, url: string, outTemplate: string): Promise<{ code: number; stderr: string }> => {
+      return new Promise((resolve) => {
         const proc = spawn(ytdlpPath, [
           '-x', '--audio-format', 'mp3', '--audio-quality', '0',
           '--newline', '--no-playlist', '--no-update', '-o', outTemplate, url
@@ -586,27 +630,63 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         proc.stderr.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString() })
 
         proc.on('error', (err) => {
+          // Spawn failure (yt-dlp.exe missing, EACCES) — a retry cannot fix it.
           console.error('[yt-dlp music] spawn error', url, err)
           logYtDlp(root, 'music', `spawn error for ${url}: ${String(err)}`)
-          win.webContents.send('download:progress', {
-            index: i, total: urls.length, url, status: 'error', percent: 0, error: String(err)
-          })
-          resolve()
+          resolve({ code: SPAWN_FAILED, stderr: String(err) })
         })
 
-        proc.on('close', (code) => {
-          if (code !== 0) {
-            console.error(`[yt-dlp music] exit ${code} for ${url}\n${stderrBuf.trim()}`)
-            logYtDlp(root, 'music', `exit ${code} for ${url}\n${stderrBuf.trim()}`)
-          } else {
-            logYtDlp(root, 'music', `ok: ${url}`)
-          }
-          win.webContents.send('download:progress', {
-            index: i, total: urls.length, url, status: code === 0 ? 'done' : 'error', percent: 100,
-            error: code === 0 ? undefined : stderrBuf.trim().split('\n').slice(-3).join(' | ')
-          })
-          resolve()
-        })
+        proc.on('close', (code) => resolve({ code: code ?? -1, stderr: stderrBuf }))
+      })
+    }
+
+    for (let i = 0; i < urls.length; i++) {
+      const { url, title, artist: trackArtist } = urls[i]
+      const trackNum = (nextTrack + i).toString().padStart(2, '0')
+      const suffix = trackArtist ? ` - ${trackArtist}` : ''
+      const outTemplate = join(albumPath, `${trackNum} - ${title}${suffix}.%(ext)s`)
+
+      // Breathing room between consecutive tracks (never before the first).
+      if (i > 0) await sleep(MUSIC_TRACK_GAP_MS)
+
+      let code = SPAWN_FAILED
+      let stderr = ''
+      let attemptsUsed = 0
+      for (let attempt = 1; attempt <= MUSIC_MAX_ATTEMPTS; attempt++) {
+        attemptsUsed = attempt
+        // Logged per attempt, not per batch, so each attempt's duration and
+        // outcome are recoverable from the log afterwards.
+        logYtDlp(root, 'music', `track ${i + 1}/${urls.length} attempt ${attempt}/${MUSIC_MAX_ATTEMPTS}: ${url}`)
+        // Re-sent on every attempt so the row resets from any partial progress
+        // the failed attempt had already reported.
+        win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'downloading', percent: 0 })
+
+        ;({ code, stderr } = await runAttempt(i, url, outTemplate))
+
+        if (code === 0) break
+        if (code === SPAWN_FAILED || !isRetryableYtDlpError(stderr)) break
+        if (attempt === MUSIC_MAX_ATTEMPTS) break
+
+        const waitMs = MUSIC_RETRY_BACKOFF_MS[attempt - 1] ?? MUSIC_RETRY_BACKOFF_MS[MUSIC_RETRY_BACKOFF_MS.length - 1]
+        logYtDlp(root, 'music', `transient failure, retrying in ${waitMs / 1000}s: ${url}`)
+        await sleep(waitMs)
+      }
+
+      // Terminal status only — intermediate failures never reach the renderer,
+      // so a track that recovers on retry looks like a clean success to the user.
+      if (code === 0) {
+        logYtDlp(root, 'music', `ok: ${url} (attempt ${attemptsUsed}/${MUSIC_MAX_ATTEMPTS})`)
+      } else if (code === SPAWN_FAILED) {
+        // runAttempt already logged the underlying spawn error in full. Don't
+        // echo the internal sentinel as if it were a yt-dlp exit code.
+        logYtDlp(root, 'music', `giving up, could not run yt-dlp: ${url}`)
+      } else {
+        console.error(`[yt-dlp music] exit ${code} for ${url}\n${stderr.trim()}`)
+        logYtDlp(root, 'music', `exit ${code} for ${url} after ${attemptsUsed} attempt(s)\n${stderr.trim()}`)
+      }
+      win.webContents.send('download:progress', {
+        index: i, total: urls.length, url, status: code === 0 ? 'done' : 'error', percent: 100,
+        error: code === 0 ? undefined : stderr.trim().split('\n').slice(-3).join(' | ')
       })
     }
 

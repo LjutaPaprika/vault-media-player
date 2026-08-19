@@ -102,7 +102,8 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, ini
   const extrasRef = useRef<MediaItem[]>([])
 
   useEffect(() => {
-    window.api.library.getExtras(title).then(setExtras)
+    // Scoped to 'movies' so a same-titled series doesn't pull in its extras.
+    window.api.library.getExtras(title, 'movies').then(setExtras)
     window.api.library.getTechInfo(filePath).then(setTechInfo)
   }, [title, filePath])
 

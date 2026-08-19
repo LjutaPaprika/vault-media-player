@@ -677,8 +677,26 @@ export function getItem(id: number): object | null {
   )
 }
 
-export function getExtras(seriesTitle: string): object[] {
-  return getDb()
+/**
+ * Extras are linked to their parent by title alone: scanExtrasFolder stores the
+ * parent's title in the `genre` column and this reads it back. That key carries
+ * no category, so a movie and a series sharing a title (e.g. "The Gentlemen")
+ * each pulled in the other's extras — the series page listed featurettes that
+ * physically live under media/movies/.
+ *
+ * `parentCategory` narrows the result to extras that actually sit under
+ * media/<parentCategory>/, which is the real parent relationship. Optional, so
+ * existing callers that omit it keep the old (unscoped) behaviour.
+ *
+ * Filtered in JS rather than SQL because stored paths use the host's separator —
+ * backslash on Windows, forward slash on macOS — and matching both inside a LIKE
+ * is needlessly fragile. These result sets are a handful of rows.
+ *
+ * Known limit: two movies sharing a title still collide, since they share a
+ * category. Fixing that needs a real parent key (schema migration + rescan).
+ */
+export function getExtras(seriesTitle: string, parentCategory?: string): object[] {
+  const rows = getDb()
     .prepare(
       `SELECT m.id, m.title, m.year, m.category, m.file_path as filePath,
               m.poster_path as posterPath, m.description, m.genre, m.platform, m.executable,
@@ -687,7 +705,11 @@ export function getExtras(seriesTitle: string): object[] {
        LEFT JOIN game_playtime gp ON gp.file_path = m.file_path
        WHERE m.category = 'extras' AND m.genre = ? ORDER BY m.title ASC`
     )
-    .all(seriesTitle)
+    .all(seriesTitle) as { filePath: string }[]
+
+  if (!parentCategory) return rows
+  const needle = `/media/${parentCategory.toLowerCase()}/`
+  return rows.filter((r) => r.filePath.replace(/\\/g, '/').toLowerCase().includes(needle))
 }
 
 export function getFavourites(): string[] {

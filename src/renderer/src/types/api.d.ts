@@ -182,7 +182,7 @@ interface Window {
       getItems: (category: string) => Promise<MediaItem[]>
       getItem: (id: number) => Promise<MediaItem | null>
       readImage: (filePath: string) => Promise<string | null>
-      getExtras: (seriesTitle: string) => Promise<MediaItem[]>
+      getExtras: (seriesTitle: string, parentCategory?: string) => Promise<MediaItem[]>
       getAlbumTracks: (firstTrackPath: string) => Promise<{ path: string; title: string; artist?: string; trackNumber: number; duration: number; artPath: string | null }[]>
       getTechInfo:     (filePath: string) => Promise<MediaTechInfo | null>
       getDurations:    (category: string) => Promise<Record<string, number>>

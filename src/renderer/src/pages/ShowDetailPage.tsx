@@ -204,7 +204,9 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
         window.api.library.getTechInfo(eps[0].filePath).then(setTechInfo)
       }
     })
-    window.api.library.getExtras(seriesTitle).then(setExtras)
+    // Scoped to this show's category so a same-titled movie doesn't pull in its
+    // extras (e.g. "The Gentlemen" exists as both a film and a series).
+    window.api.library.getExtras(seriesTitle, category).then(setExtras)
     window.api.library.getWatchOrder(seriesTitle, category).then(setWatchOrder)
     window.api.library.getWatchGuide(seriesTitle, category).then(setWatchGuide)
   }, [seriesTitle])

@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('api', {
     getItems: (category: string) => ipcRenderer.invoke('library:getItems', category),
     getItem: (id: number) => ipcRenderer.invoke('library:getItem', id),
     readImage: (filePath: string) => ipcRenderer.invoke('library:readImage', filePath),
-    getExtras: (seriesTitle: string) => ipcRenderer.invoke('library:getExtras', seriesTitle),
+    getExtras: (seriesTitle: string, parentCategory?: string) => ipcRenderer.invoke('library:getExtras', seriesTitle, parentCategory),
     getTechInfo:     (filePath: string) => ipcRenderer.invoke('library:getTechInfo', filePath),
     getDurations:    (category: string) => ipcRenderer.invoke('library:getDurations', category),
     getEpubInfo:     (filePath: string) => ipcRenderer.invoke('library:getEpubInfo', filePath),
