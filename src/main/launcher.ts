@@ -5,6 +5,7 @@ import { getBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings } from './keyboardBindings'
 import { buildSkipSegmentLua } from './skipSegmentLua'
 import { startPlaytimeSession } from './playtime'
+import { ensureSaveLinks } from './saveLinks'
 
 // ─── Emulator map ─────────────────────────────────────────────────────────────
 
@@ -296,6 +297,11 @@ export function openAudio(filePath: string, driveRoot: string): void {
 }
 
 export function launchGame(filePath: string, platform: string, driveRoot: string): void {
+  // Backstop: startup already reconciles these, but a game launched on a PC
+  // where the app was opened before the drive settled would otherwise write its
+  // save to the host. Idempotent and cheap - a few lstat calls.
+  try { ensureSaveLinks(driveRoot) } catch { /* never block a launch */ }
+
   if (platform === 'pc') {
     if (process.platform !== 'win32') {
       throw new Error('PC games are Windows-only and cannot be launched on this OS.')

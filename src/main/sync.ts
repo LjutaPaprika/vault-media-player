@@ -92,8 +92,25 @@ export function findDriveByLabel(label: string): string | null {
   return null
 }
 
-/** Folders on the vault drive that belong to the app, not the media library. Never synced to cold storage. */
-const SYSTEM_FOLDERS = ['players']
+/**
+ * Folders that belong to the app rather than the media library, and are never
+ * synced to cold storage. `players` is bundled tooling (mpv, ffmpeg, yt-dlp,
+ * deno) — re-downloadable, and large enough that copying it wastes the cold
+ * drive's space.
+ *
+ * Deliberately NOT extended to `saves`: game save data is the least replaceable
+ * thing on the drive, so it must keep reaching cold storage. Anything added
+ * here stops being backed up, on both the robocopy and rsync paths.
+ */
+const SYNC_EXCLUDED_FOLDERS = ['players']
+
+/**
+ * Folders hidden from Explorer so browsing the drive shows media, not plumbing.
+ * A superset of the sync exclusions — `saves` and `_save-backups` hold live save
+ * data and its dated snapshots, which should stay out of sight but must still be
+ * backed up, which is why hiding and sync-exclusion are separate lists.
+ */
+const HIDDEN_FOLDERS = ['players', 'saves', '_save-backups']
 
 /**
  * OS-generated files that shouldn't propagate between drives.
@@ -106,7 +123,7 @@ const SYSTEM_FILE_GLOBS = ['.DS_Store', '._*', 'Thumbs.db', 'desktop.ini']
 /** Mark non-media folders on the drive as hidden so Explorer doesn't show them. Windows-only. */
 export function hideSystemFolders(driveRoot: string): void {
   if (process.platform !== 'win32') return
-  for (const folder of SYSTEM_FOLDERS) {
+  for (const folder of HIDDEN_FOLDERS) {
     const fullPath = join(driveRoot, folder)
     if (existsSync(fullPath)) {
       try {
@@ -165,7 +182,7 @@ export function runAdditiveSync(
       // this only fixes how filenames render in our stdout pipe.
       const args = [
         sourceRoot, destRoot, '/E', '/R:3', '/W:5', '/NP', '/NDL', '/FFT',
-        '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYSTEM_FOLDERS,
+        '/XD', '$RECYCLE.BIN', 'System Volume Information', ...SYNC_EXCLUDED_FOLDERS,
         '/XF', ...SYSTEM_FILE_GLOBS
       ]
       // Double any trailing backslashes before wrapping in quotes. CommandLineToArgvW
@@ -213,7 +230,7 @@ export function runAdditiveSync(
     // Avoid --info=progress2 / --human-readable: macOS's built-in /usr/bin/rsync is
     // openrsync (2.6.9-compat) and rejects those flags. -a + --modify-window is the
     // common subset that works on both openrsync and GNU rsync.
-    const folderExcludes = SYSTEM_FOLDERS.flatMap((f) => ['--exclude', `${f}/`])
+    const folderExcludes = SYNC_EXCLUDED_FOLDERS.flatMap((f) => ['--exclude', `${f}/`])
     const fileExcludes   = SYSTEM_FILE_GLOBS.flatMap((g) => ['--exclude', g])
     const child = spawn('rsync', ['-a', '--modify-window=2', ...folderExcludes, ...fileExcludes, `${sourceRoot}/`, `${destRoot}/`], { stdio: ['ignore', 'pipe', 'pipe'] })
 
