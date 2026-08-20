@@ -113,6 +113,14 @@ const SYNC_EXCLUDED_FOLDERS = ['players']
 const HIDDEN_FOLDERS = ['players', 'saves', '_save-backups']
 
 /**
+ * Loose files at the drive root that are plumbing rather than content.
+ * `setup-saves.cmd` recreates the save junctions on a PC that has never seen
+ * the drive; the app does that itself at startup, so the script is a fallback
+ * and doesn't need to sit in plain view. Hidden files still run normally.
+ */
+const HIDDEN_FILES = ['setup-saves.cmd']
+
+/**
  * OS-generated files that shouldn't propagate between drives.
  * `.DS_Store` and `._*` are macOS Finder metadata; `Thumbs.db` and `desktop.ini`
  * are Windows Explorer. Without excludes, the drive accumulates the other OS's
@@ -120,15 +128,19 @@ const HIDDEN_FOLDERS = ['players', 'saves', '_save-backups']
  */
 const SYSTEM_FILE_GLOBS = ['.DS_Store', '._*', 'Thumbs.db', 'desktop.ini']
 
-/** Mark non-media folders on the drive as hidden so Explorer doesn't show them. Windows-only. */
-export function hideSystemFolders(driveRoot: string): void {
+/**
+ * Mark the drive's plumbing — app folders and loose helper files — as hidden so
+ * browsing the drive shows media, not machinery. Windows-only; the attribute
+ * doesn't travel with the files, so this re-applies on whichever PC runs it.
+ */
+export function hideSystemPaths(driveRoot: string): void {
   if (process.platform !== 'win32') return
-  for (const folder of HIDDEN_FOLDERS) {
-    const fullPath = join(driveRoot, folder)
+  for (const name of [...HIDDEN_FOLDERS, ...HIDDEN_FILES]) {
+    const fullPath = join(driveRoot, name)
     if (existsSync(fullPath)) {
       try {
         execSync(`attrib +h "${fullPath}"`, { stdio: 'ignore' })
-      } catch { /* folder may already be hidden */ }
+      } catch { /* may already be hidden, or locked by another process */ }
     }
   }
 }

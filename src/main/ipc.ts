@@ -16,7 +16,7 @@ import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
-import { findDriveByLabel, hideSystemFolders, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
+import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings, setKeyboardBindings, resetKeyboardBindings, type KeyboardBinding } from './keyboardBindings'
@@ -309,7 +309,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const label = getConfig('libraryLabel')
     if (!label) throw new Error('Library drive label is not configured.')
     const root = resolveRootForScan(label)
-    hideSystemFolders(root)
+    hideSystemPaths(root)
     const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'), true)
     return { count: updated }
   })
@@ -318,7 +318,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const label = getConfig('libraryLabel')
     if (!label) throw new Error('Library drive label is not configured.')
     const root = resolveRootForScan(label)
-    hideSystemFolders(root)
+    hideSystemPaths(root)
     // Only the dir-mtime cache is cleared. The per-file mtimes stay — they are
     // migrateRenamedPaths' match key, and the `force` flag below is what makes
     // this a full re-upsert.

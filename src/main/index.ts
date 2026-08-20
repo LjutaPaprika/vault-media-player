@@ -16,6 +16,7 @@ protocol.registerSchemesAsPrivileged([
 import { registerIpcHandlers, reconcileDriveRoot } from './ipc'
 import { closeDb, probeDrive } from './database'
 import { ensureSaveLinks } from './saveLinks'
+import { hideSystemPaths } from './sync'
 
 if (app.isPackaged && process.platform === 'win32') {
   spawnSync('attrib', ['-h', '-s', dirname(app.getPath('exe'))], { shell: true })
@@ -98,8 +99,14 @@ app.whenReady().then(() => {
   // starts writing progress to C:\ again. Best-effort: never block startup.
   try {
     const probe = probeDrive()
-    if (probe.ok && probe.root) ensureSaveLinks(probe.root)
-  } catch (e) { console.error('[vault] save-link setup failed:', e) }
+    if (probe.ok && probe.root) {
+      ensureSaveLinks(probe.root)
+      // Also here, not just on scan: the hidden attribute doesn't travel with
+      // the files, so a drive opened on a new PC shows its plumbing at the root
+      // until something re-applies it.
+      hideSystemPaths(probe.root)
+    }
+  } catch (e) { console.error('[vault] drive setup failed:', e) }
 
   // Serve local media files via media:// with proper Range/206 support so seeking works.
   protocol.handle('media', (request) => {
