@@ -44,6 +44,19 @@ if (!dbPath || !outPath) {
 if (!fs.existsSync(dbPath)) { console.error(`no such database: ${dbPath}`); process.exit(1) }
 
 const db = new Database(dbPath, { readonly: true })
+
+// Older databases predate the game_playtime table (added in 1.24.2, which moved
+// play_seconds out of media_items so it would survive orphan cleanup) and can
+// predate favourites entirely. Recovering marks from an archived copy is a
+// primary use of this tool, so read whatever schema is actually present rather
+// than assuming the current one.
+const tables = new Set(
+  db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name)
+)
+const hasCol = (t, c) => {
+  try { return db.prepare(`PRAGMA table_info(${t})`).all().some((r) => r.name === c) } catch { return false }
+}
+
 const out = { exportedAt: new Date().toISOString(), sourceDb: path.resolve(dbPath), items: [], playtime: [], favourites: [], skipped: [] }
 
 for (const r of db.prepare(
@@ -56,20 +69,30 @@ for (const r of db.prepare(
   out.items.push({ k, title: r.title, category: r.category, genre: r.genre, lastOpenedAt: r.last_opened_at })
 }
 
-for (const r of db.prepare('SELECT file_path, play_seconds FROM game_playtime WHERE play_seconds > 0').all()) {
+const ptRows = tables.has('game_playtime')
+  ? db.prepare('SELECT file_path, play_seconds FROM game_playtime WHERE play_seconds > 0').all()
+  : hasCol('media_items', 'play_seconds')
+    ? db.prepare('SELECT file_path, play_seconds FROM media_items WHERE play_seconds > 0').all()
+    : []
+for (const r of ptRows) {
   const k = relKey(r.file_path)
   if (!k) { out.skipped.push(r.file_path); continue }
   out.playtime.push({ k, seconds: r.play_seconds })
 }
 
-for (const r of db.prepare('SELECT album_path FROM favourites').all()) {
+const favRows = tables.has('favourites') ? db.prepare('SELECT album_path FROM favourites').all() : []
+for (const r of favRows) {
   const k = relKey(r.album_path)
   if (!k) { out.skipped.push(r.album_path); continue }
   out.favourites.push({ k })
 }
 
 db.close()
-fs.mkdirSync(path.dirname(path.resolve(outPath)), { recursive: true })
+// Only create the parent when it's actually missing — mkdir on an existing
+// drive root (F:\) fails with EPERM, and writing state to a drive root is the
+// normal case here.
+const outDir = path.dirname(path.resolve(outPath))
+if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
 fs.writeFileSync(outPath, JSON.stringify(out, null, 1))
 
 const marked = out.items.filter((i) => i.lastOpenedAt !== null).length
