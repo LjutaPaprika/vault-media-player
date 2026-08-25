@@ -109,8 +109,18 @@ const SYNC_EXCLUDED_FOLDERS = ['players']
  * A superset of the sync exclusions — `saves` and `_save-backups` hold live save
  * data and its dated snapshots, which should stay out of sight but must still be
  * backed up, which is why hiding and sync-exclusion are separate lists.
+ *
+ * The hidden attribute lives in the volume's directory entry, so setting it once
+ * mostly sticks. Listing a folder here is what makes it *stay* hidden: startup
+ * re-applies the attribute, so a folder recreated by a rebuild, or copied by a
+ * tool that drops attributes, is re-hidden on the next launch rather than
+ * silently reappearing in the drive root.
+ *
+ * `data` holds library.db and save-links.json, `temp` is scratch space, and
+ * `_source_archives` holds the original game installers — all plumbing, none of
+ * it content, and none of it meant to be browsed.
  */
-const HIDDEN_FOLDERS = ['players', 'saves', '_save-backups']
+const HIDDEN_FOLDERS = ['players', 'saves', '_save-backups', 'data', 'temp', '_source_archives']
 
 /**
  * Loose files at the drive root that are plumbing rather than content.
