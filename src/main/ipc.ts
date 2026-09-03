@@ -1,5 +1,6 @@
 import { app, ipcMain, BrowserWindow, shell, protocol, session } from 'electron'
 import { readFileSync, existsSync, statSync, readdirSync, writeFileSync, mkdirSync, appendFileSync, unlinkSync } from 'fs'
+import { promises as fsp } from 'fs'
 import type { Cookie } from 'electron'
 import { extname, dirname, join, basename } from 'path'
 import { spawn, spawnSync } from 'child_process'
@@ -512,12 +513,70 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   })
 
   // ─── Image loading ────────────────────────────────────────────────────────
-  ipcMain.handle('library:readImage', (_event, filePath: string) => {
-    if (!filePath || !existsSync(filePath)) return null
+  // Every poster on a shelf resolves through here — 240+ concurrent calls when
+  // the movies page mounts. Two properties matter:
+  //
+  // 1. It must not block. readFileSync stalls the main process for the whole
+  //    read, and while it does, NO other IPC is serviced — scroll handlers,
+  //    navigation, everything queues behind it. On a USB drive that has spun
+  //    down, one read can cost seconds. fs.promises keeps the loop free.
+  //
+  // 2. It must not re-read. A shelf revisit, a re-render, or scrolling back up
+  //    re-requests posters already decoded. Caching the finished data URI turns
+  //    those into map lookups.
+  //
+  // The cache is bounded by BYTES, not entry count: posters range from 40 KB to
+  // 4 MB, so a fixed entry count would let a handful of large ones dominate
+  // memory. Insertion order gives LRU-ish eviction — re-reading a poster after
+  // eviction costs one async read, which is the same as never caching it.
+  const IMAGE_CACHE_MAX_BYTES = 64 * 1024 * 1024
+  const imageCache = new Map<string, string>()
+  let imageCacheBytes = 0
+
+  ipcMain.handle('library:readImage', async (_event, filePath: string) => {
+    if (!filePath) return null
+
+    const hit = imageCache.get(filePath)
+    if (hit !== undefined) {
+      // Refresh recency: delete + re-set moves this key to the end of the
+      // insertion order, so the eviction loop below reaches it last.
+      imageCache.delete(filePath)
+      imageCache.set(filePath, hit)
+      return hit
+    }
+
     const ext = extname(filePath).toLowerCase().replace('.', '')
     const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
-    const data = readFileSync(filePath).toString('base64')
-    return `data:${mime};base64,${data}`
+
+    let buf: Buffer
+    try {
+      buf = await fsp.readFile(filePath)
+    } catch {
+      // Missing, unreadable, or the drive went away mid-scroll. Returning null
+      // lets the renderer fall back to its placeholder instead of throwing.
+      return null
+    }
+
+    const uri = `data:${mime};base64,${buf.toString('base64')}`
+
+    // Never cache a single poster large enough to evict everything else.
+    if (uri.length < IMAGE_CACHE_MAX_BYTES / 4) {
+      imageCache.set(filePath, uri)
+      imageCacheBytes += uri.length
+      while (imageCacheBytes > IMAGE_CACHE_MAX_BYTES && imageCache.size > 1) {
+        const oldest = imageCache.keys().next().value as string
+        imageCacheBytes -= imageCache.get(oldest)!.length
+        imageCache.delete(oldest)
+      }
+    }
+    return uri
+  })
+
+  // A rescan can replace poster files underneath us; drop the cache so the next
+  // request re-reads from disk rather than serving a stale image.
+  ipcMain.on('library:invalidateImageCache', () => {
+    imageCache.clear()
+    imageCacheBytes = 0
   })
 
   // ─── Playback ─────────────────────────────────────────────────────────────
