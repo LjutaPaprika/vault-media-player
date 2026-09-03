@@ -12,11 +12,12 @@ const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.o
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
 let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, pruneThumbs, thumbStats } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
+import { warmThumbs } from './thumbnails'
 import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
@@ -306,6 +307,25 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return root
   }
 
+  // After a scan, generate any missing thumbnails in the background so the first
+  // visit to a shelf paints from cache rather than resizing as the user scrolls.
+  // Deliberately not awaited: the scan result should return immediately, and
+  // warmThumbs yields between images so this cannot stall the UI.
+  function warmThumbsInBackground(): void {
+    const paths = getAllPosterPaths()
+    const pruned = pruneThumbs(new Set(paths))
+    void warmThumbs(paths)
+      .then(({ created, cached, failed }) => {
+        const { count, bytes } = thumbStats()
+        console.log(
+          `[vault] thumbnails: ${created} created, ${cached} already cached, ${failed} failed` +
+            `${pruned ? `, ${pruned} pruned` : ''} — cache now ${count} items, ` +
+            `${(bytes / 1048576).toFixed(1)} MB`
+        )
+      })
+      .catch((e) => console.error('[vault] thumbnail warm failed:', e))
+  }
+
   ipcMain.handle('library:scan', () => {
     const label = getConfig('libraryLabel')
     if (!label) throw new Error('Library drive label is not configured.')
@@ -313,6 +333,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     hideSystemPaths(root)
     clearImageCache()
     const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'), true)
+    warmThumbsInBackground()
     return { count: updated }
   })
 
@@ -327,6 +348,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     // this a full re-upsert.
     clearStoredDirTimes()
     const { total } = scanLibrary(root, getToolPath(root, 'ffprobe'), false, true)
+    warmThumbsInBackground()
     return { count: total }
   })
 

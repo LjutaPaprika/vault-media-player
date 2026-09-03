@@ -163,6 +163,21 @@ function getDb(): Database.Database {
       file_path    TEXT PRIMARY KEY,
       play_seconds INTEGER NOT NULL DEFAULT 0
     );
+
+    -- Downscaled shelf artwork, stored as BLOBs rather than loose files. The
+    -- library drive is exFAT with 2 MB allocation units, so ~400 thumbs of
+    -- ~30 KB each would burn ~800 MB of clusters to hold ~10 MB of data.
+    -- SQLite packs them into its own pages instead.
+    --
+    -- source_mtime is the invalidation key: replace a poster on disk and the
+    -- mtime stops matching, so the next request regenerates rather than
+    -- serving the old artwork forever.
+    CREATE TABLE IF NOT EXISTS thumbnails (
+      source_path  TEXT PRIMARY KEY,
+      source_mtime INTEGER NOT NULL,
+      width        INTEGER NOT NULL,
+      data         BLOB    NOT NULL
+    );
   `)
 
   // One-time cleanup: superseded by the dir_mtimes table
@@ -855,4 +870,60 @@ export function closeDb(): void {
     db.close()
     db = null
   }
+}
+
+// --- Thumbnails -------------------------------------------------------------
+
+export interface CachedThumb {
+  data: Buffer
+  width: number
+}
+
+/**
+ * Return a cached thumbnail, but only if it is still valid for its source.
+ *
+ * Validity is source mtime plus requested width: a re-encoded poster or a
+ * change to the target width both make the stored bytes wrong, and both are
+ * cheaper to detect here than to notice visually later.
+ */
+export function getThumb(sourcePath: string, mtime: number, width: number): CachedThumb | null {
+  const row = getDb()
+    .prepare('SELECT data, width, source_mtime FROM thumbnails WHERE source_path = ?')
+    .get(sourcePath) as { data: Buffer; width: number; source_mtime: number } | undefined
+  if (!row) return null
+  if (row.source_mtime !== mtime || row.width !== width) return null
+  return { data: row.data, width: row.width }
+}
+
+export function putThumb(sourcePath: string, mtime: number, width: number, data: Buffer): void {
+  getDb()
+    .prepare(
+      'INSERT OR REPLACE INTO thumbnails (source_path, source_mtime, width, data) VALUES (?, ?, ?, ?)'
+    )
+    .run(sourcePath, mtime, width, data)
+}
+
+/** Drop thumbnails whose source artwork is no longer part of the library. */
+export function pruneThumbs(keepPaths: Set<string>): number {
+  const db = getDb()
+  const rows = db.prepare('SELECT source_path FROM thumbnails').all() as { source_path: string }[]
+  const gone = rows.filter((r) => !keepPaths.has(r.source_path)).map((r) => r.source_path)
+  if (!gone.length) return 0
+  const del = db.prepare('DELETE FROM thumbnails WHERE source_path = ?')
+  db.transaction((paths: string[]) => { for (const q of paths) del.run(q) })(gone)
+  return gone.length
+}
+
+export function thumbStats(): { count: number; bytes: number } {
+  return getDb()
+    .prepare('SELECT COUNT(*) AS count, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM thumbnails')
+    .get() as { count: number; bytes: number }
+}
+
+/** Every distinct poster path in the library, for thumbnail pre-generation. */
+export function getAllPosterPaths(): string[] {
+  const rows = getDb()
+    .prepare("SELECT DISTINCT poster_path FROM media_items WHERE poster_path IS NOT NULL AND poster_path <> ''")
+    .all() as { poster_path: string }[]
+  return rows.map((r) => r.poster_path)
 }
