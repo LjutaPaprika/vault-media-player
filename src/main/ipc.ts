@@ -311,6 +311,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (!label) throw new Error('Library drive label is not configured.')
     const root = resolveRootForScan(label)
     hideSystemPaths(root)
+    clearImageCache()
     const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'), true)
     return { count: updated }
   })
@@ -320,6 +321,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (!label) throw new Error('Library drive label is not configured.')
     const root = resolveRootForScan(label)
     hideSystemPaths(root)
+    clearImageCache()
     // Only the dir-mtime cache is cleared. The per-file mtimes stay — they are
     // migrateRenamedPaths' match key, and the `force` flag below is what makes
     // this a full re-upsert.
@@ -513,23 +515,20 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   })
 
   // ─── Image loading ────────────────────────────────────────────────────────
-  // Every poster on a shelf resolves through here — 240+ concurrent calls when
-  // the movies page mounts. Two properties matter:
+  // Serves single images to the renderer as data URIs: album art for the player
+  // bar and the album detail page. Shelf posters do NOT come through here — they
+  // load straight from disk over media:// (see PosterImage.tsx), because holding
+  // 240 base64 strings alive cost ~125 MB of JS heap and the GC pauses that came
+  // with it froze scrolling.
   //
-  // 1. It must not block. readFileSync stalls the main process for the whole
-  //    read, and while it does, NO other IPC is serviced — scroll handlers,
-  //    navigation, everything queues behind it. On a USB drive that has spun
-  //    down, one read can cost seconds. fs.promises keeps the loop free.
+  // Still async rather than readFileSync: the main process is single-threaded,
+  // and a blocking read stalls every other IPC behind it. On a USB drive that
+  // has spun down that is seconds, not milliseconds.
   //
-  // 2. It must not re-read. A shelf revisit, a re-render, or scrolling back up
-  //    re-requests posters already decoded. Caching the finished data URI turns
-  //    those into map lookups.
-  //
-  // The cache is bounded by BYTES, not entry count: posters range from 40 KB to
-  // 4 MB, so a fixed entry count would let a handful of large ones dominate
-  // memory. Insertion order gives LRU-ish eviction — re-reading a poster after
-  // eviction costs one async read, which is the same as never caching it.
-  const IMAGE_CACHE_MAX_BYTES = 64 * 1024 * 1024
+  // Bounded by BYTES rather than entry count, since art ranges from a few KB to
+  // several MB and a fixed count would let large files dominate. Insertion order
+  // gives LRU-ish eviction; re-reading after eviction costs one async read.
+  const IMAGE_CACHE_MAX_BYTES = 16 * 1024 * 1024
   const imageCache = new Map<string, string>()
   let imageCacheBytes = 0
 
@@ -572,12 +571,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return uri
   })
 
-  // A rescan can replace poster files underneath us; drop the cache so the next
+  // A rescan can replace artwork underneath us; drop the cache so the next
   // request re-reads from disk rather than serving a stale image.
-  ipcMain.on('library:invalidateImageCache', () => {
+  function clearImageCache(): void {
     imageCache.clear()
     imageCacheBytes = 0
-  })
+  }
 
   // ─── Playback ─────────────────────────────────────────────────────────────
   function resolveLibraryRoot(): string {

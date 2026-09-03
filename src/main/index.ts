@@ -150,14 +150,17 @@ app.whenReady().then(() => {
       }
 
       const webStream = Readable.toWeb(createReadStream(filePath)) as ReadableStream
-      return new Response(webStream, {
-        status: 200,
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': String(size),
-          'Accept-Ranges': 'bytes'
-        }
-      })
+      const headers: Record<string, string> = {
+        'Content-Type': contentType,
+        'Content-Length': String(size),
+        'Accept-Ranges': 'bytes'
+      }
+      // Posters are fetched by <img> and re-requested every time a shelf is
+      // revisited. Telling Chromium it may reuse them keeps scrolling back to
+      // the top from hitting the drive again. Scoped to images so audio and
+      // video keep their existing streaming behaviour untouched.
+      if (contentType.startsWith('image/')) headers['Cache-Control'] = 'private, max-age=3600'
+      return new Response(webStream, { status: 200, headers })
     } catch {
       return new Response(null, { status: 500 })
     }
