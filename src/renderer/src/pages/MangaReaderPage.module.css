@@ -56,6 +56,15 @@
   gap: 2px;
 }
 
+/* Wrapper for each page. Holds the same width as the image so an unloaded
+   page reserves the right amount of scroll height via its aspect-ratio, then
+   collapses to the image's true height once it loads. */
+.pageSlot {
+  width: 100%;
+  max-width: 900px;
+  background: var(--bg-elevated);
+}
+
 .page {
   width: 100%;
   max-width: 900px;

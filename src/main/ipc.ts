@@ -5,13 +5,38 @@ import type { Cookie } from 'electron'
 import { extname, dirname, join, basename } from 'path'
 import { spawn, spawnSync } from 'child_process'
 import { cpus, totalmem, tmpdir } from 'os'
+import { createHash } from 'crypto'
 import AdmZip from 'adm-zip'
 
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.opus', '.wma'])
 
-// In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
+// In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol.
+//
+// Keyed by a token derived from the file path and mtime rather than a single
+// global, for two reasons. The old scheme addressed pages as cbz://p/<index>,
+// so page 0 of every volume shared one URL; that forced Cache-Control: no-store,
+// because caching would have served the wrong page. Scrolling back through a
+// volume then re-decompressed every page it passed. A token makes each URL
+// identify one page of one volume, so responses can be cached, and reopening a
+// volume reuses whatever Chromium still holds.
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
-let cbzEntries: AdmZip.IZipEntry[] | null = null
+
+interface OpenCbz {
+  entries: AdmZip.IZipEntry[]
+  /** Decompressed pages, most-recently-used last. Bounded by bytes. */
+  pageCache: Map<number, Buffer>
+  pageCacheBytes: number
+}
+
+// Two volumes: the one being read, and the previous one, so paging back to the
+// end of the last chapter does not re-index its archive. Manga pages are large
+// (this library averages 4.7 MB a page in places) so this is deliberately small.
+const MAX_OPEN_CBZ = 2
+// A single Berserk volume is ~889 MB decompressed, so caching whole volumes is
+// out of the question. This holds a working set around the reader's position.
+const CBZ_PAGE_CACHE_BYTES = 96 * 1024 * 1024
+
+const openCbzFiles = new Map<string, OpenCbz>()
 import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, pruneThumbs, thumbStats } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
@@ -1113,16 +1138,58 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // ─── CBZ Reader ────────────────────────────────────────────────────────────
 
   // Serve individual pages directly from the in-memory ZIP — no disk writes, no blocking
-  protocol.handle('cbz', (request) => {
+  /** Decompress one page without blocking the main process. */
+  function readPage(open: OpenCbz, index: number): Promise<Buffer> {
+    const hit = open.pageCache.get(index)
+    if (hit) {
+      // Refresh recency so the eviction loop reaches this page last.
+      open.pageCache.delete(index)
+      open.pageCache.set(index, hit)
+      return Promise.resolve(hit)
+    }
+    return new Promise((resolve, reject) => {
+      // getData() inflates synchronously and costs ~14 ms on this library's
+      // larger pages. With every page of a volume requested at once that was
+      // seconds of blocked main process, stalling scroll and input alike.
+      open.entries[index].getDataAsync((data, err) => {
+        if (err || !data) return reject(new Error(err || 'empty page'))
+        open.pageCache.set(index, data)
+        open.pageCacheBytes += data.length
+        while (open.pageCacheBytes > CBZ_PAGE_CACHE_BYTES && open.pageCache.size > 1) {
+          const oldest = open.pageCache.keys().next().value as number
+          open.pageCacheBytes -= open.pageCache.get(oldest)!.length
+          open.pageCache.delete(oldest)
+        }
+        resolve(data)
+      })
+    })
+  }
+
+  protocol.handle('cbz', async (request) => {
     try {
-      const index = parseInt(new URL(request.url).pathname.replace(/^\//, ''), 10)
-      if (!cbzEntries || isNaN(index) || index >= cbzEntries.length) {
+      // cbz://<token>/<index> — the token identifies one opened volume.
+      const url = new URL(request.url)
+      const token = url.hostname
+      const index = parseInt(url.pathname.replace(/^\//, ''), 10)
+      const open = openCbzFiles.get(token)
+      if (!open || isNaN(index) || index < 0 || index >= open.entries.length) {
         return new Response(null, { status: 404 })
       }
-      const entry = cbzEntries[index]
+
+      const entry = open.entries[index]
       const ext = entry.name.split('.').pop()?.toLowerCase() ?? 'jpg'
       const mime = (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : `image/${ext}`
-      return new Response(entry.getData(), { headers: { 'Content-Type': mime, 'Cache-Control': 'no-store' } })
+
+      const data = await readPage(open, index)
+      return new Response(data, {
+        headers: {
+          'Content-Type': mime,
+          'Content-Length': String(data.length),
+          // Safe to cache now that the token pins the URL to one volume at one
+          // mtime: a different or edited file yields a different token.
+          'Cache-Control': 'private, max-age=3600'
+        }
+      })
     } catch {
       return new Response(null, { status: 500 })
     }
@@ -1290,19 +1357,41 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('manga:openCbz', (_event, filePath: string): string[] => {
     try {
+      // Token covers path AND mtime, so re-exporting a chapter invalidates the
+      // URLs rather than serving the previous pages from Chromium's cache.
+      let mtime = 0
+      try { mtime = Math.floor(statSync(filePath).mtimeMs) } catch { /* keep 0 */ }
+      const token = createHash('sha1').update(`${filePath}:${mtime}`).digest('hex').slice(0, 16)
+
+      const existing = openCbzFiles.get(token)
+      if (existing) {
+        // Same volume reopened: keep the decompressed pages we already hold.
+        openCbzFiles.delete(token)
+        openCbzFiles.set(token, existing)
+        return existing.entries.map((_, i) => `cbz://${token}/${i}`)
+      }
+
       const zip = new AdmZip(filePath)
-      cbzEntries = zip.getEntries()
-        .filter(e => !e.isDirectory && IMAGE_RE.test(e.name))
+      const entries = zip.getEntries()
+        .filter((e) => !e.isDirectory && IMAGE_RE.test(e.name))
         .sort((a, b) => a.entryName.localeCompare(b.entryName, undefined, { numeric: true }))
-      return cbzEntries.map((_, i) => `cbz://p/${i}`)
+
+      openCbzFiles.set(token, { entries, pageCache: new Map(), pageCacheBytes: 0 })
+      // Drop the least recently opened volume; these hold real memory.
+      while (openCbzFiles.size > MAX_OPEN_CBZ) {
+        const oldest = openCbzFiles.keys().next().value as string
+        openCbzFiles.delete(oldest)
+      }
+      return entries.map((_, i) => `cbz://${token}/${i}`)
     } catch (err) {
       console.error('[vault] Failed to open CBZ:', err)
-      cbzEntries = null
       return []
     }
   })
 
   ipcMain.handle('manga:closeCbz', () => {
-    cbzEntries = null
+    // Deliberately not clearing here. Leaving the entry lets a reader closed
+    // and reopened - a misclick, or paging between chapters - skip re-indexing
+    // the archive. MAX_OPEN_CBZ bounds what this can retain.
   })
 }
