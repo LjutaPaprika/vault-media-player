@@ -28,10 +28,11 @@ interface OpenCbz {
   pageCacheBytes: number
 }
 
-// Two volumes: the one being read, and the previous one, so paging back to the
-// end of the last chapter does not re-index its archive. Manga pages are large
-// (this library averages 4.7 MB a page in places) so this is deliberately small.
-const MAX_OPEN_CBZ = 2
+// One volume at a time. adm-zip reads the ENTIRE archive into memory
+// (adm-zip.js:60 readFileSync), so an open volume costs its full file size:
+// measured at +885 MB for Berserk Volume 38 alone, and 1.6 GB for two. Holding
+// a second archive to save ~1s of re-indexing is not a trade worth making.
+const MAX_OPEN_CBZ = 1
 // A single Berserk volume is ~889 MB decompressed, so caching whole volumes is
 // out of the question. This holds a working set around the reader's position.
 const CBZ_PAGE_CACHE_BYTES = 96 * 1024 * 1024
@@ -1390,8 +1391,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle('manga:closeCbz', () => {
-    // Deliberately not clearing here. Leaving the entry lets a reader closed
-    // and reopened - a misclick, or paging between chapters - skip re-indexing
-    // the archive. MAX_OPEN_CBZ bounds what this can retain.
+    // Must actually release. The archive buffer is the whole file - 885 MB for
+    // a large Berserk volume - so leaving it mapped after the reader closes
+    // would retain that for the rest of the session.
+    openCbzFiles.clear()
   })
 }
