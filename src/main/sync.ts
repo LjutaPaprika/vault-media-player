@@ -120,7 +120,7 @@ const SYNC_EXCLUDED_FOLDERS = ['players']
  * `_source_archives` holds the original game installers — all plumbing, none of
  * it content, and none of it meant to be browsed.
  */
-const HIDDEN_FOLDERS = ['players', 'saves', '_save-backups', 'data', 'temp', '_source_archives']
+const HIDDEN_FOLDERS = ['players', 'saves', '_save-backups', 'data', 'temp', '_source_archives', '_app-backups']
 
 /**
  * Loose files at the drive root that are plumbing rather than content.
@@ -128,7 +128,10 @@ const HIDDEN_FOLDERS = ['players', 'saves', '_save-backups', 'data', 'temp', '_s
  * the drive; the app does that itself at startup, so the script is a fallback
  * and doesn't need to sit in plain view. Hidden files still run normally.
  */
+// Loose helper files at the drive root. The vault-state exports are dated, so
+// they are matched by prefix rather than listed one by one.
 const HIDDEN_FILES = ['setup-saves.cmd']
+const HIDDEN_FILE_PREFIXES = ['_vault-state-']
 
 /**
  * OS-generated files that shouldn't propagate between drives.
@@ -145,7 +148,17 @@ const SYSTEM_FILE_GLOBS = ['.DS_Store', '._*', 'Thumbs.db', 'desktop.ini']
  */
 export function hideSystemPaths(driveRoot: string): void {
   if (process.platform !== 'win32') return
-  for (const name of [...HIDDEN_FOLDERS, ...HIDDEN_FILES]) {
+  const named = [...HIDDEN_FOLDERS, ...HIDDEN_FILES]
+  // Dated exports (_vault-state-2026-08-21.json and friends) cannot be listed
+  // by name, so match them by prefix at the drive root.
+  let prefixed: string[] = []
+  try {
+    prefixed = readdirSync(driveRoot).filter((n) =>
+      HIDDEN_FILE_PREFIXES.some((pre) => n.startsWith(pre))
+    )
+  } catch { /* root unreadable - nothing to hide */ }
+
+  for (const name of [...named, ...prefixed]) {
     const fullPath = join(driveRoot, name)
     if (existsSync(fullPath)) {
       try {
