@@ -36,6 +36,12 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
   // bounded page cache, so re-entering a page is cheap, whereas unloading mid
   // scroll would visibly blank pages the reader had already seen.
   const [armed, setArmed] = useState<Set<number>>(() => new Set())
+  // Separate from `armed` on purpose. A slot must keep its reserved height
+  // until its image has actually decoded: dropping the placeholder at arm time
+  // collapsed the slot to zero while the fetch was still in flight, and with
+  // several slots arming at once the document abruptly shortened, the browser
+  // clamped scrollTop, and the view lurched upward past the header.
+  const [loaded, setLoaded] = useState<Set<number>>(() => new Set())
   const slotRefs = useRef<(HTMLDivElement | null)[]>([])
   const observerRef = useRef<IntersectionObserver | null>(null)
 
@@ -43,6 +49,7 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
     setLoading(true)
     setPages([])
     setArmed(new Set())
+    setLoaded(new Set())
     setError(null)
     window.api.manga
       .openCbz(filePath)
@@ -89,6 +96,25 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
     if (el && observerRef.current) observerRef.current.observe(el)
   }, [])
 
+  const markLoaded = useCallback((i: number) => {
+    setLoaded((prev) => (prev.has(i) ? prev : new Set(prev).add(i)))
+  }, [])
+
+  /**
+   * Catch images that finished before React attached onLoad.
+   *
+   * Now that pages are served cacheable, a revisited page can be complete the
+   * moment the element mounts, so its load event has already fired and will
+   * never fire again. Without this the slot would keep its placeholder ratio
+   * forever and sit taller than the image inside it.
+   */
+  const attachImg = useCallback(
+    (el: HTMLImageElement | null, i: number) => {
+      if (el && el.complete && el.naturalHeight > 0) markLoaded(i)
+    },
+    [markLoaded]
+  )
+
   return (
     <div className={styles.reader}>
       <div className={styles.header}>
@@ -114,10 +140,20 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
             data-index={i}
             ref={(el) => attachSlot(el, i)}
             className={styles.pageSlot}
-            style={armed.has(i) ? undefined : { aspectRatio: `1 / ${ASSUMED_PAGE_RATIO}` }}
+            style={loaded.has(i) ? undefined : { aspectRatio: `1 / ${ASSUMED_PAGE_RATIO}` }}
           >
             {armed.has(i) && (
-              <img src={src} alt={`Page ${i + 1}`} className={styles.page} decoding="async" />
+              <img
+                src={src}
+                alt={`Page ${i + 1}`}
+                className={styles.page}
+                decoding="async"
+                ref={(el) => attachImg(el, i)}
+                onLoad={() => markLoaded(i)}
+                // A page that fails still releases its placeholder, so one bad
+                // entry cannot leave a permanent gap in the scroll height.
+                onError={() => markLoaded(i)}
+              />
             )}
           </div>
         ))}
