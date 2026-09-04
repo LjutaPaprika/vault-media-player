@@ -920,10 +920,16 @@ export function thumbStats(): { count: number; bytes: number } {
     .get() as { count: number; bytes: number }
 }
 
-/** Every distinct poster path in the library, for thumbnail pre-generation. */
-export function getAllPosterPaths(): string[] {
+/**
+ * Every distinct poster path in the library with its category, for thumbnail
+ * pre-generation. The category matters because surfaces display art at very
+ * different sizes, so they warm at different widths.
+ */
+export function getAllPosterPaths(): { path: string; category: string }[] {
   const rows = getDb()
-    .prepare("SELECT DISTINCT poster_path FROM media_items WHERE poster_path IS NOT NULL AND poster_path <> ''")
-    .all() as { poster_path: string }[]
-  return rows.map((r) => r.poster_path)
+    .prepare(
+      "SELECT DISTINCT poster_path, category FROM media_items WHERE poster_path IS NOT NULL AND poster_path <> ''"
+    )
+    .all() as { poster_path: string; category: string }[]
+  return rows.map((r) => ({ path: r.poster_path, category: r.category }))
 }

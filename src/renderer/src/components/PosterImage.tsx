@@ -4,6 +4,14 @@ import styles from './MediaGrid.module.css'
 interface Props {
   filePath: string
   title: string
+  /**
+   * Width to request, in device pixels — roughly twice the CSS width the art is
+   * displayed at, to cover high-DPI panels. Defaults to the shelf card size.
+   * Surfaces showing art larger than a shelf card MUST pass their own value or
+   * the thumbnail is upscaled and looks blurry. Clamped server-side to a small
+   * set of allowed widths.
+   */
+  width?: number
 }
 
 /**
@@ -16,8 +24,11 @@ interface Props {
  * else, including the fullwidth characters (：｜) this library uses in place of
  * the ones Windows forbids in filenames.
  */
-function protocolUrl(scheme: string, filePath: string): string {
-  return `${scheme}:///` + filePath.split(/[/\\]/).map(encodeURIComponent).join('/')
+function protocolUrl(scheme: string, filePath: string, width?: number): string {
+  // thumb:// carries the requested width in the host position; media:// has no
+  // host. Both then take the file path, encoded segment by segment.
+  const host = scheme === 'thumb' && width ? String(width) : ''
+  return `${scheme}://${host}/` + filePath.split(/[/\\]/).map(encodeURIComponent).join('/')
 }
 
 /**
@@ -42,7 +53,7 @@ function protocolUrl(scheme: string, filePath: string): string {
  * fills in placeholder-first as you scroll, which reads as the app being slow
  * even while it does less.
  */
-const PosterImage = memo(function PosterImage({ filePath, title }: Props): JSX.Element {
+const PosterImage = memo(function PosterImage({ filePath, title, width = 310 }: Props): JSX.Element {
   // Remember WHICH path failed, not merely that one did: if a rescan swaps the
   // artwork for this item, the new path deserves a fresh attempt rather than
   // inheriting the old one's failure.
@@ -62,7 +73,7 @@ const PosterImage = memo(function PosterImage({ filePath, title }: Props): JSX.E
 
   return (
     <img
-      src={protocolUrl(useFull ? 'media' : 'thumb', filePath)}
+      src={protocolUrl(useFull ? 'media' : 'thumb', filePath, width)}
       alt={title}
       draggable={false}
       decoding="async"

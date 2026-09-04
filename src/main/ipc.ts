@@ -338,9 +338,25 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // Deliberately not awaited: the scan result should return immediately, and
   // warmThumbs yields between images so this cannot stall the UI.
   function warmThumbsInBackground(): void {
-    const paths = getAllPosterPaths()
-    const pruned = pruneThumbs(new Set(paths))
-    void warmThumbs(paths)
+    const items = getAllPosterPaths()
+    const pruned = pruneThumbs(new Set(items.map((i) => i.path)))
+    // Warm at the width each surface actually requests, or the first visit
+    // would regenerate anyway. Music art is displayed on a minmax(360px) grid
+    // and YouTube on minmax(260px), against 155px shelf cards.
+    const widthFor = (category: string): number =>
+      category === 'music' ? 720 : category === 'youtube' ? 520 : 310
+    const byWidth = new Map<number, string[]>()
+    for (const i of items) {
+      const w = widthFor(i.category)
+      const list = byWidth.get(w)
+      if (list) list.push(i.path)
+      else byWidth.set(w, [i.path])
+    }
+    void Promise.all([...byWidth].map(([w, paths]) => warmThumbs(paths, undefined, w)))
+      .then((results) => results.reduce(
+        (a, b) => ({ created: a.created + b.created, cached: a.cached + b.cached, failed: a.failed + b.failed }),
+        { created: 0, cached: 0, failed: 0 }
+      ))
       .then(({ created, cached, failed }) => {
         const { count, bytes } = thumbStats()
         console.log(

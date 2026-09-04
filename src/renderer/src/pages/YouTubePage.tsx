@@ -377,7 +377,7 @@ function VideoCard({ item, duration }: { item: MediaItem; duration?: number }): 
     <button className={styles.card} onClick={play}>
       <div className={styles.thumb}>
         {item.posterPath
-          ? <PosterImage filePath={item.posterPath} title={item.title} />
+          ? <PosterImage filePath={item.posterPath} title={item.title} width={520} />
           : (
             <div className={styles.thumbPlaceholder}>
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>

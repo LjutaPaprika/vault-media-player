@@ -196,7 +196,7 @@ export default function MusicPage(): JSX.Element {
         )}
         <div className={styles.art}>
           {item.posterPath
-            ? <PosterImage filePath={item.posterPath} title={item.title} />
+            ? <PosterImage filePath={item.posterPath} title={item.title} width={720} />
             : <div className={styles.artPlaceholder}>{item.title.charAt(0)}</div>
           }
           {!shuffleMode && (

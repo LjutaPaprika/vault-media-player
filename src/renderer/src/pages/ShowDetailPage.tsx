@@ -429,7 +429,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
 
         <div className={styles.heroPoster}>
           {posterPath
-            ? <PosterImage filePath={posterPath} title={seriesTitle} />
+            ? <PosterImage filePath={posterPath} title={seriesTitle} width={640} />
             : <div className={styles.posterPlaceholder}>{seriesTitle.charAt(0)}</div>
           }
         </div>

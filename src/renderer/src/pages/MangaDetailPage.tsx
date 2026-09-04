@@ -64,7 +64,7 @@ export default function MangaDetailPage({ seriesName, volumes, onBack, onSelect 
         </button>
         <div className={styles.heroPoster}>
           {volumes[0]?.posterPath
-            ? <PosterImage filePath={volumes[0].posterPath} title={seriesName} />
+            ? <PosterImage filePath={volumes[0].posterPath} title={seriesName} width={640} />
             : <div className={styles.posterPlaceholder}>{seriesName.charAt(0)}</div>
           }
         </div>

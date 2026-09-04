@@ -119,10 +119,16 @@ app.whenReady().then(() => {
   // is a DB read in the steady state.
   protocol.handle('thumb', async (request) => {
     try {
-      const pathname = decodeURIComponent(new URL(request.url).pathname)
+      // thumb://<width>/<path> — the width lets each surface ask for what it
+      // actually displays. Shelf cards are 155px, the music grid 360px, and one
+      // size cannot serve both without either blurring music or wasting bytes
+      // on every shelf.
+      const url = new URL(request.url)
+      const width = parseInt(url.hostname, 10)
+      const pathname = decodeURIComponent(url.pathname)
       const filePath = process.platform === 'win32' ? pathname.slice(1) : pathname
 
-      const thumb = await getOrCreateThumb(filePath)
+      const thumb = await getOrCreateThumb(filePath, width)
       // 404 rather than an error page: the renderer's onError swaps in the
       // title-letter placeholder, which is the right look for missing artwork.
       if (!thumb) return new Response(null, { status: 404 })

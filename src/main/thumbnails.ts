@@ -16,6 +16,28 @@ import { getThumb, putThumb } from './database'
  */
 export const THUMB_WIDTH = 310
 
+/**
+ * Widths a caller may request, in device pixels.
+ *
+ * Surfaces differ far more than a single size can serve: shelf cards are
+ * minmax(155px), YouTube 260px and the music grid 360px, and at 150% display
+ * scaling a 360px card needs ~540 device pixels. Serving everything at 310
+ * left music art upscaled ~1.7x and visibly blurry, while serving everything
+ * at 720 cost 66 MB against 18 MB for the same library — most of it wasted on
+ * the shelves that only ever needed 310.
+ *
+ * Requests are clamped to this list rather than honoured freely, so a stray
+ * width cannot fill the cache with near-duplicate encodings of every poster.
+ */
+export const ALLOWED_THUMB_WIDTHS = [310, 520, 640, 720] as const
+
+export function normaliseThumbWidth(raw: number): number {
+  if (!Number.isFinite(raw)) return THUMB_WIDTH
+  // Round up to the first allowed width that covers the request, so a caller
+  // never receives fewer pixels than it asked for.
+  return ALLOWED_THUMB_WIDTHS.find((w) => w >= raw) ?? ALLOWED_THUMB_WIDTHS[ALLOWED_THUMB_WIDTHS.length - 1]
+}
+
 /** JPEG quality. 82 is the knee of the curve here: visually clean, ~30 KB. */
 const THUMB_QUALITY = 82
 
@@ -23,7 +45,7 @@ const THUMB_QUALITY = 82
  * Anything at or below this width is re-encoded but not downscaled — resizing
  * an already-card-sized image costs CPU to save nothing and only loses detail.
  */
-const PASSTHROUGH_WIDTH = THUMB_WIDTH + 40
+const PASSTHROUGH_MARGIN = 40
 
 /**
  * sharp is the primary encoder because Electron's nativeImage cannot decode
@@ -58,7 +80,7 @@ export interface ThumbResult {
 }
 
 /** Encode with nativeImage. Cannot handle WebP; returns null when it can't decode. */
-function encodeWithNativeImage(sourcePath: string): Buffer | null {
+function encodeWithNativeImage(sourcePath: string, targetWidth: number): Buffer | null {
   let img: Electron.NativeImage
   try {
     img = nativeImage.createFromPath(sourcePath)
@@ -71,14 +93,14 @@ function encodeWithNativeImage(sourcePath: string): Buffer | null {
 
   const { width } = img.getSize()
   const out =
-    width > 0 && width <= PASSTHROUGH_WIDTH
+    width > 0 && width <= targetWidth + PASSTHROUGH_MARGIN
       ? img.toJPEG(100)
-      : img.resize({ width: THUMB_WIDTH, quality: 'good' }).toJPEG(THUMB_QUALITY)
+      : img.resize({ width: targetWidth, quality: 'good' }).toJPEG(THUMB_QUALITY)
   return out.length ? out : null
 }
 
 /** Encode with sharp. Handles WebP, AVIF and anything else libvips supports. */
-async function encodeWithSharp(sourcePath: string, sharp: SharpModule): Promise<Buffer | null> {
+async function encodeWithSharp(sourcePath: string, sharp: SharpModule, targetWidth: number): Promise<Buffer | null> {
   try {
     const pipeline = sharp(sourcePath, { failOn: 'none' })
     const meta = await pipeline.metadata()
@@ -89,9 +111,9 @@ async function encodeWithSharp(sourcePath: string, sharp: SharpModule): Promise<
       // measured and cropped along the wrong axis.
       .rotate()
       .resize(
-        width > 0 && width <= PASSTHROUGH_WIDTH
+        width > 0 && width <= targetWidth + PASSTHROUGH_MARGIN
           ? undefined
-          : { width: THUMB_WIDTH, withoutEnlargement: true }
+          : { width: targetWidth, withoutEnlargement: true }
       )
       .jpeg({ quality: THUMB_QUALITY, mozjpeg: true })
       .toBuffer()
@@ -106,7 +128,11 @@ async function encodeWithSharp(sourcePath: string, sharp: SharpModule): Promise<
  * Returns null when the file is missing or no encoder can decode it, which the
  * caller turns into a 404 so the renderer falls back to its placeholder.
  */
-export async function getOrCreateThumb(sourcePath: string): Promise<ThumbResult | null> {
+export async function getOrCreateThumb(
+  sourcePath: string,
+  requestedWidth: number = THUMB_WIDTH
+): Promise<ThumbResult | null> {
+  const width = normaliseThumbWidth(requestedWidth)
   let mtime: number
   try {
     mtime = Math.floor(statSync(sourcePath).mtimeMs)
@@ -114,16 +140,16 @@ export async function getOrCreateThumb(sourcePath: string): Promise<ThumbResult 
     return null
   }
 
-  const cached = getThumb(sourcePath, mtime, THUMB_WIDTH)
+  const cached = getThumb(sourcePath, mtime, width)
   if (cached) return { data: cached.data, mime: 'image/jpeg', fromCache: true }
 
   const sharp = getSharp()
   const data = sharp
-    ? ((await encodeWithSharp(sourcePath, sharp)) ?? encodeWithNativeImage(sourcePath))
-    : encodeWithNativeImage(sourcePath)
+    ? ((await encodeWithSharp(sourcePath, sharp, width)) ?? encodeWithNativeImage(sourcePath, width))
+    : encodeWithNativeImage(sourcePath, width)
   if (!data) return null
 
-  putThumb(sourcePath, mtime, THUMB_WIDTH, data)
+  putThumb(sourcePath, mtime, width, data)
   return { data, mime: 'image/jpeg', fromCache: false }
 }
 
@@ -137,14 +163,15 @@ export async function getOrCreateThumb(sourcePath: string): Promise<ThumbResult 
  */
 export async function warmThumbs(
   paths: string[],
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  width: number = THUMB_WIDTH
 ): Promise<{ created: number; cached: number; failed: number }> {
   let created = 0
   let cached = 0
   let failed = 0
 
   for (let i = 0; i < paths.length; i++) {
-    const r = await getOrCreateThumb(paths[i])
+    const r = await getOrCreateThumb(paths[i], width)
     if (!r) failed++
     else if (r.fromCache) cached++
     else created++
