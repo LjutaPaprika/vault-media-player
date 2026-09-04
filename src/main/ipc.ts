@@ -1,21 +1,49 @@
 import { app, ipcMain, BrowserWindow, shell, protocol, session } from 'electron'
 import { readFileSync, existsSync, statSync, readdirSync, writeFileSync, mkdirSync, appendFileSync, unlinkSync } from 'fs'
+import { promises as fsp } from 'fs'
 import type { Cookie } from 'electron'
 import { extname, dirname, join, basename } from 'path'
 import { spawn, spawnSync } from 'child_process'
 import { cpus, totalmem, tmpdir } from 'os'
+import { createHash } from 'crypto'
 import AdmZip from 'adm-zip'
 
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.opus', '.wma'])
 
-// In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol
+// In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol.
+//
+// Keyed by a token derived from the file path and mtime rather than a single
+// global, for two reasons. The old scheme addressed pages as cbz://p/<index>,
+// so page 0 of every volume shared one URL; that forced Cache-Control: no-store,
+// because caching would have served the wrong page. Scrolling back through a
+// volume then re-decompressed every page it passed. A token makes each URL
+// identify one page of one volume, so responses can be cached, and reopening a
+// volume reuses whatever Chromium still holds.
 const IMAGE_RE = /\.(jpe?g|png|webp|gif|bmp)$/i
-let cbzEntries: AdmZip.IZipEntry[] | null = null
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive } from './database'
+
+interface OpenCbz {
+  entries: AdmZip.IZipEntry[]
+  /** Decompressed pages, most-recently-used last. Bounded by bytes. */
+  pageCache: Map<number, Buffer>
+  pageCacheBytes: number
+}
+
+// One volume at a time. adm-zip reads the ENTIRE archive into memory
+// (adm-zip.js:60 readFileSync), so an open volume costs its full file size:
+// measured at +885 MB for Berserk Volume 38 alone, and 1.6 GB for two. Holding
+// a second archive to save ~1s of re-indexing is not a trade worth making.
+const MAX_OPEN_CBZ = 1
+// A single Berserk volume is ~889 MB decompressed, so caching whole volumes is
+// out of the question. This holds a working set around the reader's position.
+const CBZ_PAGE_CACHE_BYTES = 96 * 1024 * 1024
+
+const openCbzFiles = new Map<string, OpenCbz>()
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, pruneThumbs, thumbStats } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
+import { warmThumbs } from './thumbnails'
 import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
@@ -305,12 +333,33 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return root
   }
 
+  // After a scan, generate any missing thumbnails in the background so the first
+  // visit to a shelf paints from cache rather than resizing as the user scrolls.
+  // Deliberately not awaited: the scan result should return immediately, and
+  // warmThumbs yields between images so this cannot stall the UI.
+  function warmThumbsInBackground(): void {
+    const paths = getAllPosterPaths()
+    const pruned = pruneThumbs(new Set(paths))
+    void warmThumbs(paths)
+      .then(({ created, cached, failed }) => {
+        const { count, bytes } = thumbStats()
+        console.log(
+          `[vault] thumbnails: ${created} created, ${cached} already cached, ${failed} failed` +
+            `${pruned ? `, ${pruned} pruned` : ''} — cache now ${count} items, ` +
+            `${(bytes / 1048576).toFixed(1)} MB`
+        )
+      })
+      .catch((e) => console.error('[vault] thumbnail warm failed:', e))
+  }
+
   ipcMain.handle('library:scan', () => {
     const label = getConfig('libraryLabel')
     if (!label) throw new Error('Library drive label is not configured.')
     const root = resolveRootForScan(label)
     hideSystemPaths(root)
+    clearImageCache()
     const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'), true)
+    warmThumbsInBackground()
     return { count: updated }
   })
 
@@ -319,11 +368,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (!label) throw new Error('Library drive label is not configured.')
     const root = resolveRootForScan(label)
     hideSystemPaths(root)
+    clearImageCache()
     // Only the dir-mtime cache is cleared. The per-file mtimes stay — they are
     // migrateRenamedPaths' match key, and the `force` flag below is what makes
     // this a full re-upsert.
     clearStoredDirTimes()
     const { total } = scanLibrary(root, getToolPath(root, 'ffprobe'), false, true)
+    warmThumbsInBackground()
     return { count: total }
   })
 
@@ -512,13 +563,68 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   })
 
   // ─── Image loading ────────────────────────────────────────────────────────
-  ipcMain.handle('library:readImage', (_event, filePath: string) => {
-    if (!filePath || !existsSync(filePath)) return null
+  // Serves single images to the renderer as data URIs: album art for the player
+  // bar and the album detail page. Shelf posters do NOT come through here — they
+  // load straight from disk over media:// (see PosterImage.tsx), because holding
+  // 240 base64 strings alive cost ~125 MB of JS heap and the GC pauses that came
+  // with it froze scrolling.
+  //
+  // Still async rather than readFileSync: the main process is single-threaded,
+  // and a blocking read stalls every other IPC behind it. On a USB drive that
+  // has spun down that is seconds, not milliseconds.
+  //
+  // Bounded by BYTES rather than entry count, since art ranges from a few KB to
+  // several MB and a fixed count would let large files dominate. Insertion order
+  // gives LRU-ish eviction; re-reading after eviction costs one async read.
+  const IMAGE_CACHE_MAX_BYTES = 16 * 1024 * 1024
+  const imageCache = new Map<string, string>()
+  let imageCacheBytes = 0
+
+  ipcMain.handle('library:readImage', async (_event, filePath: string) => {
+    if (!filePath) return null
+
+    const hit = imageCache.get(filePath)
+    if (hit !== undefined) {
+      // Refresh recency: delete + re-set moves this key to the end of the
+      // insertion order, so the eviction loop below reaches it last.
+      imageCache.delete(filePath)
+      imageCache.set(filePath, hit)
+      return hit
+    }
+
     const ext = extname(filePath).toLowerCase().replace('.', '')
     const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg'
-    const data = readFileSync(filePath).toString('base64')
-    return `data:${mime};base64,${data}`
+
+    let buf: Buffer
+    try {
+      buf = await fsp.readFile(filePath)
+    } catch {
+      // Missing, unreadable, or the drive went away mid-scroll. Returning null
+      // lets the renderer fall back to its placeholder instead of throwing.
+      return null
+    }
+
+    const uri = `data:${mime};base64,${buf.toString('base64')}`
+
+    // Never cache a single poster large enough to evict everything else.
+    if (uri.length < IMAGE_CACHE_MAX_BYTES / 4) {
+      imageCache.set(filePath, uri)
+      imageCacheBytes += uri.length
+      while (imageCacheBytes > IMAGE_CACHE_MAX_BYTES && imageCache.size > 1) {
+        const oldest = imageCache.keys().next().value as string
+        imageCacheBytes -= imageCache.get(oldest)!.length
+        imageCache.delete(oldest)
+      }
+    }
+    return uri
   })
+
+  // A rescan can replace artwork underneath us; drop the cache so the next
+  // request re-reads from disk rather than serving a stale image.
+  function clearImageCache(): void {
+    imageCache.clear()
+    imageCacheBytes = 0
+  }
 
   // ─── Playback ─────────────────────────────────────────────────────────────
   function resolveLibraryRoot(): string {
@@ -1033,16 +1139,58 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // ─── CBZ Reader ────────────────────────────────────────────────────────────
 
   // Serve individual pages directly from the in-memory ZIP — no disk writes, no blocking
-  protocol.handle('cbz', (request) => {
+  /** Decompress one page without blocking the main process. */
+  function readPage(open: OpenCbz, index: number): Promise<Buffer> {
+    const hit = open.pageCache.get(index)
+    if (hit) {
+      // Refresh recency so the eviction loop reaches this page last.
+      open.pageCache.delete(index)
+      open.pageCache.set(index, hit)
+      return Promise.resolve(hit)
+    }
+    return new Promise((resolve, reject) => {
+      // getData() inflates synchronously and costs ~14 ms on this library's
+      // larger pages. With every page of a volume requested at once that was
+      // seconds of blocked main process, stalling scroll and input alike.
+      open.entries[index].getDataAsync((data, err) => {
+        if (err || !data) return reject(new Error(err || 'empty page'))
+        open.pageCache.set(index, data)
+        open.pageCacheBytes += data.length
+        while (open.pageCacheBytes > CBZ_PAGE_CACHE_BYTES && open.pageCache.size > 1) {
+          const oldest = open.pageCache.keys().next().value as number
+          open.pageCacheBytes -= open.pageCache.get(oldest)!.length
+          open.pageCache.delete(oldest)
+        }
+        resolve(data)
+      })
+    })
+  }
+
+  protocol.handle('cbz', async (request) => {
     try {
-      const index = parseInt(new URL(request.url).pathname.replace(/^\//, ''), 10)
-      if (!cbzEntries || isNaN(index) || index >= cbzEntries.length) {
+      // cbz://<token>/<index> — the token identifies one opened volume.
+      const url = new URL(request.url)
+      const token = url.hostname
+      const index = parseInt(url.pathname.replace(/^\//, ''), 10)
+      const open = openCbzFiles.get(token)
+      if (!open || isNaN(index) || index < 0 || index >= open.entries.length) {
         return new Response(null, { status: 404 })
       }
-      const entry = cbzEntries[index]
+
+      const entry = open.entries[index]
       const ext = entry.name.split('.').pop()?.toLowerCase() ?? 'jpg'
       const mime = (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : `image/${ext}`
-      return new Response(entry.getData(), { headers: { 'Content-Type': mime, 'Cache-Control': 'no-store' } })
+
+      const data = await readPage(open, index)
+      return new Response(data, {
+        headers: {
+          'Content-Type': mime,
+          'Content-Length': String(data.length),
+          // Safe to cache now that the token pins the URL to one volume at one
+          // mtime: a different or edited file yields a different token.
+          'Cache-Control': 'private, max-age=3600'
+        }
+      })
     } catch {
       return new Response(null, { status: 500 })
     }
@@ -1210,19 +1358,42 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('manga:openCbz', (_event, filePath: string): string[] => {
     try {
+      // Token covers path AND mtime, so re-exporting a chapter invalidates the
+      // URLs rather than serving the previous pages from Chromium's cache.
+      let mtime = 0
+      try { mtime = Math.floor(statSync(filePath).mtimeMs) } catch { /* keep 0 */ }
+      const token = createHash('sha1').update(`${filePath}:${mtime}`).digest('hex').slice(0, 16)
+
+      const existing = openCbzFiles.get(token)
+      if (existing) {
+        // Same volume reopened: keep the decompressed pages we already hold.
+        openCbzFiles.delete(token)
+        openCbzFiles.set(token, existing)
+        return existing.entries.map((_, i) => `cbz://${token}/${i}`)
+      }
+
       const zip = new AdmZip(filePath)
-      cbzEntries = zip.getEntries()
-        .filter(e => !e.isDirectory && IMAGE_RE.test(e.name))
+      const entries = zip.getEntries()
+        .filter((e) => !e.isDirectory && IMAGE_RE.test(e.name))
         .sort((a, b) => a.entryName.localeCompare(b.entryName, undefined, { numeric: true }))
-      return cbzEntries.map((_, i) => `cbz://p/${i}`)
+
+      openCbzFiles.set(token, { entries, pageCache: new Map(), pageCacheBytes: 0 })
+      // Drop the least recently opened volume; these hold real memory.
+      while (openCbzFiles.size > MAX_OPEN_CBZ) {
+        const oldest = openCbzFiles.keys().next().value as string
+        openCbzFiles.delete(oldest)
+      }
+      return entries.map((_, i) => `cbz://${token}/${i}`)
     } catch (err) {
       console.error('[vault] Failed to open CBZ:', err)
-      cbzEntries = null
       return []
     }
   })
 
   ipcMain.handle('manga:closeCbz', () => {
-    cbzEntries = null
+    // Must actually release. The archive buffer is the whole file - 885 MB for
+    // a large Berserk volume - so leaving it mapped after the reader closes
+    // would retain that for the rest of the session.
+    openCbzFiles.clear()
   })
 }

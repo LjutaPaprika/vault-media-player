@@ -11,12 +11,14 @@ app.commandLine.appendSwitch('disable-gpu-disk-cache')
 // Must be called before app.whenReady()
 protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { stream: true, bypassCSP: true, supportFetchAPI: true } },
-  { scheme: 'cbz',   privileges: { bypassCSP: true, supportFetchAPI: true } }
+  { scheme: 'cbz',   privileges: { bypassCSP: true, supportFetchAPI: true } },
+  { scheme: 'thumb', privileges: { bypassCSP: true, supportFetchAPI: true } }
 ])
 import { registerIpcHandlers, reconcileDriveRoot } from './ipc'
 import { closeDb, probeDrive } from './database'
 import { ensureSaveLinks } from './saveLinks'
 import { hideSystemPaths } from './sync'
+import { getOrCreateThumb } from './thumbnails'
 
 if (app.isPackaged && process.platform === 'win32') {
   spawnSync('attrib', ['-h', '-s', dirname(app.getPath('exe'))], { shell: true })
@@ -108,6 +110,38 @@ app.whenReady().then(() => {
     }
   } catch (e) { console.error('[vault] drive setup failed:', e) }
 
+  // Serve downscaled shelf artwork via thumb://. Separate from media:// because
+  // the two want opposite things: media:// streams whole files with Range
+  // support for seeking, while a thumbnail is a small complete buffer that
+  // wants aggressive caching and no range machinery at all.
+  //
+  // Generation happens on first request and is cached in the database, so this
+  // is a DB read in the steady state.
+  protocol.handle('thumb', async (request) => {
+    try {
+      const pathname = decodeURIComponent(new URL(request.url).pathname)
+      const filePath = process.platform === 'win32' ? pathname.slice(1) : pathname
+
+      const thumb = await getOrCreateThumb(filePath)
+      // 404 rather than an error page: the renderer's onError swaps in the
+      // title-letter placeholder, which is the right look for missing artwork.
+      if (!thumb) return new Response(null, { status: 404 })
+
+      return new Response(thumb.data, {
+        status: 200,
+        headers: {
+          'Content-Type': thumb.mime,
+          'Content-Length': String(thumb.data.length),
+          // Keyed on source mtime in the DB, so a stale entry cannot outlive
+          // its poster; this only tells Chromium it need not re-ask each paint.
+          'Cache-Control': 'private, max-age=86400'
+        }
+      })
+    } catch {
+      return new Response(null, { status: 500 })
+    }
+  })
+
   // Serve local media files via media:// with proper Range/206 support so seeking works.
   protocol.handle('media', (request) => {
     try {
@@ -150,14 +184,17 @@ app.whenReady().then(() => {
       }
 
       const webStream = Readable.toWeb(createReadStream(filePath)) as ReadableStream
-      return new Response(webStream, {
-        status: 200,
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': String(size),
-          'Accept-Ranges': 'bytes'
-        }
-      })
+      const headers: Record<string, string> = {
+        'Content-Type': contentType,
+        'Content-Length': String(size),
+        'Accept-Ranges': 'bytes'
+      }
+      // Posters are fetched by <img> and re-requested every time a shelf is
+      // revisited. Telling Chromium it may reuse them keeps scrolling back to
+      // the top from hitting the drive again. Scoped to images so audio and
+      // video keep their existing streaming behaviour untouched.
+      if (contentType.startsWith('image/')) headers['Cache-Control'] = 'private, max-age=3600'
+      return new Response(webStream, { status: 200, headers })
     } catch {
       return new Response(null, { status: 500 })
     }

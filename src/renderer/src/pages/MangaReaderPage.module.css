@@ -48,12 +48,31 @@
 
 .pages {
   flex: 1;
+  /* Without this a column flex item's min-height resolves to its content, so
+     the scroller grows to fit every page instead of scrolling within the
+     viewport, and the header gets pushed out of view. */
+  min-height: 0;
   overflow-y: auto;
+  /* Pages resolve to their true height as they decode. Scroll anchoring reacts
+     to that by shifting scrollTop, which fights the reserved placeholders. */
+  overflow-anchor: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 24px 0 48px;
   gap: 2px;
+}
+
+/* Wrapper for each page. Holds the same width as the image so an unloaded
+   page reserves the right amount of scroll height via its aspect-ratio, then
+   collapses to the image's true height once it loads. */
+.pageSlot {
+  width: 100%;
+  max-width: 900px;
+  background: var(--bg-elevated);
+  /* Flex items shrink by default, which would compress the aspect-ratio
+     placeholders and under-reserve the scroll height they exist to hold. */
+  flex-shrink: 0;
 }
 
 .page {
