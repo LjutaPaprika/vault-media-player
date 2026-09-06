@@ -111,10 +111,22 @@ ${gamepadLines}
 `
 }
 
-function buildLuaScript(subtitleButton: string, subtitleKey: string): string {
+function buildLuaScript(
+  subtitleButton: string,
+  subtitleKey: string,
+  controllerBindings: ControllerBinding[]
+): string {
   const gamepadBinding = subtitleButton !== 'none'
     ? `mp.add_key_binding('${subtitleButton}', 'sub-english-cycle-gamepad', toggle_english_sub)\n`
     : ''
+
+  // Every gamepad key this config binds, so the focus guard below neutralises
+  // exactly those and nothing else.
+  const guarded = [
+    ...controllerBindings.filter((b) => b.button !== 'none').map((b) => b.button),
+    ...(subtitleButton !== 'none' ? [subtitleButton] : [])
+  ]
+  const keyList = [...new Set(guarded)].map((k) => `'${k}'`).join(', ')
 
   return `\
 -- Auto-select English subtitles on file load.
@@ -187,7 +199,49 @@ local function toggle_english_sub()
 end
 
 mp.add_key_binding('${subtitleKey}', 'sub-english-cycle', toggle_english_sub)
-${gamepadBinding}`
+${gamepadBinding}
+-- ── Release the controller while mpv is not the focused window ──────────────
+--
+-- mpv's gamepad support runs through SDL2, which reads the device at OS level
+-- and has no notion of window focus. A player left open behind something else
+-- therefore kept acting on the pad while it was driving a game - most visibly
+-- D-pad up, which is bound to volume.
+--
+-- Two mechanisms, because one of them cannot be verified from here: clearing
+-- input-gamepad should stop SDL reading at all, but whether mpv tears the
+-- reader down at runtime rather than only honouring the option at startup is
+-- not something this script can confirm. The forced no-op bindings guarantee
+-- the keys do nothing either way, since forced bindings outrank input.conf.
+local GUARDED_KEYS = { ${keyList} }
+local released = false
+
+local function release_pad()
+  if released then return end
+  released = true
+  mp.set_property('input-gamepad', 'no')
+  for _, k in ipairs(GUARDED_KEYS) do
+    mp.add_forced_key_binding(k, 'vault-unfocused-' .. k, function() end)
+  end
+end
+
+local function reclaim_pad()
+  if not released then return end
+  released = false
+  for _, k in ipairs(GUARDED_KEYS) do
+    mp.remove_key_binding('vault-unfocused-' .. k)
+  end
+  mp.set_property('input-gamepad', 'yes')
+end
+
+-- focused is nil until a window exists, so act only on an explicit value.
+mp.observe_property('focused', 'bool', function(_, focused)
+  if focused == false then
+    release_pad()
+  elseif focused == true then
+    reclaim_pad()
+  end
+end)
+`
 }
 
 function getMpvPath(driveRoot: string): string {
@@ -218,7 +272,7 @@ function ensureMpvConfig(mpvExePath: string, hwdec: string): string {
   mkdirSync(join(configDir, 'scripts'), { recursive: true })
   writeFileSync(configFile, buildMpvConf(hwdec), 'utf-8')
   writeFileSync(join(configDir, 'input.conf'), buildInputConf(bindings), 'utf-8')
-  writeFileSync(join(configDir, 'scripts', 'sub-english.lua'), buildLuaScript(subtitleButton, subtitleKey), 'utf-8')
+  writeFileSync(join(configDir, 'scripts', 'sub-english.lua'), buildLuaScript(subtitleButton, subtitleKey, bindings), 'utf-8')
   writeFileSync(join(configDir, 'scripts', 'skip-segment.lua'), buildSkipSegmentLua(skipKey, skipButton), 'utf-8')
   // Remove legacy skip-intro.lua so its 'C' button doesn't appear alongside ours.
   rmSync(join(configDir, 'scripts', 'skip-intro.lua'), { force: true })
