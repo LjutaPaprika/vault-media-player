@@ -26,6 +26,25 @@ const PRELOAD_MARGIN_PX = 4000
  */
 const ASSUMED_PAGE_RATIO = 1.45
 
+/**
+ * Reading column width in CSS px, for a normal portrait page.
+ *
+ * The reader used to cap every page at a flat 900px, which suited nothing in
+ * this library: 800px web chapters were stretched to fill it while 3300px
+ * volume scans were thrown away at 3.7x. At the 150% display scaling these
+ * monitors use, 1200 CSS px is 1800 device px - which matches the mid-range
+ * sources exactly and leaves the largest downscaled by under 2x.
+ */
+const PORTRAIT_COLUMN_PX = 1200
+
+/**
+ * Landscape pages are double-page spreads: two pages of art in one image. Given
+ * the portrait column they would render each half at half the resolution of the
+ * pages around them, which is why the softness seemed to come and go at random
+ * rather than being uniform. Twice the column gives each half parity.
+ */
+const SPREAD_COLUMN_PX = PORTRAIT_COLUMN_PX * 2
+
 export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX.Element {
   useEscapeKey(onBack)
   const [pages, setPages] = useState<string[]>([])
@@ -42,6 +61,10 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
   // several slots arming at once the document abruptly shortened, the browser
   // clamped scrollTop, and the view lurched upward past the header.
   const [loaded, setLoaded] = useState<Set<number>>(() => new Set())
+  // Per-page display cap in CSS px, derived from each image's own resolution
+  // once it decodes. Kept in state rather than written straight to the DOM so a
+  // re-render cannot drop it.
+  const [maxWidths, setMaxWidths] = useState<Record<number, number>>({})
   const slotRefs = useRef<(HTMLDivElement | null)[]>([])
   const observerRef = useRef<IntersectionObserver | null>(null)
 
@@ -50,6 +73,7 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
     setPages([])
     setArmed(new Set())
     setLoaded(new Set())
+    setMaxWidths({})
     setError(null)
     window.api.manga
       .openCbz(filePath)
@@ -101,6 +125,19 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
   }, [])
 
   /**
+   * Record how wide this page may be drawn: never past its own pixels, and
+   * never past the column its shape calls for.
+   */
+  const measure = useCallback((el: HTMLImageElement, i: number) => {
+    const w = el.naturalWidth
+    const h = el.naturalHeight
+    if (!w || !h) return
+    const column = w > h ? SPREAD_COLUMN_PX : PORTRAIT_COLUMN_PX
+    const cap = Math.min(w, column)
+    setMaxWidths((prev) => (prev[i] === cap ? prev : { ...prev, [i]: cap }))
+  }, [])
+
+  /**
    * Catch images that finished before React attached onLoad.
    *
    * Now that pages are served cacheable, a revisited page can be complete the
@@ -110,9 +147,9 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
    */
   const attachImg = useCallback(
     (el: HTMLImageElement | null, i: number) => {
-      if (el && el.complete && el.naturalHeight > 0) markLoaded(i)
+      if (el && el.complete && el.naturalHeight > 0) { measure(el, i); markLoaded(i) }
     },
-    [markLoaded]
+    [markLoaded, measure]
   )
 
   return (
@@ -140,7 +177,10 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
             data-index={i}
             ref={(el) => attachSlot(el, i)}
             className={styles.pageSlot}
-            style={loaded.has(i) ? undefined : { aspectRatio: `1 / ${ASSUMED_PAGE_RATIO}` }}
+            style={{
+              ...(loaded.has(i) ? null : { aspectRatio: `1 / ${ASSUMED_PAGE_RATIO}` }),
+              ...(maxWidths[i] ? ({ '--page-max': `${maxWidths[i]}px` } as React.CSSProperties) : null)
+            }}
           >
             {armed.has(i) && (
               <img
@@ -149,7 +189,7 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
                 className={styles.page}
                 decoding="async"
                 ref={(el) => attachImg(el, i)}
-                onLoad={() => markLoaded(i)}
+                onLoad={(e) => { measure(e.currentTarget, i); markLoaded(i) }}
                 // A page that fails still releases its placeholder, so one bad
                 // entry cannot leave a permanent gap in the scroll height.
                 onError={() => markLoaded(i)}

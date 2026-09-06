@@ -59,16 +59,30 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 0 48px;
+  /* Horizontal padding keeps a full-width spread off the window edges. */
+  padding: 24px 16px 48px;
   gap: 2px;
 }
 
 /* Wrapper for each page. Holds the same width as the image so an unloaded
    page reserves the right amount of scroll height via its aspect-ratio, then
-   collapses to the image's true height once it loads. */
+   collapses to the image's true height once it loads.
+
+   The width comes from --page-max, set per page from the image's own natural
+   width once it decodes (see MangaReaderPage.tsx). A fixed cap cannot serve
+   this library: pages run from 800px (web chapters, which a 900px column
+   stretched) to 3300px (volume scans, downscaled 3.7x), and landscape
+   double-page spreads carry two pages of art in the width of one, so forcing
+   them into the same column halved their effective resolution again. Spreads
+   fall irregularly through a volume, which is why the softness appeared to
+   come and go rather than being uniform. */
 .pageSlot {
   width: 100%;
-  max-width: 900px;
+  /* Never exceed the page's own pixels - upscaling only invents blur - and
+     never exceed the reading column. --page-max is the image's natural width;
+     it is unset until the image decodes, when the fallback keeps the
+     placeholder a sensible size. */
+  max-width: min(100%, var(--page-max, 1200px));
   background: var(--bg-elevated);
   /* Flex items shrink by default, which would compress the aspect-ratio
      placeholders and under-reserve the scroll height they exist to hold. */
@@ -77,7 +91,6 @@
 
 .page {
   width: 100%;
-  max-width: 900px;
   height: auto;
   display: block;
 }
