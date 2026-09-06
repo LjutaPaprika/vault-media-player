@@ -65,10 +65,27 @@ export function useController({ onButton, pollInterval = 100, enabled = true }: 
   useEffect(() => {
     if (!enabled) return
 
+    // A controller is a shared device, not one this app owns. While the window
+    // is unfocused the same pad is usually driving something else — a game under
+    // Steam, most often — and acting on it there meant the library was changing
+    // volume and jumping between screens behind the game.
+    //
+    // State is still snapshotted while unfocused rather than skipped outright:
+    // buttons held during that time must be recorded as already-down, or the
+    // first tick after focus returns sees them as fresh presses and fires a
+    // burst of actions the user never aimed at this app.
+    const onFocus = (): void => { snapshotGamepad(prevButtons, prevStick) }
+    window.addEventListener('focus', onFocus)
+
     const interval = setInterval(() => {
       const gamepads = navigator.getGamepads()
       const gp = gamepads[0]
       if (!gp) return
+
+      if (!document.hasFocus()) {
+        snapshotGamepad(prevButtons, prevStick)
+        return
+      }
 
       // ── Buttons ──────────────────────────────────────────────────────────
       gp.buttons.forEach((btn, idx) => {
@@ -93,7 +110,10 @@ export function useController({ onButton, pollInterval = 100, enabled = true }: 
       prevStick.current = { x: ax, y: ay }
     }, pollInterval)
 
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [pollInterval, enabled]) // onButton intentionally omitted — handled via ref
 
   return { resetState }
