@@ -1,7 +1,13 @@
 .reader {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* 100% of the shell's content area, not 100vh. The reader renders inside
+     .content, which sits below the title bar and carries 36px of padding, so a
+     viewport-height reader overflowed it by the title bar plus that padding.
+     Reaching the end of the page list chained the wheel scroll out to .content,
+     which scrolled the overflow and slid the header and back button off
+     screen. */
+  height: 100%;
   background: #0a0a0a;
   overflow: hidden;
 }
@@ -56,6 +62,10 @@
   /* Pages resolve to their true height as they decode. Scroll anchoring reacts
      to that by shifting scrollTop, which fights the reserved placeholders. */
   overflow-anchor: none;
+  /* Keep end-of-list scrolling inside the reader rather than handing it to the
+     shell, so no future overflow in the surrounding layout can move the
+     header. */
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   align-items: center;
