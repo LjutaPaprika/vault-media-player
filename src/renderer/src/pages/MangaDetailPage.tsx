@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import PosterImage from '../components/PosterImage'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import styles from './ShowDetailPage.module.css'
@@ -35,8 +35,22 @@ function isExtra(title: string): boolean {
   return isFinite(key) && key !== Math.floor(key)
 }
 
+// Chapter-list scroll offset per series, kept for the life of the app. Opening
+// a chapter replaces this page with the reader, which unmounts the list, so
+// without this every return from the reader landed back at the top of the list.
+const listScrollBySeries = new Map<string, number>()
+
 export default function MangaDetailPage({ seriesName, volumes, onBack, onSelect }: Props): JSX.Element {
   useEscapeKey(onBack)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  // Restore before paint so the list never flashes at the top first. The rows
+  // come from props that are already loaded, so the full scroll height exists
+  // on the first render and the saved offset can be applied immediately.
+  useLayoutEffect(() => {
+    const saved = listScrollBySeries.get(seriesName)
+    if (saved && listRef.current) listRef.current.scrollTop = saved
+  }, [seriesName])
   const lastReadId = useMemo(() =>
     volumes.reduce<MediaItem | null>(
       (best, vol) => ((vol.lastOpenedAt ?? 0) > (best?.lastOpenedAt ?? 0) ? vol : best),
@@ -75,7 +89,11 @@ export default function MangaDetailPage({ seriesName, volumes, onBack, onSelect 
       </div>
 
       {/* Right panel — volume list */}
-      <div className={styles.rightPanel}>
+      <div
+        className={styles.rightPanel}
+        ref={listRef}
+        onScroll={(e) => listScrollBySeries.set(seriesName, e.currentTarget.scrollTop)}
+      >
         <div className={styles.section}>
           <div className={styles.sectionHeaderPlain}>
             <span className={styles.sectionTitle}>{sectionTitle}</span>
