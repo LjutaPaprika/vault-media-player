@@ -43,6 +43,7 @@ import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
+import { progressFileFor, readProgress, type VideoProgress } from './playbackProgress'
 import { warmThumbs } from './thumbnails'
 import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
@@ -712,9 +713,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (err) console.error('[vault] shell.openPath failed:', err)
   })
 
-  ipcMain.handle('playback:openVideo', (_event, filePath: string, category?: string) => {
+  ipcMain.handle('playback:openVideo', (_event, filePath: string, category?: string, startSeconds?: number) => {
     setLastOpened(filePath)
-    openVideo(filePath, resolveLibraryRoot(), getConfig('hwdec') ?? 'off', category)
+    const root = resolveLibraryRoot()
+    // Resume tracking is trialled on YouTube before the rest of the library.
+    const progressFile = category === 'youtube' ? progressFileFor(root, filePath) : undefined
+    openVideo(filePath, root, getConfig('hwdec') ?? 'off', category, { startSeconds, progressFile })
     win.webContents.send('music:pause')
   })
 
@@ -1275,6 +1279,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('youtube:getPlaylistCovers', (): Record<string, string | null> =>
     listPlaylistCovers(resolveLibraryRoot())
+  )
+
+  ipcMain.handle('youtube:getProgress', (): Record<string, VideoProgress> =>
+    readProgress(resolveLibraryRoot(), (getItems('youtube') as { filePath: string }[]).map((i) => i.filePath))
   )
 
   ipcMain.handle('youtube:downloadVideo', async (

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { VideoProgress } from '../main/playbackProgress'
 
 // Expose a typed API to the renderer via window.api
 contextBridge.exposeInMainWorld('api', {
@@ -52,7 +53,7 @@ contextBridge.exposeInMainWorld('api', {
   // Playback
   playback: {
     openFile:  (filePath: string) => ipcRenderer.invoke('playback:openFile', filePath),
-    openVideo: (filePath: string, category?: string) => ipcRenderer.invoke('playback:openVideo', filePath, category),
+    openVideo: (filePath: string, category?: string, startSeconds?: number) => ipcRenderer.invoke('playback:openVideo', filePath, category, startSeconds),
     openAudio: (filePath: string) => ipcRenderer.invoke('playback:openAudio', filePath),
     launchGame: (gamePath: string, platform: string) =>
       ipcRenderer.invoke('playback:launchGame', gamePath, platform),
@@ -118,6 +119,7 @@ contextBridge.exposeInMainWorld('api', {
   youtube: {
     getPlaylists: (): Promise<string[]> => ipcRenderer.invoke('youtube:getPlaylists'),
     getPlaylistCovers: (): Promise<Record<string, string | null>> => ipcRenderer.invoke('youtube:getPlaylistCovers'),
+    getProgress: (): Promise<Record<string, VideoProgress>> => ipcRenderer.invoke('youtube:getProgress'),
     downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) =>
       ipcRenderer.invoke('youtube:downloadVideo', args),
     getCookieStatus: () => ipcRenderer.invoke('youtube:getCookieStatus'),

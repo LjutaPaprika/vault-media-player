@@ -4,6 +4,7 @@ import { basename, dirname, extname, join } from 'path'
 import { getBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings } from './keyboardBindings'
 import { buildSkipSegmentLua } from './skipSegmentLua'
+import { buildProgressLua } from './playbackProgress'
 import { startPlaytimeSession } from './playtime'
 import { ensureSaveLinks } from './saveLinks'
 
@@ -274,6 +275,7 @@ function ensureMpvConfig(mpvExePath: string, hwdec: string): string {
   writeFileSync(join(configDir, 'input.conf'), buildInputConf(bindings), 'utf-8')
   writeFileSync(join(configDir, 'scripts', 'sub-english.lua'), buildLuaScript(subtitleButton, subtitleKey, bindings), 'utf-8')
   writeFileSync(join(configDir, 'scripts', 'skip-segment.lua'), buildSkipSegmentLua(skipKey, skipButton), 'utf-8')
+  writeFileSync(join(configDir, 'scripts', 'vault-progress.lua'), buildProgressLua(), 'utf-8')
   // Remove legacy skip-intro.lua so its 'C' button doesn't appear alongside ours.
   rmSync(join(configDir, 'scripts', 'skip-intro.lua'), { force: true })
   return configFile
@@ -321,7 +323,14 @@ export function openWithSystem(filePath: string): void {
  * It is resolved in ipc.ts via findDriveByLabel so launcher.ts has
  * no dependency on the database or drive detection logic.
  */
-export function openVideo(filePath: string, driveRoot: string, hwdec = 'off', category?: string): void {
+export interface ResumeOptions {
+  /** Seconds to start playback at. */
+  startSeconds?: number
+  /** File for vault-progress.lua to record the playhead in; omit to not track. */
+  progressFile?: string
+}
+
+export function openVideo(filePath: string, driveRoot: string, hwdec = 'off', category?: string, resume: ResumeOptions = {}): void {
   const mpv = getMpvPath(driveRoot)
   if (existsSync(mpv)) {
     const configFile = ensureMpvConfig(mpv, hwdec)
@@ -335,7 +344,11 @@ export function openVideo(filePath: string, driveRoot: string, hwdec = 'off', ca
     const configArg = process.platform === 'win32'
       ? `--include=${configFile}`
       : `--config-dir=${configDir}`
-    spawnDetached(mpv, ['--fullscreen', configArg, ...langArgs, filePath])
+    const resumeArgs = [
+      ...(resume.startSeconds && resume.startSeconds > 0 ? [`--start=${resume.startSeconds.toFixed(1)}`] : []),
+      ...(resume.progressFile ? [`--script-opts=vault-progress-file=${resume.progressFile}`] : [])
+    ]
+    spawnDetached(mpv, ['--fullscreen', configArg, ...langArgs, ...resumeArgs, filePath])
   } else {
     openWithSystem(filePath)
   }

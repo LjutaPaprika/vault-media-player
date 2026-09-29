@@ -89,6 +89,11 @@ export function findDriveRoot(): string | null {
  * - YouTube playlists: youtube playlist data (saved when downloader is enabled)
  * - All other application settings (saved via settings → config table)
  */
+/** Where mpv's per-video resume positions are kept, beside the database. */
+export function getProgressDir(): string {
+  return join(getDbDir(), 'progress')
+}
+
 function getDbDir(): string {
   if (!app.isPackaged) return join(process.cwd(), 'dev-data')
   const driveRoot = findDriveRoot()

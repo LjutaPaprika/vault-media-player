@@ -1,25 +1,30 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import PosterImage from '../components/PosterImage'
+import WatchedBar from '../components/WatchedBar'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { formatClock, formatRuntime } from '../utils/duration'
-import { VIDEO_THUMB_WIDTH, type YouTubePlaylist } from '../utils/youtubePlaylists'
+import { continueTarget, VIDEO_THUMB_WIDTH, watchedFraction, watchState, type YouTubePlaylist } from '../utils/youtubePlaylists'
 import sd from './ShowDetailPage.module.css'
 import styles from './YouTubePlaylistPage.module.css'
 
 interface Props {
   playlist: YouTubePlaylist
   durations: Record<string, number>
+  progress: Record<string, VideoProgress>
   onBack: () => void
-  /** Opens the video and records it as last opened. */
-  onPlay: (filePath: string) => void
+  /**
+   * Opens the video and records it as last opened. Without startAt it resumes
+   * wherever the video was left off.
+   */
+  onPlay: (filePath: string, startAt?: number) => void
 }
 
 // Video-list scroll offset per playlist, kept for the life of the app, so
 // going Back to the shelf and into the same playlist again lands where it was.
 const listScrollByPlaylist = new Map<string, number>()
 
-export default function YouTubePlaylistPage({ playlist, durations, onBack, onPlay }: Props): JSX.Element {
+export default function YouTubePlaylistPage({ playlist, durations, progress, onBack, onPlay }: Props): JSX.Element {
   useEscapeKey(onBack)
   const { name, videos, cover, totalSeconds, lastOpened } = playlist
   const [launchingPath, setLaunchingPath] = useState<string | null>(null)
@@ -31,17 +36,15 @@ export default function YouTubePlaylistPage({ playlist, durations, onBack, onPla
     if (saved && listRef.current) listRef.current.scrollTop = saved
   }, [name])
 
-  function play(filePath: string): void {
+  function play(filePath: string, startAt?: number): void {
     // mpv takes a moment to appear; mark the row straight away so the click
     // visibly registered.
     flushSync(() => setLaunchingPath(filePath))
     setTimeout(() => setLaunchingPath(null), 1500)
-    onPlay(filePath)
+    onPlay(filePath, startAt)
   }
 
-  // Continue picks up the video opened most recently; a playlist never opened
-  // starts from the top.
-  const resume = lastOpened ?? videos[0]
+  const next = continueTarget(playlist, progress, durations)
 
   return (
     <div className={sd.page}>
@@ -66,14 +69,17 @@ export default function YouTubePlaylistPage({ playlist, durations, onBack, onPla
           </div>
         </div>
 
-        {resume && (
-          <button className={styles.continueBtn} onClick={() => play(resume.filePath)}>
+        {next && (
+          <button className={styles.continueBtn} onClick={() => play(next.video.filePath, next.startAt)}>
             <svg viewBox="0 0 24 24" fill="currentColor" className={styles.continueIcon}>
               <path d="M8 5v14l11-7z"/>
             </svg>
             <span className={styles.continueText}>
-              <span className={styles.continueLabel}>{lastOpened ? 'Continue' : 'Play'}</span>
-              <span className={styles.continueTitle}>{resume.title}</span>
+              <span className={styles.continueLabel}>
+                {next.label}
+                {next.leftOffAt !== null && <span className={styles.continueAt}> from {formatClock(next.leftOffAt)}</span>}
+              </span>
+              <span className={styles.continueTitle}>{next.video.title}</span>
             </span>
           </button>
         )}
@@ -93,6 +99,7 @@ export default function YouTubePlaylistPage({ playlist, durations, onBack, onPla
           <div className={sd.episodeListInner}>
             {videos.map((v, i) => {
               const duration = durations[v.filePath]
+              const watched = watchedFraction(watchState(progress[v.filePath], duration))
               const launching = launchingPath === v.filePath
               return (
                 <button
@@ -109,6 +116,7 @@ export default function YouTubePlaylistPage({ playlist, durations, onBack, onPla
                     {duration !== undefined && duration > 0 && (
                       <span className={styles.rowDuration}>{formatClock(duration)}</span>
                     )}
+                    {watched !== null && <WatchedBar fraction={watched} />}
                   </div>
                   <div className={styles.rowText}>
                     <span className={styles.rowTitle}>{v.title}</span>

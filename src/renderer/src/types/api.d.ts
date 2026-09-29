@@ -105,6 +105,13 @@ interface MediaTechInfo {
   subtitleTracks: { lang: string }[]
 }
 
+interface VideoProgress {
+  position: number
+  duration: number
+  finished: boolean
+  savedAt: number
+}
+
 interface MediaItem {
   id: number
   title: string
@@ -214,7 +221,8 @@ interface Window {
     }
     playback: {
       openFile:     (filePath: string) => Promise<void>
-      openVideo:    (filePath: string, category?: string) => Promise<void>
+      /** startSeconds resumes partway; only YouTube videos record their position so far. */
+      openVideo:    (filePath: string, category?: string, startSeconds?: number) => Promise<void>
       openAudio:    (filePath: string) => Promise<void>
       launchGame:   (gamePath: string, platform: string) => Promise<void>
       onMusicPause: (cb: () => void) => () => void
@@ -254,6 +262,8 @@ interface Window {
       getPlaylists: () => Promise<string[]>
       /** Cover image path per playlist folder, or null where no cover file exists. */
       getPlaylistCovers: () => Promise<Record<string, string | null>>
+      /** Where each YouTube video was left off, for those that have been played since tracking began. */
+      getProgress: () => Promise<Record<string, VideoProgress>>
       downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) => Promise<{ success: boolean }>
       getCookieStatus: () => Promise<YouTubeCookieStatus>
       refreshCookies:  () => Promise<YouTubeCookieStatus>

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import PageShell from '../components/PageShell'
 import PosterImage from '../components/PosterImage'
+import WatchedBar from '../components/WatchedBar'
 import { useLibrary } from '../hooks/useLibrary'
 import { useAppStore } from '../store/appStore'
 import { formatClock, formatRuntime } from '../utils/duration'
-import { buildPlaylists, openedAgo, sortByTitle, VIDEO_THUMB_WIDTH, type YouTubePlaylist } from '../utils/youtubePlaylists'
+import { buildPlaylists, openedAgo, sortByTitle, startPosition, VIDEO_THUMB_WIDTH, watchedFraction, watchState, type YouTubePlaylist } from '../utils/youtubePlaylists'
 import YouTubePlaylistPage from './YouTubePlaylistPage'
 import styles from './YouTubePage.module.css'
 
@@ -245,11 +246,21 @@ export default function YouTubePage(): JSX.Element {
   // loaded before that. Holding the new timestamps here keeps the cards and the
   // playlist view current without reloading the whole shelf after every play.
   const [openedAt, setOpenedAt] = useState<Record<string, number>>({})
+  const [progress, setProgress] = useState<Record<string, VideoProgress>>({})
 
   useEffect(() => {
     window.api.library.getDurations('youtube').then(setDurations)
     window.api.youtube.getPlaylistCovers().then(setCovers)
+    window.api.youtube.getProgress().then(setProgress)
   }, [items])
+
+  // mpv records the playhead as it plays. Focus comes back to this window when
+  // the player closes, which is exactly when there is a new position to show.
+  useEffect(() => {
+    const refresh = (): void => { window.api.youtube.getProgress().then(setProgress) }
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [])
 
   useEffect(() => { setQuery(''); setSelectedName(null) }, [contentResetKey])
 
@@ -259,8 +270,10 @@ export default function YouTubePage(): JSX.Element {
   )
   const playlists = useMemo(() => buildPlaylists(library, covers, durations), [library, covers, durations])
 
-  function playVideo(filePath: string): void {
-    window.api.playback.openVideo(filePath, 'youtube')
+  /** Opens a video, resuming where it was left off unless told where to start. */
+  function playVideo(filePath: string, startAt?: number): void {
+    const start = startAt ?? startPosition(watchState(progress[filePath], durations[filePath]))
+    window.api.playback.openVideo(filePath, 'youtube', start > 0 ? start : undefined)
     setOpenedAt((prev) => ({ ...prev, [filePath]: Math.floor(Date.now() / 1000) }))
   }
 
@@ -270,6 +283,7 @@ export default function YouTubePage(): JSX.Element {
       <YouTubePlaylistPage
         playlist={selected}
         durations={durations}
+        progress={progress}
         onBack={() => setSelectedName(null)}
         onPlay={playVideo}
       />
@@ -335,6 +349,7 @@ export default function YouTubePage(): JSX.Element {
                 key={item.id}
                 item={item}
                 duration={durations[item.filePath]}
+                watched={watchedFraction(watchState(progress[item.filePath], durations[item.filePath]))}
                 onPlay={() => playVideo(item.filePath)}
               />
             ))}
@@ -400,7 +415,15 @@ function PlaylistIcon(): JSX.Element {
 
 // ─── Video card ───────────────────────────────────────────────────────────────
 
-function VideoCard({ item, duration, onPlay }: { item: MediaItem; duration?: number; onPlay: () => void }): JSX.Element {
+interface VideoCardProps {
+  item: MediaItem
+  duration?: number
+  /** Share already watched, for the progress bar; null when not started. */
+  watched: number | null
+  onPlay: () => void
+}
+
+function VideoCard({ item, duration, watched, onPlay }: VideoCardProps): JSX.Element {
   return (
     <button className={styles.card} onClick={onPlay}>
       <div className={styles.thumb}>
@@ -418,6 +441,7 @@ function VideoCard({ item, duration, onPlay }: { item: MediaItem; duration?: num
         {duration !== undefined && duration > 0 && (
           <div className={styles.durationOverlay}>{formatClock(duration)}</div>
         )}
+        {watched !== null && <WatchedBar fraction={watched} />}
       </div>
       <div className={styles.info}>
         <span className={styles.title}>{item.title}</span>
