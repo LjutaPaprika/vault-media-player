@@ -58,12 +58,18 @@
   opacity: 0.75;
 }
 
+/* Titles here run long ("[A day before us ZERO] EP.12 'Giving Up' and
+   'Accepting Reality'"), so wrap rather than cut off; three lines covers the
+   longest in the library at this width. */
 .continueTitle {
   font-size: 11.5px;
+  line-height: 1.35;
   opacity: 0.75;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 /* ── Video rows ── */

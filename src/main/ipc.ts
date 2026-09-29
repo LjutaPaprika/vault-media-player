@@ -43,7 +43,7 @@ import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
-import { progressFileFor, readProgress, type VideoProgress } from './playbackProgress'
+import { progressFileFor, readProgress, watchProgress, type VideoProgress } from './playbackProgress'
 import { warmThumbs } from './thumbnails'
 import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
@@ -1281,9 +1281,22 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     listPlaylistCovers(resolveLibraryRoot())
   )
 
-  ipcMain.handle('youtube:getProgress', (): Record<string, VideoProgress> =>
-    readProgress(resolveLibraryRoot(), (getItems('youtube') as { filePath: string }[]).map((i) => i.filePath))
-  )
+  // Started on the first read rather than at launch, so the folder is only
+  // watched once something is showing positions.
+  let stopProgressWatch: (() => void) | null = null
+  ipcMain.handle('youtube:getProgress', (): Record<string, VideoProgress> => {
+    if (!stopProgressWatch) {
+      try {
+        stopProgressWatch = watchProgress(
+          () => { if (!win.isDestroyed()) win.webContents.send('youtube:progressChanged') },
+          () => { stopProgressWatch = null }
+        )
+      } catch {
+        /* no watcher: the page still refreshes positions when revisited */
+      }
+    }
+    return readProgress(resolveLibraryRoot(), (getItems('youtube') as { filePath: string }[]).map((i) => i.filePath))
+  })
 
   ipcMain.handle('youtube:downloadVideo', async (
     _event,

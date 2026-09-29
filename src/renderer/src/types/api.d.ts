@@ -264,6 +264,8 @@ interface Window {
       getPlaylistCovers: () => Promise<Record<string, string | null>>
       /** Where each YouTube video was left off, for those that have been played since tracking began. */
       getProgress: () => Promise<Record<string, VideoProgress>>
+      /** Fires shortly after mpv records a position, while a video plays and when it closes. */
+      onProgressChanged: (cb: () => void) => () => void
       downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) => Promise<{ success: boolean }>
       getCookieStatus: () => Promise<YouTubeCookieStatus>
       refreshCookies:  () => Promise<YouTubeCookieStatus>

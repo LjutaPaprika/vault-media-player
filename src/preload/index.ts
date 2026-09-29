@@ -120,6 +120,11 @@ contextBridge.exposeInMainWorld('api', {
     getPlaylists: (): Promise<string[]> => ipcRenderer.invoke('youtube:getPlaylists'),
     getPlaylistCovers: (): Promise<Record<string, string | null>> => ipcRenderer.invoke('youtube:getPlaylistCovers'),
     getProgress: (): Promise<Record<string, VideoProgress>> => ipcRenderer.invoke('youtube:getProgress'),
+    onProgressChanged: (cb: () => void) => {
+      const listener = (): void => cb()
+      ipcRenderer.on('youtube:progressChanged', listener)
+      return () => ipcRenderer.removeListener('youtube:progressChanged', listener)
+    },
     downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) =>
       ipcRenderer.invoke('youtube:downloadVideo', args),
     getCookieStatus: () => ipcRenderer.invoke('youtube:getCookieStatus'),

@@ -12,7 +12,7 @@
 // title would split the option.
 
 import { createHash } from 'crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, watch } from 'fs'
 import { join, relative } from 'path'
 import { getProgressDir } from './database'
 
@@ -67,6 +67,36 @@ export function readProgress(root: string, filePaths: string[]): Record<string, 
     }
   }
   return out
+}
+
+/**
+ * Calls onChange shortly after mpv writes any position, so an open page can
+ * refresh without waiting to be revisited. The app gets no signal when mpv
+ * closes (it is launched detached), and window focus does not reliably return
+ * to the app when it does, so the progress folder itself is the signal.
+ *
+ * Each write is a temp-file write, delete and rename, several events in a
+ * burst; they are coalesced into one call. Returns a function that stops
+ * watching. If the folder goes away (drive unplugged), onError is called and
+ * the caller can start again later.
+ */
+export function watchProgress(onChange: () => void, onError: () => void): () => void {
+  const dir = getProgressDir()
+  mkdirSync(dir, { recursive: true })
+  let timer: NodeJS.Timeout | null = null
+  const watcher = watch(dir, (_event, name) => {
+    if (name && !String(name).endsWith('.json')) return
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(onChange, 250)
+  })
+  watcher.on('error', () => {
+    watcher.close()
+    onError()
+  })
+  return () => {
+    if (timer) clearTimeout(timer)
+    watcher.close()
+  }
 }
 
 /**

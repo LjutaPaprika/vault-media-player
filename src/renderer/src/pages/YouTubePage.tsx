@@ -254,12 +254,12 @@ export default function YouTubePage(): JSX.Element {
     window.api.youtube.getProgress().then(setProgress)
   }, [items])
 
-  // mpv records the playhead as it plays. Focus comes back to this window when
-  // the player closes, which is exactly when there is a new position to show.
+  // mpv records the playhead every few seconds and when it closes; the main
+  // process watches for those writes, so bars and Continue keep up live.
   useEffect(() => {
-    const refresh = (): void => { window.api.youtube.getProgress().then(setProgress) }
-    window.addEventListener('focus', refresh)
-    return () => window.removeEventListener('focus', refresh)
+    return window.api.youtube.onProgressChanged(() => {
+      window.api.youtube.getProgress().then(setProgress)
+    })
   }, [])
 
   useEffect(() => { setQuery(''); setSelectedName(null) }, [contentResetKey])
