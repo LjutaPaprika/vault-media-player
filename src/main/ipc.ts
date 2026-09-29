@@ -713,11 +713,28 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (err) console.error('[vault] shell.openPath failed:', err)
   })
 
+  // Watches for mpv's position reports, folding them into the database as they
+  // land. Started with the first video launched or the first page to show
+  // positions, rather than at startup, so it only runs once there is a reason.
+  let stopProgressWatch: (() => void) | null = null
+  function ensureProgressWatch(): void {
+    if (stopProgressWatch) return
+    try {
+      stopProgressWatch = watchProgress(
+        () => { if (!win.isDestroyed()) win.webContents.send('youtube:progressChanged') },
+        () => { stopProgressWatch = null }
+      )
+    } catch {
+      /* no watcher: reports are still folded in whenever a page reads positions */
+    }
+  }
+
   ipcMain.handle('playback:openVideo', (_event, filePath: string, category?: string, startSeconds?: number) => {
     setLastOpened(filePath)
     const root = resolveLibraryRoot()
     // Resume tracking is trialled on YouTube before the rest of the library.
     const progressFile = category === 'youtube' ? progressFileFor(root, filePath) : undefined
+    if (progressFile) ensureProgressWatch()
     openVideo(filePath, root, getConfig('hwdec') ?? 'off', category, { startSeconds, progressFile })
     win.webContents.send('music:pause')
   })
@@ -1281,20 +1298,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     listPlaylistCovers(resolveLibraryRoot())
   )
 
-  // Started on the first read rather than at launch, so the folder is only
-  // watched once something is showing positions.
-  let stopProgressWatch: (() => void) | null = null
   ipcMain.handle('youtube:getProgress', (): Record<string, VideoProgress> => {
-    if (!stopProgressWatch) {
-      try {
-        stopProgressWatch = watchProgress(
-          () => { if (!win.isDestroyed()) win.webContents.send('youtube:progressChanged') },
-          () => { stopProgressWatch = null }
-        )
-      } catch {
-        /* no watcher: the page still refreshes positions when revisited */
-      }
-    }
+    ensureProgressWatch()
     return readProgress(resolveLibraryRoot(), (getItems('youtube') as { filePath: string }[]).map((i) => i.filePath))
   })
 

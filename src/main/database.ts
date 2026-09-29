@@ -183,6 +183,20 @@ function getDb(): Database.Database {
       width        INTEGER NOT NULL,
       data         BLOB    NOT NULL
     );
+
+    -- Where each video was left off (see playbackProgress.ts). mpv reports it
+    -- in a small file that is folded in here and deleted, for the same 2 MB
+    -- allocation unit reason as the thumbnails: one file per video would burn
+    -- a cluster each. Keyed by a hash of the path relative to the library
+    -- root, the name mpv's file carries, and kept apart from media_items so a
+    -- rescan that drops and re-adds a row keeps its position.
+    CREATE TABLE IF NOT EXISTS playback_progress (
+      path_key TEXT PRIMARY KEY,
+      position REAL    NOT NULL,
+      duration REAL    NOT NULL,
+      finished INTEGER NOT NULL,
+      saved_at INTEGER NOT NULL
+    );
   `)
 
   // One-time cleanup: superseded by the dir_mtimes table
@@ -636,6 +650,40 @@ export function setLastOpened(filePath: string): void {
   getDb()
     .prepare('UPDATE media_items SET last_opened_at = unixepoch() WHERE file_path = ?')
     .run(filePath)
+}
+
+export interface ProgressRow {
+  position: number
+  duration: number
+  finished: boolean
+  savedAt: number
+}
+
+/**
+ * Records a position unless a newer one is already stored, so reports folded
+ * in out of order (the app was closed during a session, say) cannot roll it
+ * back.
+ */
+export function upsertProgress(pathKey: string, p: ProgressRow): void {
+  getDb()
+    .prepare(
+      `INSERT INTO playback_progress (path_key, position, duration, finished, saved_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(path_key) DO UPDATE SET
+         position = excluded.position, duration = excluded.duration,
+         finished = excluded.finished, saved_at = excluded.saved_at
+       WHERE excluded.saved_at >= playback_progress.saved_at`
+    )
+    .run(pathKey, p.position, p.duration, p.finished ? 1 : 0, p.savedAt)
+}
+
+export function getAllProgress(): Map<string, ProgressRow> {
+  const rows = getDb()
+    .prepare('SELECT path_key, position, duration, finished, saved_at FROM playback_progress')
+    .all() as { path_key: string; position: number; duration: number; finished: number; saved_at: number }[]
+  return new Map(rows.map((r) => [r.path_key, {
+    position: r.position, duration: r.duration, finished: r.finished === 1, savedAt: r.saved_at
+  }]))
 }
 
 export function addPlaySeconds(filePath: string, seconds: number): void {
