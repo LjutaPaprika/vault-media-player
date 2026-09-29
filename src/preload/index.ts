@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('api', {
   // YouTube videos
   youtube: {
     getPlaylists: (): Promise<string[]> => ipcRenderer.invoke('youtube:getPlaylists'),
+    getPlaylistCovers: (): Promise<Record<string, string | null>> => ipcRenderer.invoke('youtube:getPlaylistCovers'),
     downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) =>
       ipcRenderer.invoke('youtube:downloadVideo', args),
     getCookieStatus: () => ipcRenderer.invoke('youtube:getCookieStatus'),

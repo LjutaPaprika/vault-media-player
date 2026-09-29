@@ -1,0 +1,131 @@
+/* Layout and list rows come from ShowDetailPage.module.css; these are the
+   pieces a YouTube playlist needs on top: 16:9 art and video thumbnails. */
+
+.heroCover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  flex-shrink: 0;
+}
+
+.heroCover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Continue ── */
+.continueBtn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: #000;
+  text-align: left;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.continueBtn:hover { opacity: 0.88; }
+
+.continueIcon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.continueText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.continueLabel {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.continueTitle {
+  font-size: 11.5px;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Video rows ── */
+.videoRow {
+  padding: 8px 12px;
+}
+
+.index {
+  width: 22px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.rowThumb {
+  position: relative;
+  width: 128px;
+  aspect-ratio: 16 / 9;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+
+.rowThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.rowThumb > div {
+  font-size: 18px;
+}
+
+.rowDuration {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  padding: 1px 4px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rowText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.rowTitle {
+  font-size: 13.5px;
+  color: var(--text-primary);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

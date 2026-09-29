@@ -258,6 +258,24 @@ export function findPoster(dir: string): string | null {
   return findPosterStrict(dir).path
 }
 
+/**
+ * Cover art for a folder that holds its own per-item thumbnails, such as a
+ * YouTube playlist: only a file deliberately named as a cover counts.
+ *
+ * Unlike findPosterStrict there is no "first image in the folder" fallback. A
+ * playlist folder is full of video thumbnails, and readdir order on the exFAT
+ * vault is creation order rather than alphabetical, so that fallback would
+ * crown whichever video happened to be downloaded first. Callers that want a
+ * fallback choose one themselves, from an order they control.
+ */
+export function findNamedPoster(dir: string): string | null {
+  for (const name of ['poster.jpg', 'poster.png', 'poster.webp', 'cover.jpg', 'cover.png', 'cover.webp', 'folder.jpg']) {
+    const p = join(dir, name)
+    if (existsSync(p)) return p
+  }
+  return null
+}
+
 function stableSeasonHash(name: string): number {
   let h = 5381
   for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) & 0x7fffffff

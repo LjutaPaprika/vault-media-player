@@ -40,7 +40,7 @@ const CBZ_PAGE_CACHE_BYTES = 96 * 1024 * 1024
 const openCbzFiles = new Map<string, OpenCbz>()
 import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, pruneThumbs, thumbStats } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
-import { scanLibrary, findPoster } from './scanner'
+import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
 import { warmThumbs } from './thumbnails'
@@ -142,6 +142,31 @@ function logYtDlp(driveRoot: string, scope: string, message: string): void {
   } catch {
     /* logging is best-effort — never break a download because the log file is unwritable */
   }
+}
+
+// ─── YouTube playlist covers ─────────────────────────────────────────────────
+
+/**
+ * Cover art for every YouTube playlist, keyed by playlist name.
+ *
+ * A playlist is only a folder under media/youtube — the scanner records the
+ * folder name on each video's genre, and there is no playlist row to hang a
+ * cover on. So the folder carries its own, as poster.jpg or similar, and this
+ * reads it straight off disk. null means no cover file; the renderer then
+ * falls back to the playlist's first video.
+ */
+function listPlaylistCovers(root: string): Record<string, string | null> {
+  const youtubeDir = join(root, 'media', 'youtube')
+  const covers: Record<string, string | null> = {}
+  if (!existsSync(youtubeDir)) return covers
+  try {
+    for (const entry of readdirSync(youtubeDir, { withFileTypes: true })) {
+      if (entry.isDirectory()) covers[entry.name] = findNamedPoster(join(youtubeDir, entry.name))
+    }
+  } catch {
+    /* an unreadable folder costs covers, not the page — videos still show */
+  }
+  return covers
 }
 
 // ─── YouTube cookies (for age-gated / bot-checked videos) ────────────────────
@@ -349,9 +374,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // visit to a shelf paints from cache rather than resizing as the user scrolls.
   // Deliberately not awaited: the scan result should return immediately, and
   // warmThumbs yields between images so this cannot stall the UI.
-  function warmThumbsInBackground(): void {
+  function warmThumbsInBackground(root: string): void {
     const items = getAllPosterPaths()
-    const pruned = pruneThumbs(new Set(items.map((i) => i.path)))
+    // Playlist covers live in their playlist folder rather than the database,
+    // so they are added explicitly. Left out of the keep set, every scan would
+    // prune them and the next visit would resize them all over again.
+    const coverPaths = Object.values(listPlaylistCovers(root)).filter((p): p is string => p !== null)
+    const pruned = pruneThumbs(new Set([...items.map((i) => i.path), ...coverPaths]))
     // Warm at the width each surface actually requests, or the first visit
     // would regenerate anyway. Music art is displayed on a minmax(360px) grid
     // and YouTube on minmax(260px), against 155px shelf cards.
@@ -363,6 +392,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       const list = byWidth.get(w)
       if (list) list.push(i.path)
       else byWidth.set(w, [i.path])
+    }
+    // Covers show at 720 on both the playlist card and the detail hero. One
+    // width deliberately: the cache holds a single width per source, so asking
+    // for two would evict one with the other on every page change.
+    if (coverPaths.length) {
+      const list = byWidth.get(720)
+      if (list) list.push(...coverPaths)
+      else byWidth.set(720, [...coverPaths])
     }
     void Promise.all([...byWidth].map(([w, paths]) => warmThumbs(paths, undefined, w)))
       .then((results) => results.reduce(
@@ -387,7 +424,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     hideSystemPaths(root)
     clearImageCache()
     const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'), true)
-    warmThumbsInBackground()
+    warmThumbsInBackground(root)
     return { count: updated }
   })
 
@@ -402,7 +439,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     // this a full re-upsert.
     clearStoredDirTimes()
     const { total } = scanLibrary(root, getToolPath(root, 'ffprobe'), false, true)
-    warmThumbsInBackground()
+    warmThumbsInBackground(root)
     return { count: total }
   })
 
@@ -1235,6 +1272,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       .map((d) => d.name)
       .sort()
   })
+
+  ipcMain.handle('youtube:getPlaylistCovers', (): Record<string, string | null> =>
+    listPlaylistCovers(resolveLibraryRoot())
+  )
 
   ipcMain.handle('youtube:downloadVideo', async (
     _event,

@@ -143,62 +143,132 @@
   line-height: 1.4;
 }
 
-/* ── Collapsible playlist header ─────────────────────────────────────────── */
-
-.playlistHeader {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 20px 10px 24px;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--border);
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s;
-  margin-top: 8px;
-}
-
-.playlistHeader:hover {
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
-}
-
-.playlistPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  color: var(--accent);
-  border-radius: 100px;
-  padding: 5px 14px 5px 10px;
-  font-size: 13px;
-  font-weight: 700;
-  flex-shrink: 0;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.playlistHeader:hover .playlistPill {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
-}
-
-.playlistPillIcon {
-  width: 13px;
-  height: 13px;
-  flex-shrink: 0;
-  transition: transform 0.2s;
-}
-
-.playlistPillIconCollapsed {
-  transform: rotate(-90deg);
-}
-
-.playlistCount {
+.meta {
+  display: block;
+  margin-top: 3px;
   font-size: 12px;
   color: var(--text-muted);
-  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Playlist grid ───────────────────────────────────────────────────────── */
+
+/* Wider columns than the video grid so playlists read as the larger, primary
+   items on the page. */
+.playlistGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  align-items: start;
+  gap: 24px;
+  padding: 16px 24px 24px;
+}
+
+.playlistCard {
+  position: relative;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+  padding: 0;
+  min-width: 0;
+}
+
+.playlistCard:hover .playOverlay { opacity: 1; }
+
+/* Two slivers above the cover, each narrower than the one below it, so the
+   card reads as a stack of videos. */
+.stack {
+  position: relative;
+  padding-top: 8px;
+}
+
+.stack::before,
+.stack::after {
+  content: '';
+  position: absolute;
+  height: 12px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.stack::before {
+  top: 0;
+  left: 12px;
+  right: 12px;
+  background: color-mix(in srgb, var(--text-muted) 22%, var(--bg-elevated));
+}
+
+.stack::after {
+  top: 4px;
+  left: 6px;
+  right: 6px;
+  background: color-mix(in srgb, var(--text-muted) 40%, var(--bg-elevated));
+}
+
+.stack .thumb {
+  z-index: 1;
+}
+
+.viewPlaylist {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.playlistIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.playOverlay .playlistIcon {
+  width: 20px;
+  height: 20px;
+  color: #fff;
+}
+
+.thumbPlaceholder .playlistIcon {
+  width: 40px;
+  height: 40px;
+}
+
+.countBadge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.countBadge .playlistIcon {
+  width: 14px;
+  height: 14px;
+}
+
+.playlistTitle {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
 }
 
 /* ── Download modal ──────────────────────────────────────────────────────── */

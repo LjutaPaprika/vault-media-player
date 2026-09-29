@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import PageShell from '../components/PageShell'
 import PosterImage from '../components/PosterImage'
 import { useLibrary } from '../hooks/useLibrary'
 import { useAppStore } from '../store/appStore'
+import { formatClock, formatRuntime } from '../utils/duration'
+import { buildPlaylists, openedAgo, sortByTitle, VIDEO_THUMB_WIDTH, type YouTubePlaylist } from '../utils/youtubePlaylists'
+import YouTubePlaylistPage from './YouTubePlaylistPage'
 import styles from './YouTubePage.module.css'
 
 // ─── Download modal ───────────────────────────────────────────────────────────
@@ -230,69 +233,62 @@ function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-function formatDurationOverlay(sec: number): string {
-  const s = Math.floor(sec % 60).toString().padStart(2, '0')
-  const totalMin = Math.floor(sec / 60)
-  if (sec >= 3600) {
-    const h = Math.floor(sec / 3600)
-    const m = (totalMin % 60).toString().padStart(2, '0')
-    return `${h}:${m}:${s}`
-  }
-  return `${totalMin}:${s}`
-}
-
 export default function YouTubePage(): JSX.Element {
   const { items, loading, error, reload } = useLibrary('youtube')
   const { contentResetKey } = useAppStore()
   const [query, setQuery] = useState('')
   const [showDownload, setShowDownload] = useState(false)
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [durations, setDurations] = useState<Record<string, number>>({})
+  const [covers, setCovers] = useState<Record<string, string | null>>({})
+  const [selectedName, setSelectedName] = useState<string | null>(null)
+  // Opening a video stamps last_opened_at in the database, but `items` was
+  // loaded before that. Holding the new timestamps here keeps the cards and the
+  // playlist view current without reloading the whole shelf after every play.
+  const [openedAt, setOpenedAt] = useState<Record<string, number>>({})
 
   useEffect(() => {
     window.api.library.getDurations('youtube').then(setDurations)
+    window.api.youtube.getPlaylistCovers().then(setCovers)
   }, [items])
 
-  useEffect(() => { setQuery('') }, [contentResetKey])
+  useEffect(() => { setQuery(''); setSelectedName(null) }, [contentResetKey])
 
-  const filtered = items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase()))
-  const naturalCmp = (a: MediaItem, b: MediaItem): number =>
-    a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' })
-  const ungrouped = filtered.filter((i) => !i.genre).sort(naturalCmp)
+  const library = useMemo(
+    () => items.map((i) => openedAt[i.filePath] !== undefined ? { ...i, lastOpenedAt: openedAt[i.filePath] } : i),
+    [items, openedAt]
+  )
+  const playlists = useMemo(() => buildPlaylists(library, covers, durations), [library, covers, durations])
 
-  const playlistMap = new Map<string, MediaItem[]>()
-  for (const item of filtered) {
-    if (item.genre) {
-      if (!playlistMap.has(item.genre)) playlistMap.set(item.genre, [])
-      playlistMap.get(item.genre)!.push(item)
-    }
-  }
-  for (const vids of playlistMap.values()) vids.sort(naturalCmp)
-
-  // Collapse new playlists by default when they first appear
-  useEffect(() => {
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      for (const name of playlistMap.keys()) {
-        if (!next.has(`seen:${name}`)) {
-          next.add(name)
-          next.add(`seen:${name}`)
-        }
-      }
-      return next
-    })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items])
-
-  function togglePlaylist(name: string): void {
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name); else next.add(name)
-      return next
-    })
+  function playVideo(filePath: string): void {
+    window.api.playback.openVideo(filePath, 'youtube')
+    setOpenedAt((prev) => ({ ...prev, [filePath]: Math.floor(Date.now() / 1000) }))
   }
 
-  const isEmpty = !loading && !error && filtered.length === 0
+  const selected = selectedName ? playlists.find((p) => p.name === selectedName) : undefined
+  if (selected) {
+    return (
+      <YouTubePlaylistPage
+        playlist={selected}
+        durations={durations}
+        onBack={() => setSelectedName(null)}
+        onPlay={playVideo}
+      />
+    )
+  }
+
+  // With no search, the Videos section holds only the loose videos; every
+  // other video is reached through its playlist. A search looks inside the
+  // playlists too, listing matching videos alongside the playlists they are in.
+  const q = query.trim().toLowerCase()
+  const matches = (v: MediaItem): boolean => v.title.toLowerCase().includes(q)
+  const shownPlaylists = q
+    ? playlists.filter((p) => p.name.toLowerCase().includes(q) || p.videos.some(matches))
+    : playlists
+  const shownVideos = sortByTitle(q ? library.filter(matches) : library.filter((v) => !v.genre))
+
+  const ready = !loading && !error
+  const noVideos = ready && items.length === 0
+  const noMatches = ready && items.length > 0 && shownPlaylists.length === 0 && shownVideos.length === 0
 
   return (
     <>
@@ -308,51 +304,43 @@ export default function YouTubePage(): JSX.Element {
 
       {loading && <p style={{ color: 'var(--text-muted)', padding: '24px' }}>Loading...</p>}
       {error   && <p style={{ color: 'var(--danger)',     padding: '24px' }}>{error}</p>}
-      {isEmpty && (
+      {noVideos && (
         <p style={{ color: 'var(--text-muted)', padding: '24px' }}>
           No saved videos yet. Use Download Video to save YouTube videos for offline viewing.
         </p>
       )}
+      {noMatches && (
+        <p style={{ color: 'var(--text-muted)', padding: '24px' }}>
+          No videos or playlists match “{query.trim()}”.
+        </p>
+      )}
 
-      {/* Ungrouped videos */}
-      {!loading && !error && ungrouped.length > 0 && (
+      {ready && shownPlaylists.length > 0 && (
         <>
-          {playlistMap.size > 0 && <p className={styles.sectionLabel}>Saved Videos</p>}
-          <div className={styles.grid}>
-            {ungrouped.map((item) => (
-              <VideoCard key={item.id} item={item} duration={item.filePath ? durations[item.filePath] : undefined} />
+          <p className={styles.sectionLabel}>Playlists</p>
+          <div className={styles.playlistGrid}>
+            {shownPlaylists.map((p) => (
+              <PlaylistCard key={p.name} playlist={p} onOpen={() => setSelectedName(p.name)} />
             ))}
           </div>
         </>
       )}
 
-      {/* Playlists — collapsible */}
-      {!loading && !error && [...playlistMap.entries()].map(([playlist, videos]) => {
-        const isCollapsed = collapsed.has(playlist)
-        return (
-          <div key={playlist}>
-            <button className={styles.playlistHeader} onClick={() => togglePlaylist(playlist)}>
-              <span className={styles.playlistPill}>
-                <svg
-                  viewBox="0 0 24 24" fill="currentColor"
-                  className={`${styles.playlistPillIcon} ${isCollapsed ? styles.playlistPillIconCollapsed : ''}`}
-                >
-                  <path d="M7 10l5 5 5-5z"/>
-                </svg>
-                {playlist}
-              </span>
-              <span className={styles.playlistCount}>{videos.length} video{videos.length !== 1 ? 's' : ''}</span>
-            </button>
-            {!isCollapsed && (
-              <div className={styles.grid}>
-                {videos.map((item) => (
-                  <VideoCard key={item.id} item={item} duration={item.filePath ? durations[item.filePath] : undefined} />
-                ))}
-              </div>
-            )}
+      {ready && shownVideos.length > 0 && (
+        <>
+          {shownPlaylists.length > 0 && <p className={styles.sectionLabel}>Videos</p>}
+          <div className={styles.grid}>
+            {shownVideos.map((item) => (
+              <VideoCard
+                key={item.id}
+                item={item}
+                duration={durations[item.filePath]}
+                onPlay={() => playVideo(item.filePath)}
+              />
+            ))}
           </div>
-        )
-      })}
+        </>
+      )}
     </PageShell>
 
     {showDownload && (
@@ -365,19 +353,59 @@ export default function YouTubePage(): JSX.Element {
   )
 }
 
-// ─── Video card ───────────────────────────────────────────────────────────────
+// ─── Playlist card ────────────────────────────────────────────────────────────
 
-function VideoCard({ item, duration }: { item: MediaItem; duration?: number }): JSX.Element {
-  function play(): void {
-    if (!item.filePath) return
-    window.api.playback.openVideo(item.filePath, 'youtube')
-  }
+function PlaylistCard({ playlist, onOpen }: { playlist: YouTubePlaylist; onOpen: () => void }): JSX.Element {
+  const { name, videos, cover, totalSeconds, lastOpened } = playlist
+  const count = `${videos.length} video${videos.length !== 1 ? 's' : ''}`
 
   return (
-    <button className={styles.card} onClick={play}>
+    <button className={styles.playlistCard} onClick={onOpen}>
+      {/* The two slivers peeking out above the cover mark this as a stack of
+          videos rather than a single one. */}
+      <div className={styles.stack}>
+        <div className={styles.thumb}>
+          {cover
+            ? <PosterImage filePath={cover.path} title={name} width={cover.width} />
+            : <div className={styles.thumbPlaceholder}><PlaylistIcon /></div>
+          }
+          <div className={styles.playOverlay}>
+            <span className={styles.viewPlaylist}><PlaylistIcon /> View playlist</span>
+          </div>
+          <div className={styles.countBadge}><PlaylistIcon /> {count}</div>
+        </div>
+      </div>
+      <div className={styles.info}>
+        <span className={styles.playlistTitle}>{name}</span>
+        <span className={styles.meta}>
+          {count}{totalSeconds > 0 && ` · ${formatRuntime(totalSeconds)}`}
+        </span>
+        {lastOpened?.lastOpenedAt && (
+          <span className={styles.meta}>
+            Watched {openedAgo(lastOpened.lastOpenedAt)} · {lastOpened.title}
+          </span>
+        )}
+      </div>
+    </button>
+  )
+}
+
+function PlaylistIcon(): JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={styles.playlistIcon}>
+      <path d="M3 6h12v2H3zm0 5h12v2H3zm0 5h8v2H3zm14-5v8l6-4z"/>
+    </svg>
+  )
+}
+
+// ─── Video card ───────────────────────────────────────────────────────────────
+
+function VideoCard({ item, duration, onPlay }: { item: MediaItem; duration?: number; onPlay: () => void }): JSX.Element {
+  return (
+    <button className={styles.card} onClick={onPlay}>
       <div className={styles.thumb}>
         {item.posterPath
-          ? <PosterImage filePath={item.posterPath} title={item.title} width={520} />
+          ? <PosterImage filePath={item.posterPath} title={item.title} width={VIDEO_THUMB_WIDTH} />
           : (
             <div className={styles.thumbPlaceholder}>
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
@@ -388,11 +416,14 @@ function VideoCard({ item, duration }: { item: MediaItem; duration?: number }): 
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
         </div>
         {duration !== undefined && duration > 0 && (
-          <div className={styles.durationOverlay}>{formatDurationOverlay(duration)}</div>
+          <div className={styles.durationOverlay}>{formatClock(duration)}</div>
         )}
       </div>
       <div className={styles.info}>
         <span className={styles.title}>{item.title}</span>
+        {/* Only search results include playlist videos; name the playlist so
+            they can be told apart from the loose ones. */}
+        {item.genre && <span className={styles.meta}>{item.genre}</span>}
       </div>
     </button>
   )

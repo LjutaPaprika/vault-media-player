@@ -252,6 +252,8 @@ interface Window {
     }
     youtube: {
       getPlaylists: () => Promise<string[]>
+      /** Cover image path per playlist folder, or null where no cover file exists. */
+      getPlaylistCovers: () => Promise<Record<string, string | null>>
       downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) => Promise<{ success: boolean }>
       getCookieStatus: () => Promise<YouTubeCookieStatus>
       refreshCookies:  () => Promise<YouTubeCookieStatus>
