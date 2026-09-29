@@ -229,7 +229,19 @@ function writeCookiesFile(driveRoot: string, cookies: Cookie[]): void {
     ].join('\t')
   })
 
+  // Windows refuses to recreate a +h file: writeFileSync throws EPERM. That is
+  // how every cookie refresh since the file was first hidden failed silently —
+  // the error was caught and logged, the stale file kept, and the UI reported
+  // the old refresh date straight back at the user. Unlinking first avoids it
+  // (unlink works on hidden files).
+  if (existsSync(path)) {
+    try { unlinkSync(path) } catch { /* fall through — the write may still succeed */ }
+  }
   writeFileSync(path, header + lines.join('\n') + '\n', 'utf-8')
+  // Restore the attribute so app/ internals stay hidden like the rest of the drive.
+  if (process.platform === 'win32') {
+    try { spawnSync('attrib', ['+h', path], { shell: true }) } catch { /* cosmetic only */ }
+  }
 }
 
 /** Classify a yt-dlp stderr blob into a user-friendly error kind. */

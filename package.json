@@ -1,6 +1,6 @@
 {
   "name": "Vault",
-  "version": "1.25.6",
+  "version": "1.25.7",
   "description": "Personal media vault",
   "main": "out/main/index.js",
   "scripts": {
