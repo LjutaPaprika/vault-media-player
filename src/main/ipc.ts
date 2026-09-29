@@ -1298,6 +1298,47 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       })
     }
 
+    /**
+     * Fetch subtitles for a video that has already downloaded successfully.
+     *
+     * Deliberately a separate pass rather than flags on the main download:
+     * YouTube rate-limits the caption endpoint hard (HTTP 429 after only a few
+     * requests), and a caption failure inside the main call aborts the whole
+     * thing — losing the video over a subtitle. Here a failure is logged and
+     * ignored, so the video is always kept.
+     *
+     * --sub-langs is exact 'en', never 'en.*': the glob also matches YouTube's
+     * auto-translated en-fr, en-ko, en-ja … variants, which pulls a dozen
+     * redundant files and is itself what trips the rate limit.
+     *
+     * --write-subs takes the uploader's own subtitles; --write-auto-subs falls
+     * back to machine transcription when the uploader provided none. The file
+     * lands beside the video as "<title>.en.srt", which mpv loads on its own.
+     */
+    const runSubtitles = (url: string, useCookies: boolean): Promise<void> => {
+      return new Promise((resolve) => {
+        const cookiesArgs = useCookies && tmpCookiesPath ? ['--cookies', tmpCookiesPath] : []
+        const proc = spawn(ytdlpPath, [
+          '--skip-download',
+          '--write-subs', '--write-auto-subs', '--sub-langs', 'en', '--convert-subs', 'srt',
+          '--extractor-args', 'youtube:player_client=tv,web_safari',
+          ...cookiesArgs,
+          ...denoArgs,
+          '--newline', '--no-playlist', '--no-update',
+          '-o', outTemplate, url
+        ])
+        let err = ''
+        proc.stderr.on('data', (chunk: Buffer) => { err += chunk.toString() })
+        proc.on('error', (e) => { logYtDlp(root, 'video', `subtitle spawn error for ${url}: ${String(e)}`); resolve() })
+        proc.on('close', (code) => {
+          logYtDlp(root, 'video', code === 0
+            ? `subtitles ok: ${url}`
+            : `subtitles unavailable (exit ${code}, video kept): ${url}${err.trim() ? " — " + err.trim().slice(-160) : ""}`)
+          resolve()
+        })
+      })
+    }
+
     for (let i = 0; i < urls.length; i++) {
       const { url } = urls[i]
       win.webContents.send('download:progress', { index: i, total: urls.length, url, status: 'downloading', percent: 0 })
@@ -1316,6 +1357,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
       if (code === 0) {
         logYtDlp(root, 'video', `ok: ${url}`)
+        // Best-effort; never allowed to change the outcome reported below.
+        await runSubtitles(url, false)
       } else {
         logYtDlp(root, 'video', `exit ${code} for ${url}\n${stderr.trim()}`)
       }
