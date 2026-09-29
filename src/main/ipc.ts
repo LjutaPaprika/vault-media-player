@@ -1319,9 +1319,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
      * thing — losing the video over a subtitle. Here a failure is logged and
      * ignored, so the video is always kept.
      *
-     * --sub-langs is exact 'en', never 'en.*': the glob also matches YouTube's
-     * auto-translated en-fr, en-ko, en-ja … variants, which pulls a dozen
-     * redundant files and is itself what trips the rate limit.
+     * --sub-langs lists the real English codes rather than a glob. 'en.*' also
+     * matches YouTube's auto-translated en-fr, en-ko, en-ja … variants, which
+     * pulls a dozen redundant files per video and trips the caption rate limit;
+     * bare 'en' is too narrow and silently skips uploads whose English track is
+     * filed as en-US (observed on this library, where an uploader's own English
+     * subtitles were missed entirely).
      *
      * --write-subs takes the uploader's own subtitles; --write-auto-subs falls
      * back to machine transcription when the uploader provided none. The file
@@ -1332,7 +1335,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         const cookiesArgs = useCookies && tmpCookiesPath ? ['--cookies', tmpCookiesPath] : []
         const proc = spawn(ytdlpPath, [
           '--skip-download',
-          '--write-subs', '--write-auto-subs', '--sub-langs', 'en', '--convert-subs', 'srt',
+          '--write-subs', '--write-auto-subs', '--sub-langs', 'en,en-US,en-GB,en-orig', '--convert-subs', 'srt',
           '--extractor-args', 'youtube:player_client=tv,web_safari',
           ...cookiesArgs,
           ...denoArgs,
