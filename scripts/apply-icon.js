@@ -10,22 +10,60 @@ const { readdirSync, existsSync, renameSync, rmSync } = require('fs')
 const path = require('path')
 const os = require('os')
 
-const outputDir   = 'E:\\app'
+// Overridable so the flatten can be exercised against a scratch folder.
+const outputDir   = process.env.VAULT_APP_DIR || 'E:\\app'
 const unpackedDir = path.join(outputDir, 'win-unpacked')
 const icoPath     = path.join(__dirname, '..', 'build', 'icon.ico')
 
 // Build artifacts written by electron-builder that serve no runtime purpose
 const BUILD_ARTIFACTS = new Set(['builder-debug.yml', 'builder-effective-config.yaml'])
 
-// 1. Flatten win-unpacked/ into app/
+// 1. Flatten win-unpacked/ into app/, all or nothing.
+//
+// Each item being replaced is renamed aside first, not deleted. Deleting went
+// file by file and stopped at the first locked one, which once left
+// app\resources holding the old app.asar but no app.asar.unpacked (the native
+// modules): the app then failed at launch, windowless, until redeployed.
+// Renaming a folder fails outright on Windows while anything inside is open,
+// so a lock is found before anything is lost; every step taken is then undone
+// and app/ stays exactly as it was. Old copies go only once all of the new
+// build is in place.
 if (existsSync(unpackedDir)) {
-  for (const entry of readdirSync(unpackedDir)) {
-    const dest = path.join(outputDir, entry)
-    if (existsSync(dest)) rmSync(dest, { recursive: true, force: true })
-    renameSync(path.join(unpackedDir, entry), dest)
+  const ASIDE = '.pre-deploy'
+  const done = []
+  try {
+    for (const entry of readdirSync(unpackedDir)) {
+      const dest = path.join(outputDir, entry)
+      const aside = dest + ASIDE
+      if (existsSync(aside)) rmSync(aside, { recursive: true, force: true }) // left by an earlier run
+      const hadOld = existsSync(dest)
+      if (hadOld) renameSync(dest, aside)
+      try {
+        renameSync(path.join(unpackedDir, entry), dest)
+      } catch (err) {
+        if (hadOld) renameSync(aside, dest)
+        throw err
+      }
+      done.push({ entry, hadOld })
+    }
+  } catch (err) {
+    for (const { entry, hadOld } of done.reverse()) {
+      const dest = path.join(outputDir, entry)
+      renameSync(dest, path.join(unpackedDir, entry))
+      if (hadOld) renameSync(dest + ASIDE, dest)
+    }
+    console.error(`✗ flatten aborted, app/ left unchanged (${err.code || err.message})`)
+    console.error('  Something has a file in app/ open: the app itself, or VS Code. Close it, then rerun: node scripts/apply-icon.js')
+    process.exit(1)
+  }
+  const stuck = []
+  for (const { entry, hadOld } of done) {
+    if (!hadOld) continue
+    try { rmSync(path.join(outputDir, entry + ASIDE), { recursive: true, force: true }) } catch { stuck.push(entry + ASIDE) }
   }
   rmSync(unpackedDir, { recursive: true, force: true })
   console.log('✓ flattened win-unpacked into app/')
+  if (stuck.length) console.warn(`  old copies still locked, safe to delete later: ${stuck.join(', ')}`)
 }
 
 // 2. Delete build artifacts
