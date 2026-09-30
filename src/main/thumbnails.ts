@@ -214,24 +214,38 @@ let fillingStills = false
  * `isPaused` says a video is playing: ffmpeg reading the library drive while
  * mpv streams from it could make playback stutter. A second call while one is
  * running is ignored.
+ *
+ * Gives up after a run of consecutive failures. One bad file fails alone, but
+ * a run means every grab will fail: no ffmpeg (the macOS player folder ships
+ * without one) or the drive went away. Nothing is cached on failure, so
+ * without this every launch would retry the whole library for nothing.
  */
+const MAX_FAILURES_IN_A_ROW = 10
+
 export async function fillEpisodeStills(
   paths: string[],
   isPaused: () => boolean
-): Promise<{ created: number; failed: number } | null> {
+): Promise<{ created: number; failed: number; gaveUp: boolean } | null> {
   if (fillingStills || paths.length === 0) return null
   fillingStills = true
   let created = 0
   let failed = 0
+  let inARow = 0
+  let gaveUp = false
   try {
     for (const p of paths) {
       while (isPaused()) await new Promise((resolve) => setTimeout(resolve, 5000))
       const r = await getOrCreateThumb(p, EPISODE_STILL_WIDTH, true)
-      if (!r) failed++
-      else if (!r.fromCache) created++
+      if (!r) {
+        failed++
+        if (++inARow >= MAX_FAILURES_IN_A_ROW) { gaveUp = true; break }
+      } else {
+        inARow = 0
+        if (!r.fromCache) created++
+      }
     }
   } finally {
     fillingStills = false
   }
-  return { created, failed }
+  return { created, failed, gaveUp }
 }

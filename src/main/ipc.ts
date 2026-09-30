@@ -725,7 +725,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   function startStillFill(): void {
     try {
       void fillEpisodeStills(getEpisodesWithoutStill(), videoRecentlyActive)
-        .then((r) => { if (r) console.log(`[vault] episode stills: ${r.created} grabbed, ${r.failed} failed`) })
+        .then((r) => {
+          if (!r) return
+          console.log(
+            `[vault] episode stills: ${r.created} grabbed, ${r.failed} failed` +
+              (r.gaveUp ? ' — stopped after repeated failures (ffmpeg missing or drive gone?)' : '')
+          )
+        })
         .catch((e) => console.error('[vault] episode still fill failed:', e))
     } catch (e) {
       console.error('[vault] episode still fill could not start:', e)
