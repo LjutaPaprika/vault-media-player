@@ -147,6 +147,28 @@ function logYtDlp(driveRoot: string, scope: string, message: string): void {
   }
 }
 
+// ─── Typed titles in yt-dlp output templates ─────────────────────────────────
+
+const FULLWIDTH_FOR: Record<string, string> = { '/': '⧸', '\\': '⧹' }
+
+/**
+ * Text the user typed, made safe to place literally in a yt-dlp -o template.
+ *
+ * Characters Windows forbids in file names become the full-width look-alikes
+ * yt-dlp itself uses for titles it fetches ("：" "？" "｜" "⧸"), which is how the
+ * rest of the library is named. Left as they were, yt-dlp's last-resort path
+ * sanitiser turned each into "#": "September 7th at 15:33" was saved as
+ * "15#33". "%" is doubled because the template reads it as a field marker,
+ * and trailing dots and spaces go because Windows drops them from names.
+ */
+export function templateSafe(text: string): string {
+  return text
+    .replace(/[\u0000-\u001f]/g, '')
+    .replace(/[/\\:*?"<>|]/g, (c) => FULLWIDTH_FOR[c] ?? String.fromCharCode(c.charCodeAt(0) + 0xfee0))
+    .replace(/[\s.]+$/, '')
+    .replace(/%/g, '%%')
+}
+
 // ─── YouTube playlist covers ─────────────────────────────────────────────────
 
 /**
@@ -905,8 +927,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     for (let i = 0; i < urls.length; i++) {
       const { url, title, artist: trackArtist } = urls[i]
       const trackNum = (nextTrack + i).toString().padStart(2, '0')
-      const suffix = trackArtist ? ` - ${trackArtist}` : ''
-      const outTemplate = join(albumPath, `${trackNum} - ${title}${suffix}.%(ext)s`)
+      const suffix = trackArtist ? ` - ${templateSafe(trackArtist)}` : ''
+      const outTemplate = join(albumPath, `${trackNum} - ${templateSafe(title)}${suffix}.%(ext)s`)
 
       // Breathing room between consecutive tracks (never before the first).
       if (i > 0) await sleep(MUSIC_TRACK_GAP_MS)
