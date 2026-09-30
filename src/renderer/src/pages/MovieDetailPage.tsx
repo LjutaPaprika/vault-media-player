@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import PosterImage from '../components/PosterImage'
+import WatchedBar from '../components/WatchedBar'
 import { useController } from '../hooks/useController'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useVideoProgress } from '../hooks/useVideoProgress'
 import { useAppStore } from '../store/appStore'
+import { formatClock, formatRuntime } from '../utils/duration'
+import { startPosition, watchedFraction, watchState } from '../utils/resume'
 import styles from './MovieDetailPage.module.css'
 
 interface Props {
@@ -98,6 +102,7 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, ini
   }
   const focusedIdxRef = useRef(0)
   const playBtnRef = useRef<HTMLButtonElement | null>(null)
+  const restartBtnRef = useRef<HTMLButtonElement | null>(null)
   const extraRefs = useRef<(HTMLButtonElement | null)[]>([])
   const extrasRef = useRef<MediaItem[]>([])
 
@@ -110,22 +115,34 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, ini
   useEffect(() => { extrasRef.current = extras }, [extras])
 
   const [launching, setLaunching] = useState(false)
+  const progress = useVideoProgress([filePath, ...extras.map((e) => e.filePath)])
+  const movieState = watchState(progress[filePath], techInfo?.duration ?? 0, 'movies')
+  // Controller rows: Play, then Start over while the film is partway, then extras.
+  const extrasOffset = movieState.kind === 'partial' ? 2 : 1
+  const extrasOffsetRef = useRef(extrasOffset)
+  extrasOffsetRef.current = extrasOffset
 
-  function launchVideo(path: string): void {
+  /** Opens a video, resuming where it was left off unless told where to start. */
+  function launchVideo(path: string, startAt?: number): void {
     flushSync(() => setLaunching(true))
     setTimeout(() => setLaunching(false), 1500)
-    window.api.playback.openVideo(path)
+    const known = path === filePath ? techInfo?.duration ?? 0 : 0
+    const start = startAt ?? startPosition(watchState(progress[path], known, 'movies'))
+    window.api.playback.openVideo(path, 'movies', start > 0 ? start : undefined)
   }
 
   function playMovie(): void { launchVideo(filePath) }
+  function restartMovie(): void { launchVideo(filePath, 0) }
 
   function focusRow(idx: number): void {
-    const total = 1 + extrasRef.current.length
+    const offset = extrasOffsetRef.current
+    const total = offset + extrasRef.current.length
     const clamped = Math.max(0, Math.min(total - 1, idx))
     focusedIdxRef.current = clamped
     setFocusedIdx(clamped)
     if (clamped === 0) playBtnRef.current?.focus()
-    else extraRefs.current[clamped - 1]?.focus()
+    else if (clamped < offset) restartBtnRef.current?.focus()
+    else extraRefs.current[clamped - offset]?.focus()
   }
 
   const { resetState } = useController({ onButton: (btn) => {
@@ -133,9 +150,11 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, ini
     if (btn === 'up')   focusRow(focusedIdxRef.current - 1)
     if (btn === 'down') focusRow(focusedIdxRef.current + 1)
     if (btn === 'confirm') {
+      const offset = extrasOffsetRef.current
       if (focusedIdxRef.current === 0) playMovie()
+      else if (focusedIdxRef.current < offset) restartMovie()
       else {
-        const extra = extrasRef.current[focusedIdxRef.current - 1]
+        const extra = extrasRef.current[focusedIdxRef.current - offset]
         if (extra?.filePath) launchVideo(extra.filePath as string)
       }
     }
@@ -195,15 +214,37 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, ini
               ))}
             </div>
           )}
-          <button
-            ref={playBtnRef}
-            className={`${styles.playButton} ${focusedIdx === 0 ? styles.playButtonFocus : ''}`}
-            onClick={playMovie}
-            disabled={launching}
-            style={launching ? { opacity: 0.5, cursor: 'default' } : undefined}
-          >
-            {launching ? 'Opening…' : '▶ Play'}
-          </button>
+          <div className={styles.playRow}>
+            <button
+              ref={playBtnRef}
+              className={`${styles.playButton} ${focusedIdx === 0 ? styles.playButtonFocus : ''}`}
+              onClick={playMovie}
+              disabled={launching}
+              style={launching ? { opacity: 0.5, cursor: 'default' } : undefined}
+            >
+              {launching
+                ? 'Opening…'
+                : movieState.kind === 'partial' ? `▶ Resume from ${formatClock(movieState.position)}` : '▶ Play'}
+            </button>
+            {movieState.kind === 'partial' && (
+              <button
+                ref={restartBtnRef}
+                className={`${styles.restartButton} ${focusedIdx === 1 ? styles.playButtonFocus : ''}`}
+                onClick={restartMovie}
+                disabled={launching}
+              >
+                ↺ Start over
+              </button>
+            )}
+          </div>
+          {movieState.kind === 'partial' && movieState.duration > 0 && (
+            <div className={styles.resumeInfo}>
+              <div className={styles.resumeTrack}>
+                <WatchedBar fraction={watchedFraction(movieState) ?? 0} />
+              </div>
+              <span>{formatRuntime(movieState.duration - movieState.position)} left</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -250,17 +291,23 @@ export default function MovieDetailPage({ title, year, posterPath, filePath, ini
             <span className={styles.extrasCount}>{extras.length}</span>
           </div>
           <div className={styles.extrasList}>
-            {extras.map((item, i) => (
-              <button
-                key={item.id}
-                ref={(el) => (extraRefs.current[i] = el)}
-                className={`${styles.extraRow} ${i + 1 === focusedIdx ? styles.controllerFocus : ''}`}
-                onClick={() => item.filePath && launchVideo(item.filePath as string)}
-              >
-                <span className={styles.extraTitle}>{item.title}</span>
-                <span className={styles.playIcon}>▶</span>
-              </button>
-            ))}
+            {extras.map((item, i) => {
+              const watched = watchState(progress[item.filePath], 0, 'movies')
+              return (
+                <button
+                  key={item.id}
+                  ref={(el) => (extraRefs.current[i] = el)}
+                  className={`${styles.extraRow} ${i + extrasOffset === focusedIdx ? styles.controllerFocus : ''}`}
+                  onClick={() => item.filePath && launchVideo(item.filePath as string)}
+                >
+                  <span className={styles.extraTitle}>{item.title}</span>
+                  <span className={styles.playIcon}>▶</span>
+                  {watched.kind === 'partial' && (
+                    <WatchedBar fraction={watchedFraction(watched) ?? 0} className={styles.rowBar} />
+                  )}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}

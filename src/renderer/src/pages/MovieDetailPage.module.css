@@ -114,6 +114,55 @@
   box-shadow: 0 0 0 2px var(--bg-base, #1a1a1a), 0 0 0 4px var(--accent);
 }
 
+/* ── Resume ───────────────────────────────────────────────────────────────── */
+
+.playRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.restartButton {
+  margin-top: 2px;
+  padding: 9px 16px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.restartButton:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.resumeInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.resumeTrack {
+  position: relative;
+  width: 180px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+/* Progress along the bottom of a list row, inset to its padding. Scoped to
+   the row so it outranks WatchedBar's own full-width rule whatever order the
+   stylesheets load in. */
+.extraRow .rowBar {
+  left: 12px;
+  right: 12px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
 /* ── Technical metadata ───────────────────────────────────────────────────── */
 
 .metaSection {
@@ -204,6 +253,7 @@
 }
 
 .extraRow {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 16px;

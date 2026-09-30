@@ -221,8 +221,14 @@ interface Window {
     }
     playback: {
       openFile:     (filePath: string) => Promise<void>
-      /** startSeconds resumes partway; only YouTube videos record their position so far. */
+      /** startSeconds resumes partway. */
       openVideo:    (filePath: string, category?: string, startSeconds?: number) => Promise<void>
+      /** Where each of these videos was left off, for those played since positions were recorded. */
+      getProgress:  (filePaths: string[]) => Promise<Record<string, VideoProgress>>
+      /** Forgets a video's position. */
+      clearProgress: (filePath: string) => Promise<void>
+      /** Fires shortly after mpv records a position, while a video plays and when it closes. */
+      onProgressChanged: (cb: () => void) => () => void
       openAudio:    (filePath: string) => Promise<void>
       launchGame:   (gamePath: string, platform: string) => Promise<void>
       onMusicPause: (cb: () => void) => () => void
@@ -262,10 +268,6 @@ interface Window {
       getPlaylists: () => Promise<string[]>
       /** Cover image path per playlist folder, or null where no cover file exists. */
       getPlaylistCovers: () => Promise<Record<string, string | null>>
-      /** Where each YouTube video was left off, for those that have been played since tracking began. */
-      getProgress: () => Promise<Record<string, VideoProgress>>
-      /** Fires shortly after mpv records a position, while a video plays and when it closes. */
-      onProgressChanged: (cb: () => void) => () => void
       downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) => Promise<{ success: boolean }>
       getCookieStatus: () => Promise<YouTubeCookieStatus>
       refreshCookies:  () => Promise<YouTubeCookieStatus>

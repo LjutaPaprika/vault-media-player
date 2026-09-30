@@ -55,6 +55,13 @@ contextBridge.exposeInMainWorld('api', {
     openFile:  (filePath: string) => ipcRenderer.invoke('playback:openFile', filePath),
     openVideo: (filePath: string, category?: string, startSeconds?: number) => ipcRenderer.invoke('playback:openVideo', filePath, category, startSeconds),
     openAudio: (filePath: string) => ipcRenderer.invoke('playback:openAudio', filePath),
+    getProgress: (filePaths: string[]): Promise<Record<string, VideoProgress>> => ipcRenderer.invoke('playback:getProgress', filePaths),
+    clearProgress: (filePath: string): Promise<void> => ipcRenderer.invoke('playback:clearProgress', filePath),
+    onProgressChanged: (cb: () => void) => {
+      const listener = (): void => cb()
+      ipcRenderer.on('playback:progressChanged', listener)
+      return () => ipcRenderer.removeListener('playback:progressChanged', listener)
+    },
     launchGame: (gamePath: string, platform: string) =>
       ipcRenderer.invoke('playback:launchGame', gamePath, platform),
     onMusicPause: (cb: () => void) => {
@@ -119,12 +126,6 @@ contextBridge.exposeInMainWorld('api', {
   youtube: {
     getPlaylists: (): Promise<string[]> => ipcRenderer.invoke('youtube:getPlaylists'),
     getPlaylistCovers: (): Promise<Record<string, string | null>> => ipcRenderer.invoke('youtube:getPlaylistCovers'),
-    getProgress: (): Promise<Record<string, VideoProgress>> => ipcRenderer.invoke('youtube:getProgress'),
-    onProgressChanged: (cb: () => void) => {
-      const listener = (): void => cb()
-      ipcRenderer.on('youtube:progressChanged', listener)
-      return () => ipcRenderer.removeListener('youtube:progressChanged', listener)
-    },
     downloadVideo: (args: { urls: { url: string; title: string }[]; playlistName: string | null }) =>
       ipcRenderer.invoke('youtube:downloadVideo', args),
     getCookieStatus: () => ipcRenderer.invoke('youtube:getCookieStatus'),

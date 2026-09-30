@@ -43,7 +43,7 @@ import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
-import { progressFileFor, readProgress, watchProgress, type VideoProgress } from './playbackProgress'
+import { clearProgress, progressFileFor, readProgress, watchProgress, type VideoProgress } from './playbackProgress'
 import { warmThumbs } from './thumbnails'
 import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
@@ -721,7 +721,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (stopProgressWatch) return
     try {
       stopProgressWatch = watchProgress(
-        () => { if (!win.isDestroyed()) win.webContents.send('youtube:progressChanged') },
+        () => { if (!win.isDestroyed()) win.webContents.send('playback:progressChanged') },
         () => { stopProgressWatch = null }
       )
     } catch {
@@ -732,11 +732,20 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('playback:openVideo', (_event, filePath: string, category?: string, startSeconds?: number) => {
     setLastOpened(filePath)
     const root = resolveLibraryRoot()
-    // Resume tracking is trialled on YouTube before the rest of the library.
-    const progressFile = category === 'youtube' ? progressFileFor(root, filePath) : undefined
-    if (progressFile) ensureProgressWatch()
+    const progressFile = progressFileFor(root, filePath)
+    ensureProgressWatch()
     openVideo(filePath, root, getConfig('hwdec') ?? 'off', category, { startSeconds, progressFile })
     win.webContents.send('music:pause')
+  })
+
+  ipcMain.handle('playback:getProgress', (_event, filePaths: string[]): Record<string, VideoProgress> => {
+    ensureProgressWatch()
+    return readProgress(resolveLibraryRoot(), filePaths)
+  })
+
+  ipcMain.handle('playback:clearProgress', (_event, filePath: string) => {
+    clearProgress(resolveLibraryRoot(), filePath)
+    if (!win.isDestroyed()) win.webContents.send('playback:progressChanged')
   })
 
   ipcMain.handle('settings:get', (_event, key: string, fallback: string) => getConfig(key) ?? fallback)
@@ -1298,10 +1307,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     listPlaylistCovers(resolveLibraryRoot())
   )
 
-  ipcMain.handle('youtube:getProgress', (): Record<string, VideoProgress> => {
-    ensureProgressWatch()
-    return readProgress(resolveLibraryRoot(), (getItems('youtube') as { filePath: string }[]).map((i) => i.filePath))
-  })
 
   ipcMain.handle('youtube:downloadVideo', async (
     _event,

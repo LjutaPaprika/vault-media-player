@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import ContinueButton from '../components/ContinueButton'
 import PosterImage from '../components/PosterImage'
+import WatchedBar from '../components/WatchedBar'
 import { useController } from '../hooks/useController'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useVideoProgress } from '../hooks/useVideoProgress'
 import { useAppStore } from '../store/appStore'
+import { continueTarget, startPosition, watchedFraction, watchState, type ContinueTarget } from '../utils/resume'
 import styles from './ShowDetailPage.module.css'
 
 interface Props {
@@ -45,6 +49,11 @@ function extrasGroupKey(title: string): string | null {
   const groupNumTitle = title.match(/^(.+?)\s+-\s+\d+\s+-\s+.+$/)
   if (groupNumTitle) return groupNumTitle[1].trim()
   return null
+}
+
+/** An episode as the Continue button names it: "S01E03 · Title". */
+function episodeLabel(ep: ParsedEpisode): string {
+  return [ep.subLabel, ep.badge, ep.title].filter(Boolean).join(' · ')
 }
 
 function sectionLabel(seasonNum: number, subLabels: Map<number, string>): string {
@@ -130,6 +139,7 @@ function parseEpisode(item: MediaItem): ParsedEpisode {
 }
 
 type NavItem =
+  | { kind: 'continue' }
   | { kind: 'header'; seasonNum: number }
   | { kind: 'episode'; ep: ParsedEpisode }
   | { kind: 'extras-header' }
@@ -177,6 +187,17 @@ function formatAudioCodec(codec: string): string {
   return map[codec.toLowerCase()] ?? codec.toUpperCase()
 }
 
+/**
+ * How far into a partly watched episode, along the bottom of its row. Rows
+ * the viewer finished or never started get nothing; a list of full bars would
+ * bury the ones still in progress.
+ */
+function PartwayBar({ progress, category }: { progress: VideoProgress | undefined; category: string }): JSX.Element | null {
+  const state = watchState(progress, 0, category)
+  if (state.kind !== 'partial') return null
+  return <WatchedBar fraction={watchedFraction(state) ?? 0} className={styles.rowBar} />
+}
+
 export default function ShowDetailPage({ seriesTitle, year, posterPath, category, onBack }: Props): JSX.Element {
   const { setFocusZone } = useAppStore()
   useEscapeKey(onBack)
@@ -211,10 +232,14 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     window.api.library.getWatchGuide(seriesTitle, category).then(setWatchGuide)
   }, [seriesTitle])
 
-  function playFile(filePath: string): void {
+  const progress = useVideoProgress([...episodes, ...extras].map((e) => e.filePath))
+
+  /** Opens a video, resuming where it was left off unless told where to start. */
+  function playFile(filePath: string, startAt?: number): void {
     flushSync(() => setLaunchingPath(filePath))
     setTimeout(() => setLaunchingPath(null), 1500)
-    window.api.playback.openVideo(filePath, category)
+    const start = startAt ?? startPosition(watchState(progress[filePath], 0, category))
+    window.api.playback.openVideo(filePath, category, start > 0 ? start : undefined)
     const now = Math.floor(Date.now() / 1000)
     setEpisodes((prev) => prev.map((ep) => ep.filePath === filePath ? { ...ep, lastOpenedAt: now } : ep))
   }
@@ -225,6 +250,9 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   function toggleWatched(filePath: string, currentlyWatched: boolean): void {
     const next = !currentlyWatched
     window.api.library.setWatched(filePath, next)
+    // Either way a saved position no longer applies: watched means Continue
+    // moves past it, unwatched means it starts from the top.
+    window.api.playback.clearProgress(filePath)
     const now = next ? Math.floor(Date.now() / 1000) : null
     setEpisodes((prev) => prev.map((ep) => ep.filePath === filePath ? { ...ep, lastOpenedAt: now } : ep))
     setContextMenu(null)
@@ -327,6 +355,18 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     return entries
   }, [seasons, watchOrder, subLabelMap])
 
+  // Continue follows the episodes in the order the page lists them, custom
+  // watch orders included, so "next" means the row below.
+  const next = useMemo((): ContinueTarget<ParsedEpisode> | null => {
+    const openedAt = new Map(episodes.map((e) => [e.id, e.lastOpenedAt]))
+    const ordered = orderedSeasons.flatMap(([, eps]) =>
+      eps.map((ep) => ({ ...ep, lastOpenedAt: openedAt.get(ep.id) ?? null }))
+    )
+    return continueTarget(ordered, progress, {}, category)
+  }, [orderedSeasons, episodes, progress, category])
+  const nextRef = useRef(next)
+  nextRef.current = next
+
   const sortedExtras = useMemo(() => {
     const order = watchOrder?.itemOrder['extras']
     if (!order?.length) return extras
@@ -364,8 +404,12 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   }, [sortedExtras])
 
   // Flat nav items — rebuilt whenever collapsed state or data changes
+  const hasNext = next !== null
   const navItems = useMemo((): NavItem[] => {
     const items: NavItem[] = []
+    // First, so opening a show with a controller lands on it: one press to
+    // carry on watching.
+    if (hasNext) items.push({ kind: 'continue' })
     for (const [seasonNum, eps] of orderedSeasons) {
       items.push({ kind: 'header', seasonNum })
       if (!collapsedSeasons.has(seasonNum)) {
@@ -381,7 +425,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
       }
     }
     return items
-  }, [orderedSeasons, collapsedSeasons, sortedExtras, collapsedExtras])
+  }, [hasNext, orderedSeasons, collapsedSeasons, sortedExtras, collapsedExtras])
 
   // Keep ref in sync for controller callbacks
   navItemsRef.current = navItems
@@ -406,7 +450,11 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     if (btn === 'confirm') {
       const item = navItemsRef.current[focusedIdxRef.current]
       if (!item) return
-      if (item.kind === 'header')  toggleSeason(item.seasonNum)
+      if (item.kind === 'continue') {
+        const target = nextRef.current
+        if (target) playFile(target.video.filePath, target.startAt)
+      }
+      else if (item.kind === 'header')  toggleSeason(item.seasonNum)
       else if (item.kind === 'extras-header') toggleExtras()
       else if (item.kind === 'episode') playFile(item.ep.filePath)
       else if (item.kind === 'extra' && item.item.filePath) playFile(item.item.filePath as string)
@@ -418,6 +466,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
 
   // Render — navIdx must mirror navItems order exactly
   let navIdx = 0
+  const continueIdx = next ? navIdx++ : -1
 
   return (
     <div className={styles.page}>
@@ -440,6 +489,16 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
           <div className={styles.heroMeta}>{episodes.length} episode{episodes.length !== 1 ? 's' : ''}</div>
           {seriesComplete && <span className={styles.seriesCompletePill}>Series Complete</span>}
         </div>
+
+        {next && (
+          <ContinueButton
+            target={next}
+            title={episodeLabel(next.video)}
+            focused={continueIdx === focusedIdx}
+            buttonRef={(el) => (rowRefs.current[continueIdx] = el)}
+            onClick={() => playFile(next.video.filePath, next.startAt)}
+          />
+        )}
 
         {/* Technical metadata from first episode */}
         {techInfo && (
@@ -552,6 +611,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                         ? <span className={styles.launchingLabel}>Opening…</span>
                         : <span className={styles.playIcon}>▶</span>
                       }
+                      <PartwayBar progress={progress[ep.filePath]} category={category} />
                     </button>
                   )
                 })}
@@ -592,6 +652,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                         <span className={styles.episodeTitle}>{section.item.title}</span>
                       </div>
                       <span className={styles.playIcon}>▶</span>
+                      <PartwayBar progress={progress[section.item.filePath]} category={category} />
                     </button>
                   )
                 } else {
@@ -621,6 +682,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                               <span className={styles.episodeTitle}>{displayTitle}</span>
                             </div>
                             <span className={styles.playIcon}>▶</span>
+                            <PartwayBar progress={progress[item.filePath]} category={category} />
                           </button>
                         )
                       })}
@@ -642,6 +704,15 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
           <>
             <div className={styles.contextMenuShield} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null) }} />
             <div className={styles.contextMenu} style={{ left: contextMenu.x, top: contextMenu.y }}>
+              {watchState(progress[contextMenu.ep.filePath], 0, category).kind === 'partial' && (
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  onClick={() => { playFile(contextMenu.ep.filePath, 0); setContextMenu(null) }}
+                >
+                  Play from beginning
+                </button>
+              )}
               <button
                 type="button"
                 className={styles.contextMenuItem}

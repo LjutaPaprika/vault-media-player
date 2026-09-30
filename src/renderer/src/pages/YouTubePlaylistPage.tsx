@@ -1,10 +1,12 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import ContinueButton from '../components/ContinueButton'
 import PosterImage from '../components/PosterImage'
 import WatchedBar from '../components/WatchedBar'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { formatClock, formatRuntime } from '../utils/duration'
-import { continueTarget, VIDEO_THUMB_WIDTH, watchedFraction, watchState, type YouTubePlaylist } from '../utils/youtubePlaylists'
+import { continueTarget, watchedFraction, watchState } from '../utils/resume'
+import { VIDEO_THUMB_WIDTH, type YouTubePlaylist } from '../utils/youtubePlaylists'
 import sd from './ShowDetailPage.module.css'
 import styles from './YouTubePlaylistPage.module.css'
 
@@ -44,7 +46,7 @@ export default function YouTubePlaylistPage({ playlist, durations, progress, onB
     onPlay(filePath, startAt)
   }
 
-  const next = continueTarget(playlist, progress, durations)
+  const next = continueTarget(videos, progress, durations, 'youtube')
 
   return (
     <div className={sd.page}>
@@ -70,18 +72,7 @@ export default function YouTubePlaylistPage({ playlist, durations, progress, onB
         </div>
 
         {next && (
-          <button className={styles.continueBtn} onClick={() => play(next.video.filePath, next.startAt)}>
-            <svg viewBox="0 0 24 24" fill="currentColor" className={styles.continueIcon}>
-              <path d="M8 5v14l11-7z"/>
-            </svg>
-            <span className={styles.continueText}>
-              <span className={styles.continueLabel}>
-                {next.label}
-                {next.leftOffAt !== null && <span className={styles.continueAt}> from {formatClock(next.leftOffAt)}</span>}
-              </span>
-              <span className={styles.continueTitle}>{next.video.title}</span>
-            </span>
-          </button>
+          <ContinueButton target={next} title={next.video.title} onClick={() => play(next.video.filePath, next.startAt)} />
         )}
       </div>
 
@@ -99,7 +90,7 @@ export default function YouTubePlaylistPage({ playlist, durations, progress, onB
           <div className={sd.episodeListInner}>
             {videos.map((v, i) => {
               const duration = durations[v.filePath]
-              const watched = watchedFraction(watchState(progress[v.filePath], duration))
+              const watched = watchedFraction(watchState(progress[v.filePath], duration, 'youtube'))
               const launching = launchingPath === v.filePath
               return (
                 <button

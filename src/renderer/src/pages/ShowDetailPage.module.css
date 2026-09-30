@@ -301,6 +301,7 @@
 }
 
 .episodeRow {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -366,6 +367,17 @@
 .episodeRow:focus-visible .playIcon {
   opacity: 1;
   color: var(--accent);
+}
+
+/* Progress along the bottom of a partly watched row, inset to its padding.
+   Scoped to the row so it outranks WatchedBar's own full-width rule whatever
+   order the stylesheets load in. */
+.episodeRow .rowBar {
+  left: 12px;
+  right: 12px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
 }
 
 /* ── MPV launch feedback ── */

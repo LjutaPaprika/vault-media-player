@@ -3,9 +3,11 @@ import PageShell from '../components/PageShell'
 import PosterImage from '../components/PosterImage'
 import WatchedBar from '../components/WatchedBar'
 import { useLibrary } from '../hooks/useLibrary'
+import { useVideoProgress } from '../hooks/useVideoProgress'
 import { useAppStore } from '../store/appStore'
 import { formatClock, formatRuntime } from '../utils/duration'
-import { buildPlaylists, openedAgo, sortByTitle, startPosition, VIDEO_THUMB_WIDTH, watchedFraction, watchState, type YouTubePlaylist } from '../utils/youtubePlaylists'
+import { startPosition, watchedFraction, watchState } from '../utils/resume'
+import { buildPlaylists, openedAgo, sortByTitle, VIDEO_THUMB_WIDTH, type YouTubePlaylist } from '../utils/youtubePlaylists'
 import YouTubePlaylistPage from './YouTubePlaylistPage'
 import styles from './YouTubePage.module.css'
 
@@ -246,21 +248,12 @@ export default function YouTubePage(): JSX.Element {
   // loaded before that. Holding the new timestamps here keeps the cards and the
   // playlist view current without reloading the whole shelf after every play.
   const [openedAt, setOpenedAt] = useState<Record<string, number>>({})
-  const [progress, setProgress] = useState<Record<string, VideoProgress>>({})
+  const progress = useVideoProgress(items.map((i) => i.filePath))
 
   useEffect(() => {
     window.api.library.getDurations('youtube').then(setDurations)
     window.api.youtube.getPlaylistCovers().then(setCovers)
-    window.api.youtube.getProgress().then(setProgress)
   }, [items])
-
-  // mpv records the playhead every few seconds and when it closes; the main
-  // process watches for those writes, so bars and Continue keep up live.
-  useEffect(() => {
-    return window.api.youtube.onProgressChanged(() => {
-      window.api.youtube.getProgress().then(setProgress)
-    })
-  }, [])
 
   useEffect(() => { setQuery(''); setSelectedName(null) }, [contentResetKey])
 
@@ -272,7 +265,7 @@ export default function YouTubePage(): JSX.Element {
 
   /** Opens a video, resuming where it was left off unless told where to start. */
   function playVideo(filePath: string, startAt?: number): void {
-    const start = startAt ?? startPosition(watchState(progress[filePath], durations[filePath]))
+    const start = startAt ?? startPosition(watchState(progress[filePath], durations[filePath], 'youtube'))
     window.api.playback.openVideo(filePath, 'youtube', start > 0 ? start : undefined)
     setOpenedAt((prev) => ({ ...prev, [filePath]: Math.floor(Date.now() / 1000) }))
   }
@@ -349,7 +342,7 @@ export default function YouTubePage(): JSX.Element {
                 key={item.id}
                 item={item}
                 duration={durations[item.filePath]}
-                watched={watchedFraction(watchState(progress[item.filePath], durations[item.filePath]))}
+                watched={watchedFraction(watchState(progress[item.filePath], durations[item.filePath], 'youtube'))}
                 onPlay={() => playVideo(item.filePath)}
               />
             ))}

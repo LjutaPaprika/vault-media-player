@@ -17,7 +17,7 @@
 import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, watch } from 'fs'
 import { join, relative } from 'path'
-import { getAllProgress, getProgressDir, upsertProgress, type ProgressRow } from './database'
+import { deleteProgress, getAllProgress, getProgressDir, upsertProgress, type ProgressRow } from './database'
 
 /**
  * position: seconds in when mpv last reported. duration: length as mpv
@@ -93,6 +93,12 @@ export function ingestProgressReports(): void {
   }
 }
 
+/** Forgets a video's position, e.g. when it is marked unwatched. */
+export function clearProgress(root: string, filePath: string): void {
+  ingestProgressReports()
+  deleteProgress(progressKey(root, filePath))
+}
+
 /** Saved positions for whichever of these videos have one, keyed by file path. */
 export function readProgress(root: string, filePaths: string[]): Record<string, VideoProgress> {
   ingestProgressReports()
@@ -149,8 +155,8 @@ export function watchProgress(onChange: () => void, onError: () => void): () => 
 
 /**
  * The mpv side. Inert unless the app passes
- * --script-opts=vault-progress-file=<path>, so videos launched without it
- * (everything outside the YouTube page, for now) are untouched.
+ * --script-opts=vault-progress-file=<path>, so mpv started any other way
+ * (music, or by hand) is untouched.
  */
 export function buildProgressLua(): string {
   return `\

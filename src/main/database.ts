@@ -677,6 +677,10 @@ export function upsertProgress(pathKey: string, p: ProgressRow): void {
     .run(pathKey, p.position, p.duration, p.finished ? 1 : 0, p.savedAt)
 }
 
+export function deleteProgress(pathKey: string): void {
+  getDb().prepare('DELETE FROM playback_progress WHERE path_key = ?').run(pathKey)
+}
+
 export function getAllProgress(): Map<string, ProgressRow> {
   const rows = getDb()
     .prepare('SELECT path_key, position, duration, finished, saved_at FROM playback_progress')
