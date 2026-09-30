@@ -24,7 +24,7 @@ interface Props {
  * else, including the fullwidth characters (：｜) this library uses in place of
  * the ones Windows forbids in filenames.
  */
-function protocolUrl(scheme: string, filePath: string, width?: number): string {
+export function protocolUrl(scheme: string, filePath: string, width?: number): string {
   // thumb:// carries the requested width in the host position; media:// has no
   // host. Both then take the file path, encoded segment by segment.
   const host = scheme === 'thumb' && width ? String(width) : ''

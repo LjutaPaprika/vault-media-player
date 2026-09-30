@@ -1,6 +1,7 @@
 import { nativeImage } from 'electron'
 import { statSync } from 'fs'
-import { getThumb, putThumb } from './database'
+import { getTechInfo, getThumb, putThumb } from './database'
+import { grabEpisodeFrame, isVideoPath } from './episodeFrames'
 
 /**
  * Shelf artwork is downscaled once and cached, because the source files are
@@ -143,10 +144,16 @@ export async function getOrCreateThumb(
   const cached = getThumb(sourcePath, mtime, width)
   if (cached) return { data: cached.data, mime: 'image/jpeg', fromCache: true }
 
-  const sharp = getSharp()
-  const data = sharp
-    ? ((await encodeWithSharp(sourcePath, sharp, width)) ?? encodeWithNativeImage(sourcePath, width))
-    : encodeWithNativeImage(sourcePath, width)
+  let data: Buffer | null
+  if (isVideoPath(sourcePath)) {
+    // An episode row's still: a frame from the video rather than artwork.
+    data = await grabEpisodeFrame(sourcePath, getTechInfo(sourcePath)?.duration ?? 0, width)
+  } else {
+    const sharp = getSharp()
+    data = sharp
+      ? ((await encodeWithSharp(sourcePath, sharp, width)) ?? encodeWithNativeImage(sourcePath, width))
+      : encodeWithNativeImage(sourcePath, width)
+  }
   if (!data) return null
 
   putThumb(sourcePath, mtime, width, data)

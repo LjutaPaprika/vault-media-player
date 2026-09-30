@@ -982,6 +982,18 @@ export function thumbStats(): { count: number; bytes: number } {
  * pre-generation. The category matters because surfaces display art at very
  * different sizes, so they warm at different widths.
  */
+/**
+ * Every TV and anime episode, whose rows show a still grabbed from the video
+ * and cached under the video's own path. Listed so thumbnail pruning keeps
+ * them; they are generated on view, never warmed in bulk.
+ */
+export function getEpisodePaths(): string[] {
+  const rows = getDb()
+    .prepare("SELECT file_path FROM media_items WHERE category IN ('tv', 'anime')")
+    .all() as { file_path: string }[]
+  return rows.map((r) => r.file_path)
+}
+
 export function getAllPosterPaths(): { path: string; category: string }[] {
   const rows = getDb()
     .prepare(

@@ -369,6 +369,18 @@
   color: var(--accent);
 }
 
+/* Episode still: a frame grabbed from the video (see EpisodeStill). */
+.episodeThumb {
+  position: relative;
+  width: 128px;
+  aspect-ratio: 16 / 9;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  margin: -2px 0;
+}
+
 /* Progress along the bottom of a partly watched row, inset to its padding.
    Scoped to the row so it outranks WatchedBar's own full-width rule whatever
    order the stylesheets load in. */

@@ -38,13 +38,14 @@ const MAX_OPEN_CBZ = 1
 const CBZ_PAGE_CACHE_BYTES = 96 * 1024 * 1024
 
 const openCbzFiles = new Map<string, OpenCbz>()
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, pruneThumbs, thumbStats } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, getEpisodePaths, pruneThumbs, thumbStats } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
 import { clearProgress, progressFileFor, readProgress, watchProgress, type VideoProgress } from './playbackProgress'
 import { warmThumbs } from './thumbnails'
+import { setFfmpegResolver } from './episodeFrames'
 import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
@@ -381,7 +382,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     // so they are added explicitly. Left out of the keep set, every scan would
     // prune them and the next visit would resize them all over again.
     const coverPaths = Object.values(listPlaylistCovers(root)).filter((p): p is string => p !== null)
-    const pruned = pruneThumbs(new Set([...items.map((i) => i.path), ...coverPaths]))
+    // Episode stills are cached under the video path; keep those too.
+    const pruned = pruneThumbs(new Set([...items.map((i) => i.path), ...coverPaths, ...getEpisodePaths()]))
     // Warm at the width each surface actually requests, or the first visit
     // would regenerate anyway. Music art is displayed on a minmax(360px) grid
     // and YouTube on minmax(260px), against 155px shelf cards.
@@ -707,6 +709,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
     return cachedLibraryRoot
   }
+
+  // Episode stills are grabbed with the ffmpeg bundled beside mpv.
+  setFfmpegResolver(() => getToolPath(resolveLibraryRoot(), 'ffmpeg'))
 
   ipcMain.handle('playback:openFile', async (_event, filePath: string) => {
     const err = await shell.openPath(filePath)

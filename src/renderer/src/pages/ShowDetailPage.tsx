@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import ContinueButton from '../components/ContinueButton'
+import EpisodeStill from '../components/EpisodeStill'
 import PosterImage from '../components/PosterImage'
 import WatchedBar from '../components/WatchedBar'
 import { useController } from '../hooks/useController'
@@ -188,14 +189,14 @@ function formatAudioCodec(codec: string): string {
 }
 
 /**
- * How far into a partly watched episode, along the bottom of its row. Rows
- * the viewer finished or never started get nothing; a list of full bars would
- * bury the ones still in progress.
+ * How far into a partly watched episode, along the bottom of its still (or
+ * of the row, for extras, which have none). Rows the viewer finished or never
+ * started get nothing; a list of full bars would bury the ones in progress.
  */
-function PartwayBar({ progress, category }: { progress: VideoProgress | undefined; category: string }): JSX.Element | null {
+function PartwayBar({ progress, category, onThumb }: { progress: VideoProgress | undefined; category: string; onThumb?: boolean }): JSX.Element | null {
   const state = watchState(progress, 0, category)
   if (state.kind !== 'partial') return null
-  return <WatchedBar fraction={watchedFraction(state) ?? 0} className={styles.rowBar} />
+  return <WatchedBar fraction={watchedFraction(state) ?? 0} className={onThumb ? undefined : styles.rowBar} />
 }
 
 export default function ShowDetailPage({ seriesTitle, year, posterPath, category, onBack }: Props): JSX.Element {
@@ -600,6 +601,10 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                         setContextMenu({ x: e.clientX, y: e.clientY, ep })
                       }}
                     >
+                      <div className={styles.episodeThumb}>
+                        <EpisodeStill filePath={ep.filePath} />
+                        <PartwayBar progress={progress[ep.filePath]} category={category} onThumb />
+                      </div>
                       {ep.badge && <span className={styles.episodeBadge}>{ep.badge}</span>}
                       <div className={styles.episodeTitleGroup}>
                         <span className={styles.episodeTitle}>{ep.title}</span>
@@ -611,7 +616,6 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
                         ? <span className={styles.launchingLabel}>Opening…</span>
                         : <span className={styles.playIcon}>▶</span>
                       }
-                      <PartwayBar progress={progress[ep.filePath]} category={category} />
                     </button>
                   )
                 })}
