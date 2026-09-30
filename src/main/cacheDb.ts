@@ -48,6 +48,9 @@ function open(): Database.Database {
       data         BLOB    NOT NULL
     );
   `)
+  // A session that was killed rather than closed leaves its WAL at full size;
+  // fold it in and truncate it on open.
+  try { db.pragma('wal_checkpoint(TRUNCATE)') } catch { /* busy: next checkpoint will do */ }
   cache = db
   return db
 }

@@ -133,6 +133,11 @@ function getDb(): Database.Database {
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  // Keep the WAL from sitting at its high-water size between checkpoints, and
+  // fold in whatever a killed session left behind: until a checkpoint runs,
+  // library.db keeps its old size on disk however much was freed.
+  db.pragma('journal_size_limit = 4194304')
+  try { db.pragma('wal_checkpoint(TRUNCATE)') } catch { /* busy: next checkpoint will do */ }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS config (
