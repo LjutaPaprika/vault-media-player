@@ -1,4 +1,5 @@
 import { memo, useState } from 'react'
+import { protocolUrl } from '../utils/mediaUrl'
 import styles from './MediaGrid.module.css'
 
 interface Props {
@@ -12,23 +13,6 @@ interface Props {
    * set of allowed widths.
    */
   width?: number
-}
-
-/**
- * Build a custom-protocol URL for a local file.
- *
- * Each path segment is encoded separately rather than running encodeURI over
- * the whole string: encodeURI leaves # ? and & intact, so a poster named
- * "Hits #1.jpg" would truncate at the fragment and 404. Splitting on both
- * separators first keeps the slashes as separators while escaping everything
- * else, including the fullwidth characters (：｜) this library uses in place of
- * the ones Windows forbids in filenames.
- */
-export function protocolUrl(scheme: string, filePath: string, width?: number): string {
-  // thumb:// carries the requested width in the host position; media:// has no
-  // host. Both then take the file path, encoded segment by segment.
-  const host = scheme === 'thumb' && width ? String(width) : ''
-  return `${scheme}://${host}/` + filePath.split(/[/\\]/).map(encodeURIComponent).join('/')
 }
 
 /**

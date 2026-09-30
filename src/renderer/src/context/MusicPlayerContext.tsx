@@ -1,4 +1,5 @@
 import { createContext, useContext, useRef, useState, useCallback, useEffect, ReactNode } from 'react'
+import { mediaUrl } from '../utils/mediaUrl'
 
 export interface Track {
   path: string
@@ -35,10 +36,6 @@ interface PlayerContextValue {
   toggleShuffle: () => void
   setShuffle: (enabled: boolean) => void
   toggleLoop: () => void
-}
-
-function toMediaUrl(filePath: string): string {
-  return 'media:///' + encodeURI(filePath.replace(/\\/g, '/'))
 }
 
 function shuffleRest(tracks: Track[], firstIndex: number): Track[] {
@@ -84,7 +81,7 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): JSX.
     // Seed duration immediately from ffprobe so VBR re-estimation doesn't inflate it
     ffprobeDurationRef.current = track.duration || 0
     if (track.duration) setDuration(track.duration)
-    audio.src = toMediaUrl(track.path)
+    audio.src = mediaUrl(track.path)
     if (autoPlay) audio.play().catch(() => setPlaying(false))
   }, [])
 

@@ -1,5 +1,5 @@
 import { memo, useState } from 'react'
-import { protocolUrl } from './PosterImage'
+import { protocolUrl } from '../utils/mediaUrl'
 import styles from './EpisodeStill.module.css'
 
 /**
