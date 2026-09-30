@@ -1,9 +1,9 @@
 import { nativeImage } from 'electron'
-import { statSync } from 'fs'
 import { normalize } from 'path'
-import { cacheKey, cachedKeys, cacheStats, getCached, importCached, pruneCached, putCached } from './cacheDb'
+import { existsSync, statSync } from 'fs'
+import { cacheKey, cachedKeys, cacheStats, clearFailure, failedKeys, getCached, importCached, knownFailure, pruneCached, putCached, recordFailure } from './cacheDb'
 import { dropLegacyThumbnailsAndCompact, getTechInfo, readLegacyThumbnails } from './database'
-import { grabEpisodeFrame, isVideoPath } from './episodeFrames'
+import { ffmpegUsable, grabEpisodeFrame, isVideoPath } from './episodeFrames'
 
 /**
  * Shelf artwork is downscaled once and cached, because the source files are
@@ -162,7 +162,17 @@ export async function getOrCreateThumb(
   let data: Buffer | null
   if (isVideoPath(sourcePath)) {
     // An episode row's still: a frame from the video rather than artwork.
+    // A file that already failed, unchanged since, is not grabbed again.
+    if (key && knownFailure(key, mtime)) {
+      return cached ? { data: cached.data, mime: 'image/jpeg', fromCache: true } : null
+    }
     data = await grabEpisodeFrame(sourcePath, getTechInfo(sourcePath)?.duration ?? 0, width, background)
+    if (key) {
+      if (data) clearFailure(key)
+      // Only held against the file when ffmpeg itself works; a missing tool
+      // is not the file's fault.
+      else if (ffmpegUsable()) recordFailure(key, mtime)
+    }
   } else {
     const sharp = getSharp()
     data = sharp
@@ -219,47 +229,53 @@ let fillingStills = false
  * mpv streams from it could make playback stutter. A second call while one is
  * running is ignored.
  *
- * Gives up after a run of consecutive failures. One bad file fails alone, but
- * a run means every grab will fail: no ffmpeg (the macOS player folder ships
- * without one) or the drive went away. Nothing is cached on failure, so
- * without this every launch would retry the whole library for nothing.
+ * A file that yields no still (damaged, say) is recorded and skipped; the
+ * fill carries on past it. It stops only for what would fail every file:
+ * ffmpeg not runnable (the macOS player folder ships without one), or the
+ * episodes' files no longer being there (the drive went away mid-fill).
  */
-const MAX_FAILURES_IN_A_ROW = 10
+const MISSING_FILES_IN_A_ROW = 10
 
 export async function fillEpisodeStills(
   paths: string[],
   isPaused: () => boolean
-): Promise<{ created: number; failed: number; gaveUp: boolean } | null> {
+): Promise<{ created: number; failed: number; stopped: 'no-ffmpeg' | 'files-missing' | null } | null> {
   if (fillingStills || paths.length === 0) return null
+  if (!ffmpegUsable()) return { created: 0, failed: 0, stopped: 'no-ffmpeg' }
   fillingStills = true
   let created = 0
   let failed = 0
-  let inARow = 0
-  let gaveUp = false
+  let missingInARow = 0
+  let stopped: 'files-missing' | null = null
   try {
     for (const p of paths) {
       while (isPaused()) await new Promise((resolve) => setTimeout(resolve, 5000))
-      const r = await getOrCreateThumb(p, EPISODE_STILL_WIDTH, true)
-      if (!r) {
-        failed++
-        if (++inARow >= MAX_FAILURES_IN_A_ROW) { gaveUp = true; break }
-      } else {
-        inARow = 0
-        if (!r.fromCache) created++
+      if (!existsSync(p)) {
+        if (++missingInARow >= MISSING_FILES_IN_A_ROW) { stopped = 'files-missing'; break }
+        continue
       }
+      missingInARow = 0
+      const r = await getOrCreateThumb(p, EPISODE_STILL_WIDTH, true)
+      if (!r) failed++
+      else if (!r.fromCache) created++
     }
   } finally {
     fillingStills = false
   }
-  return { created, failed, gaveUp }
+  return { created, failed, stopped }
 }
 
-/** Of these episodes, the ones with no still cached yet. */
+/**
+ * Of these episodes, the ones with no still cached yet and no recorded
+ * failure. A failed file that changes (re-downloaded) gets its still the next
+ * time its row is shown, since the failure only holds for the old mtime.
+ */
 export function episodesWithoutStill(paths: string[]): string[] {
   const have = cachedKeys()
+  const failed = failedKeys()
   return paths.filter((p) => {
     const key = cacheKey(p)
-    return key !== null && !have.has(key)
+    return key !== null && !have.has(key) && !failed.has(key)
   })
 }
 

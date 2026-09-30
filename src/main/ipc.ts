@@ -776,7 +776,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           if (!r) return
           console.log(
             `[vault] episode stills: ${r.created} grabbed, ${r.failed} failed` +
-              (r.gaveUp ? ' — stopped after repeated failures (ffmpeg missing or drive gone?)' : '')
+              (r.stopped === 'no-ffmpeg' ? ' — skipped: ffmpeg not available' : '') +
+              (r.stopped === 'files-missing' ? ' — stopped: episode files not found (drive gone?)' : '')
           )
         })
         .catch((e) => console.error('[vault] episode still fill failed:', e))

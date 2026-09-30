@@ -7,7 +7,7 @@
 // arbitrary frame anyway. Grabbing our own costs ~0.3 s per episode and is
 // cached with the rest of the artwork in the thumbnails table.
 
-import { spawn } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 import { nativeImage } from 'electron'
 
 const VIDEO_EXT = /\.(mkv|mp4|m4v|avi|mov|webm)$/i
@@ -23,12 +23,29 @@ export function setFfmpegResolver(fn: () => string): void {
   resolveFfmpeg = fn
 }
 
+let usable: { path: string; ok: boolean } | null = null
+
+/**
+ * Whether ffmpeg runs at all, checked once per location. Tells "this file has
+ * no usable frame" apart from "no frame can be grabbed from anything" — the
+ * macOS player folder ships without ffmpeg — so a missing tool is never
+ * recorded against the files it could not read.
+ */
+export function ffmpegUsable(): boolean {
+  const p = resolveFfmpeg()
+  if (usable?.path === p) return usable.ok
+  const r = spawnSync(p, ['-version'], { windowsHide: true, timeout: 10_000 })
+  usable = { path: p, ok: !r.error && r.status === 0 }
+  return usable.ok
+}
+
 // Where to look, as fractions of the running time. A fifth of the way in is
 // past an anime opening and a TV cold open, and early enough not to give away
 // the episode's turn; later points are only tried if that frame is unusable.
 const CANDIDATES = [0.2, 0.3, 0.42, 0.55]
-// Without a known length, fixed points past a typical opening.
-const FALLBACK_SECONDS = [300, 420, 540]
+// Without a known length: past a typical opening first, then earlier points
+// for videos shorter than that (a seek past the end yields no frame at all).
+const FALLBACK_SECONDS = [300, 120, 30, 5]
 
 // Mean luma (0-255) and spread below which a frame is a fade, a black
 // transition or a flat title card rather than a picture.
