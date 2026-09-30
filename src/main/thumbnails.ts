@@ -1,7 +1,8 @@
 import { nativeImage } from 'electron'
 import { statSync } from 'fs'
 import { normalize } from 'path'
-import { getTechInfo, getThumb, putThumb } from './database'
+import { cacheKey, cachedKeys, cacheStats, getCached, importCached, pruneCached, putCached } from './cacheDb'
+import { dropLegacyThumbnailsAndCompact, getTechInfo, readLegacyThumbnails } from './database'
 import { grabEpisodeFrame, isVideoPath } from './episodeFrames'
 
 /**
@@ -129,6 +130,10 @@ async function encodeWithSharp(sourcePath: string, sharp: SharpModule, targetWid
  *
  * Returns null when the file is missing or no encoder can decode it, which the
  * caller turns into a 404 so the renderer falls back to its placeholder.
+ *
+ * When a new image cannot be made but an older one is cached, the older one
+ * is served: a Mac without ffmpeg shows the stills a Windows machine grabbed
+ * instead of empty boxes, whatever it makes of their timestamps.
  */
 export async function getOrCreateThumb(
   sourcePath: string,
@@ -136,13 +141,9 @@ export async function getOrCreateThumb(
   /** Episode stills only: queue behind anything a visible row is waiting for. */
   background = false
 ): Promise<ThumbResult | null> {
-  // The cache is keyed by path, and paths arrive spelled two ways on Windows:
-  // thumb:// URLs from the renderer carry forward slashes ("E:/media/..."),
-  // while the scan-time warm and the library rows use backslashes. Keyed
-  // as-is, every image the warm prepared was missed by the page that wanted
-  // it and cached a second time, and post-scan pruning (which keeps only the
-  // backslash spelling) deleted the copies pages actually used. Episode
-  // stills also missed their row's duration and fell back to fixed offsets.
+  // thumb:// URLs arrive with forward slashes on Windows ("E:/media/..."),
+  // library rows with backslashes. The cache key is spelling-independent
+  // (see cacheKey), but the duration lookup below needs the row's spelling.
   sourcePath = normalize(sourcePath)
   const width = normaliseThumbWidth(requestedWidth)
   let mtime: number
@@ -152,8 +153,11 @@ export async function getOrCreateThumb(
     return null
   }
 
-  const cached = getThumb(sourcePath, mtime, width)
-  if (cached) return { data: cached.data, mime: 'image/jpeg', fromCache: true }
+  // No key means the library root is unknown: generate, but cache nothing
+  // rather than file it under a path that will not match next time.
+  const key = cacheKey(sourcePath)
+  const cached = key ? getCached(key, mtime, width) : null
+  if (cached?.fresh) return { data: cached.data, mime: 'image/jpeg', fromCache: true }
 
   let data: Buffer | null
   if (isVideoPath(sourcePath)) {
@@ -165,9 +169,9 @@ export async function getOrCreateThumb(
       ? ((await encodeWithSharp(sourcePath, sharp, width)) ?? encodeWithNativeImage(sourcePath, width))
       : encodeWithNativeImage(sourcePath, width)
   }
-  if (!data) return null
+  if (!data) return cached ? { data: cached.data, mime: 'image/jpeg', fromCache: true } : null
 
-  putThumb(sourcePath, mtime, width, data)
+  if (key) putCached(key, mtime, width, data)
   return { data, mime: 'image/jpeg', fromCache: false }
 }
 
@@ -248,4 +252,54 @@ export async function fillEpisodeStills(
     fillingStills = false
   }
   return { created, failed, gaveUp }
+}
+
+/** Of these episodes, the ones with no still cached yet. */
+export function episodesWithoutStill(paths: string[]): string[] {
+  const have = cachedKeys()
+  return paths.filter((p) => {
+    const key = cacheKey(p)
+    return key !== null && !have.has(key)
+  })
+}
+
+/**
+ * Drops cached artwork for anything not in `keepPaths`. Does nothing if the
+ * library root is unknown: every key would then look unwanted.
+ */
+export function pruneArtwork(keepPaths: string[]): number {
+  const keep = new Set<string>()
+  for (const p of keepPaths) {
+    const key = cacheKey(p)
+    if (!key) return 0
+    keep.add(key)
+  }
+  return pruneCached(keep)
+}
+
+export const artworkStats = cacheStats
+
+/**
+ * One-time move of artwork cached inside library.db by builds before cache.db.
+ *
+ * Copies every entry across, confirms each landed, and only then empties the
+ * old table and compacts library.db. Safe to interrupt anywhere: the copy is
+ * idempotent and nothing is deleted until it is confirmed, so the next launch
+ * simply finishes the job. Returns null when there was nothing to move or the
+ * library root is unknown (the move then waits for a launch that knows it).
+ */
+export function moveLegacyThumbnails(): { moved: number; duplicates: number; bytesBefore: number; bytesAfter: number } | null {
+  const legacy = readLegacyThumbnails()
+  if (legacy.length === 0) return null
+  const rows: { key: string; mtime: number; width: number; data: Buffer }[] = []
+  for (const t of legacy) {
+    const key = cacheKey(normalize(t.sourcePath))
+    if (!key) return null
+    rows.push({ key, mtime: t.mtime, width: t.width, data: t.data })
+  }
+  const moved = importCached(rows)
+  const have = cachedKeys()
+  if (rows.some((r) => !have.has(r.key))) return null
+  const { bytesBefore, bytesAfter } = dropLegacyThumbnailsAndCompact()
+  return { moved, duplicates: rows.length - moved, bytesBefore, bytesAfter }
 }

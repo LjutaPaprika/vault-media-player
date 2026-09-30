@@ -38,13 +38,14 @@ const MAX_OPEN_CBZ = 1
 const CBZ_PAGE_CACHE_BYTES = 96 * 1024 * 1024
 
 const openCbzFiles = new Map<string, OpenCbz>()
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, getEpisodePaths, getEpisodesWithoutStill, pruneThumbs, thumbStats } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, getEpisodePaths } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
 import { clearProgress, progressFileFor, readProgress, watchProgress, type VideoProgress } from './playbackProgress'
-import { fillEpisodeStills, warmThumbs } from './thumbnails'
+import { artworkStats, episodesWithoutStill, fillEpisodeStills, moveLegacyThumbnails, pruneArtwork, warmThumbs } from './thumbnails'
+import { setCacheRootResolver } from './cacheDb'
 import { setFfmpegResolver } from './episodeFrames'
 import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
@@ -383,7 +384,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     // prune them and the next visit would resize them all over again.
     const coverPaths = Object.values(listPlaylistCovers(root)).filter((p): p is string => p !== null)
     // Episode stills are cached under the video path; keep those too.
-    const pruned = pruneThumbs(new Set([...items.map((i) => i.path), ...coverPaths, ...getEpisodePaths()]))
+    const pruned = pruneArtwork([...items.map((i) => i.path), ...coverPaths, ...getEpisodePaths()])
     // Warm at the width each surface actually requests, or the first visit
     // would regenerate anyway. Music art is displayed on a minmax(360px) grid
     // and YouTube on minmax(260px), against 155px shelf cards.
@@ -410,7 +411,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         { created: 0, cached: 0, failed: 0 }
       ))
       .then(({ created, cached, failed }) => {
-        const { count, bytes } = thumbStats()
+        const { count, bytes } = artworkStats()
         console.log(
           `[vault] thumbnails: ${created} created, ${cached} already cached, ${failed} failed` +
             `${pruned ? `, ${pruned} pruned` : ''} — cache now ${count} items, ` +
@@ -715,6 +716,30 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // Episode stills are grabbed with the ffmpeg bundled beside mpv.
   setFfmpegResolver(() => getToolPath(resolveLibraryRoot(), 'ffmpeg'))
 
+  // The artwork cache keys entries by path within the library, so it needs the
+  // root — but only a real one. resolveLibraryRoot falls back to the working
+  // directory when the drive is missing, and it caches only a real answer.
+  setCacheRootResolver(() => {
+    resolveLibraryRoot()
+    return cachedLibraryRoot
+  })
+
+  // One-time move of artwork out of library.db into cache.db. Runs here, before
+  // the window loads, so the first shelf reads from the new cache instead of
+  // regenerating what is mid-move. The first launch that does it pauses for a
+  // few seconds while library.db is compacted.
+  try {
+    const moved = moveLegacyThumbnails()
+    if (moved) {
+      console.log(
+        `[vault] artwork moved to cache.db: ${moved.moved} entries (${moved.duplicates} duplicates dropped); ` +
+          `library.db ${(moved.bytesBefore / 1048576).toFixed(1)} MB -> ${(moved.bytesAfter / 1048576).toFixed(1)} MB`
+      )
+    }
+  } catch (e) {
+    console.error('[vault] artwork move to cache.db failed; will retry next launch:', e)
+  }
+
   // When a video was last launched or reported a position. Background still
   // grabbing waits while this is recent, so ffmpeg never competes with mpv
   // for the library drive; mpv reports every 5 seconds while playing.
@@ -724,7 +749,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   /** Fills in episode stills not grabbed yet; a no-op while a fill runs. */
   function startStillFill(): void {
     try {
-      void fillEpisodeStills(getEpisodesWithoutStill(), videoRecentlyActive)
+      void fillEpisodeStills(episodesWithoutStill(getEpisodePaths()), videoRecentlyActive)
         .then((r) => {
           if (!r) return
           console.log(

@@ -16,6 +16,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 import { registerIpcHandlers, reconcileDriveRoot } from './ipc'
 import { closeDb, probeDrive } from './database'
+import { closeCache } from './cacheDb'
 import { ensureSaveLinks } from './saveLinks'
 import { hideSystemPaths } from './sync'
 import { getOrCreateThumb } from './thumbnails'
@@ -223,4 +224,5 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   closeDb()
+  closeCache()
 })

@@ -94,6 +94,13 @@ export function getProgressDir(): string {
   return join(getDbDir(), 'progress')
 }
 
+/** A file in the data folder beside library.db, e.g. the artwork cache. */
+export function getDataPath(name: string): string {
+  const dir = getDbDir()
+  mkdirSync(dir, { recursive: true })
+  return join(dir, name)
+}
+
 function getDbDir(): string {
   if (!app.isPackaged) return join(process.cwd(), 'dev-data')
   const driveRoot = findDriveRoot()
@@ -169,14 +176,10 @@ function getDb(): Database.Database {
       play_seconds INTEGER NOT NULL DEFAULT 0
     );
 
-    -- Downscaled shelf artwork, stored as BLOBs rather than loose files. The
-    -- library drive is exFAT with 2 MB allocation units, so ~400 thumbs of
-    -- ~30 KB each would burn ~800 MB of clusters to hold ~10 MB of data.
-    -- SQLite packs them into its own pages instead.
-    --
-    -- source_mtime is the invalidation key: replace a poster on disk and the
-    -- mtime stops matching, so the next request regenerates rather than
-    -- serving the old artwork forever.
+    -- Legacy: artwork now lives in cache.db (see cacheDb.ts), and anything
+    -- found here is moved there on startup, leaving the table empty. It is
+    -- kept, not dropped, so an older build opening this library still finds
+    -- the table it expects and simply regenerates its artwork.
     CREATE TABLE IF NOT EXISTS thumbnails (
       source_path  TEXT PRIMARY KEY,
       source_mtime INTEGER NOT NULL,
@@ -198,19 +201,6 @@ function getDb(): Database.Database {
       saved_at INTEGER NOT NULL
     );
   `)
-
-  // Thumbnails cached before paths were normalised (see getOrCreateThumb) sit
-  // under forward-slash keys on Windows. Move them to the native spelling so
-  // they are found and survive pruning; where the warm already holds that
-  // spelling the duplicate is dropped. A no-op once nothing is left to move.
-  if (process.platform === 'win32') {
-    try {
-      db.exec(`
-        UPDATE OR IGNORE thumbnails SET source_path = replace(source_path, '/', '\\') WHERE source_path LIKE '%/%';
-        DELETE FROM thumbnails WHERE source_path LIKE '%/%';
-      `)
-    } catch { /* thumbnails are a cache; never block opening the library */ }
-  }
 
   // One-time cleanup: superseded by the dir_mtimes table
   try { db.prepare("DELETE FROM config WHERE key = 'dirMtimes'").run() } catch { /* table missing */ }
@@ -942,52 +932,61 @@ export function closeDb(): void {
   }
 }
 
-// --- Thumbnails -------------------------------------------------------------
+// --- Artwork -----------------------------------------------------------------
+// The artwork cache itself lives in cache.db (cacheDb.ts). What is left here
+// is the library side: which artwork the library still needs, and the one-time
+// move of the legacy thumbnails table out of library.db.
 
-export interface CachedThumb {
-  data: Buffer
+export interface LegacyThumb {
+  sourcePath: string
+  mtime: number
   width: number
+  data: Buffer
+}
+
+/** Artwork still cached inside library.db by builds before cache.db. */
+export function readLegacyThumbnails(): LegacyThumb[] {
+  const rows = getDb()
+    .prepare('SELECT source_path, source_mtime, width, data FROM thumbnails')
+    .all() as { source_path: string; source_mtime: number; width: number; data: Buffer }[]
+  return rows.map((r) => ({ sourcePath: r.source_path, mtime: r.source_mtime, width: r.width, data: r.data }))
 }
 
 /**
- * Return a cached thumbnail, but only if it is still valid for its source.
+ * Empties the legacy thumbnails table and compacts library.db, which is
+ * otherwise left at its high-water mark: SQLite reuses freed pages but never
+ * shrinks the file. Also switches the library to incremental auto-vacuum,
+ * which only takes effect through a VACUUM, so later deletions can be
+ * reclaimed without another full rewrite.
  *
- * Validity is source mtime plus requested width: a re-encoded poster or a
- * change to the target width both make the stored bytes wrong, and both are
- * cheaper to detect here than to notice visually later.
+ * Call only after the rows are safely in cache.db. VACUUM rewrites the file
+ * through a temporary copy, so an interruption leaves the original intact.
  */
-export function getThumb(sourcePath: string, mtime: number, width: number): CachedThumb | null {
-  const row = getDb()
-    .prepare('SELECT data, width, source_mtime FROM thumbnails WHERE source_path = ?')
-    .get(sourcePath) as { data: Buffer; width: number; source_mtime: number } | undefined
-  if (!row) return null
-  if (row.source_mtime !== mtime || row.width !== width) return null
-  return { data: row.data, width: row.width }
-}
-
-export function putThumb(sourcePath: string, mtime: number, width: number, data: Buffer): void {
-  getDb()
-    .prepare(
-      'INSERT OR REPLACE INTO thumbnails (source_path, source_mtime, width, data) VALUES (?, ?, ?, ?)'
-    )
-    .run(sourcePath, mtime, width, data)
-}
-
-/** Drop thumbnails whose source artwork is no longer part of the library. */
-export function pruneThumbs(keepPaths: Set<string>): number {
+export function dropLegacyThumbnailsAndCompact(): { bytesBefore: number; bytesAfter: number } {
   const db = getDb()
-  const rows = db.prepare('SELECT source_path FROM thumbnails').all() as { source_path: string }[]
-  const gone = rows.filter((r) => !keepPaths.has(r.source_path)).map((r) => r.source_path)
-  if (!gone.length) return 0
-  const del = db.prepare('DELETE FROM thumbnails WHERE source_path = ?')
-  db.transaction((paths: string[]) => { for (const q of paths) del.run(q) })(gone)
-  return gone.length
+  const size = (): number => {
+    const pageSize = db.pragma('page_size', { simple: true }) as number
+    const pages = db.pragma('page_count', { simple: true }) as number
+    return pageSize * pages
+  }
+  const bytesBefore = size()
+  db.prepare('DELETE FROM thumbnails').run()
+  db.pragma('auto_vacuum = INCREMENTAL')
+  db.exec('VACUUM')
+  return { bytesBefore, bytesAfter: size() }
 }
 
-export function thumbStats(): { count: number; bytes: number } {
-  return getDb()
-    .prepare('SELECT COUNT(*) AS count, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM thumbnails')
-    .get() as { count: number; bytes: number }
+/**
+ * Every TV and anime episode, whose rows show a still grabbed from the video
+ * and cached under the video's own path, in library order so a background
+ * fill completes one show at a time. Also what keeps those stills through
+ * pruning.
+ */
+export function getEpisodePaths(): string[] {
+  const rows = getDb()
+    .prepare("SELECT file_path FROM media_items WHERE category IN ('tv', 'anime') ORDER BY title, file_path")
+    .all() as { file_path: string }[]
+  return rows.map((r) => r.file_path)
 }
 
 /**
@@ -995,31 +994,6 @@ export function thumbStats(): { count: number; bytes: number } {
  * pre-generation. The category matters because surfaces display art at very
  * different sizes, so they warm at different widths.
  */
-/**
- * Every TV and anime episode, whose rows show a still grabbed from the video
- * and cached under the video's own path. Listed so thumbnail pruning keeps
- * them; they are generated on view, never warmed in bulk.
- */
-export function getEpisodePaths(): string[] {
-  const rows = getDb()
-    .prepare("SELECT file_path FROM media_items WHERE category IN ('tv', 'anime')")
-    .all() as { file_path: string }[]
-  return rows.map((r) => r.file_path)
-}
-
-/** Episodes with no still cached yet, in library order so a show fills together. */
-export function getEpisodesWithoutStill(): string[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT m.file_path FROM media_items m
-       LEFT JOIN thumbnails t ON t.source_path = m.file_path
-       WHERE m.category IN ('tv', 'anime') AND t.source_path IS NULL
-       ORDER BY m.title, m.file_path`
-    )
-    .all() as { file_path: string }[]
-  return rows.map((r) => r.file_path)
-}
-
 export function getAllPosterPaths(): { path: string; category: string }[] {
   const rows = getDb()
     .prepare(
