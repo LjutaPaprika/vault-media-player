@@ -13,6 +13,10 @@
   flex-direction: column;
   gap: 20px;
   overflow-y: auto;
+  /* The panel scrolls, so it clips anything drawn past its edges. The 4px on
+     the left leaves room for focus rings that sit outside a control (the
+     Continue button's controller highlight), which were cut off there. */
+  padding-left: 4px;
   padding-right: 24px;
   border-right: 1px solid var(--border);
 }
