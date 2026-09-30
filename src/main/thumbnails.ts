@@ -1,5 +1,6 @@
 import { nativeImage } from 'electron'
 import { statSync } from 'fs'
+import { normalize } from 'path'
 import { getTechInfo, getThumb, putThumb } from './database'
 import { grabEpisodeFrame, isVideoPath } from './episodeFrames'
 
@@ -131,8 +132,18 @@ async function encodeWithSharp(sourcePath: string, sharp: SharpModule, targetWid
  */
 export async function getOrCreateThumb(
   sourcePath: string,
-  requestedWidth: number = THUMB_WIDTH
+  requestedWidth: number = THUMB_WIDTH,
+  /** Episode stills only: queue behind anything a visible row is waiting for. */
+  background = false
 ): Promise<ThumbResult | null> {
+  // The cache is keyed by path, and paths arrive spelled two ways on Windows:
+  // thumb:// URLs from the renderer carry forward slashes ("E:/media/..."),
+  // while the scan-time warm and the library rows use backslashes. Keyed
+  // as-is, every image the warm prepared was missed by the page that wanted
+  // it and cached a second time, and post-scan pruning (which keeps only the
+  // backslash spelling) deleted the copies pages actually used. Episode
+  // stills also missed their row's duration and fell back to fixed offsets.
+  sourcePath = normalize(sourcePath)
   const width = normaliseThumbWidth(requestedWidth)
   let mtime: number
   try {
@@ -147,7 +158,7 @@ export async function getOrCreateThumb(
   let data: Buffer | null
   if (isVideoPath(sourcePath)) {
     // An episode row's still: a frame from the video rather than artwork.
-    data = await grabEpisodeFrame(sourcePath, getTechInfo(sourcePath)?.duration ?? 0, width)
+    data = await grabEpisodeFrame(sourcePath, getTechInfo(sourcePath)?.duration ?? 0, width, background)
   } else {
     const sharp = getSharp()
     data = sharp
@@ -188,4 +199,39 @@ export async function warmThumbs(
   }
 
   return { created, cached, failed }
+}
+
+/** Episode stills are requested at this width by the show page's rows. */
+export const EPISODE_STILL_WIDTH = 310
+
+let fillingStills = false
+
+/**
+ * Grabs stills for episodes that have none yet, one at a time in the
+ * background, so a show opens with its rows already filled in.
+ *
+ * Yields to any row on screen (see grabEpisodeFrame's queues) and waits while
+ * `isPaused` says a video is playing: ffmpeg reading the library drive while
+ * mpv streams from it could make playback stutter. A second call while one is
+ * running is ignored.
+ */
+export async function fillEpisodeStills(
+  paths: string[],
+  isPaused: () => boolean
+): Promise<{ created: number; failed: number } | null> {
+  if (fillingStills || paths.length === 0) return null
+  fillingStills = true
+  let created = 0
+  let failed = 0
+  try {
+    for (const p of paths) {
+      while (isPaused()) await new Promise((resolve) => setTimeout(resolve, 5000))
+      const r = await getOrCreateThumb(p, EPISODE_STILL_WIDTH, true)
+      if (!r) failed++
+      else if (!r.fromCache) created++
+    }
+  } finally {
+    fillingStills = false
+  }
+  return { created, failed }
 }

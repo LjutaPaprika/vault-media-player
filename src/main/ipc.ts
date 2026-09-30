@@ -38,13 +38,13 @@ const MAX_OPEN_CBZ = 1
 const CBZ_PAGE_CACHE_BYTES = 96 * 1024 * 1024
 
 const openCbzFiles = new Map<string, OpenCbz>()
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, getEpisodePaths, pruneThumbs, thumbStats } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, getEpisodePaths, getEpisodesWithoutStill, pruneThumbs, thumbStats } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
 import { clearProgress, progressFileFor, readProgress, watchProgress, type VideoProgress } from './playbackProgress'
-import { warmThumbs } from './thumbnails'
+import { fillEpisodeStills, warmThumbs } from './thumbnails'
 import { setFfmpegResolver } from './episodeFrames'
 import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
@@ -428,6 +428,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     clearImageCache()
     const { updated } = scanLibrary(root, getToolPath(root, 'ffprobe'), true)
     warmThumbsInBackground(root)
+    startStillFill()
     return { count: updated }
   })
 
@@ -443,6 +444,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     clearStoredDirTimes()
     const { total } = scanLibrary(root, getToolPath(root, 'ffprobe'), false, true)
     warmThumbsInBackground(root)
+    startStillFill()
     return { count: total }
   })
 
@@ -713,6 +715,25 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // Episode stills are grabbed with the ffmpeg bundled beside mpv.
   setFfmpegResolver(() => getToolPath(resolveLibraryRoot(), 'ffmpeg'))
 
+  // When a video was last launched or reported a position. Background still
+  // grabbing waits while this is recent, so ffmpeg never competes with mpv
+  // for the library drive; mpv reports every 5 seconds while playing.
+  let lastVideoActivity = 0
+  const videoRecentlyActive = (): boolean => Date.now() - lastVideoActivity < 30_000
+
+  /** Fills in episode stills not grabbed yet; a no-op while a fill runs. */
+  function startStillFill(): void {
+    try {
+      void fillEpisodeStills(getEpisodesWithoutStill(), videoRecentlyActive)
+        .then((r) => { if (r) console.log(`[vault] episode stills: ${r.created} grabbed, ${r.failed} failed`) })
+        .catch((e) => console.error('[vault] episode still fill failed:', e))
+    } catch (e) {
+      console.error('[vault] episode still fill could not start:', e)
+    }
+  }
+  // After launch has settled, so it never slows startup.
+  setTimeout(startStillFill, 30_000)
+
   ipcMain.handle('playback:openFile', async (_event, filePath: string) => {
     const err = await shell.openPath(filePath)
     if (err) console.error('[vault] shell.openPath failed:', err)
@@ -726,7 +747,10 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     if (stopProgressWatch) return
     try {
       stopProgressWatch = watchProgress(
-        () => { if (!win.isDestroyed()) win.webContents.send('playback:progressChanged') },
+        () => {
+          lastVideoActivity = Date.now()
+          if (!win.isDestroyed()) win.webContents.send('playback:progressChanged')
+        },
         () => { stopProgressWatch = null }
       )
     } catch {
@@ -736,6 +760,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('playback:openVideo', (_event, filePath: string, category?: string, startSeconds?: number) => {
     setLastOpened(filePath)
+    lastVideoActivity = Date.now()
     const root = resolveLibraryRoot()
     const progressFile = progressFileFor(root, filePath)
     ensureProgressWatch()

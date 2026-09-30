@@ -199,6 +199,19 @@ function getDb(): Database.Database {
     );
   `)
 
+  // Thumbnails cached before paths were normalised (see getOrCreateThumb) sit
+  // under forward-slash keys on Windows. Move them to the native spelling so
+  // they are found and survive pruning; where the warm already holds that
+  // spelling the duplicate is dropped. A no-op once nothing is left to move.
+  if (process.platform === 'win32') {
+    try {
+      db.exec(`
+        UPDATE OR IGNORE thumbnails SET source_path = replace(source_path, '/', '\\') WHERE source_path LIKE '%/%';
+        DELETE FROM thumbnails WHERE source_path LIKE '%/%';
+      `)
+    } catch { /* thumbnails are a cache; never block opening the library */ }
+  }
+
   // One-time cleanup: superseded by the dir_mtimes table
   try { db.prepare("DELETE FROM config WHERE key = 'dirMtimes'").run() } catch { /* table missing */ }
 
@@ -990,6 +1003,19 @@ export function thumbStats(): { count: number; bytes: number } {
 export function getEpisodePaths(): string[] {
   const rows = getDb()
     .prepare("SELECT file_path FROM media_items WHERE category IN ('tv', 'anime')")
+    .all() as { file_path: string }[]
+  return rows.map((r) => r.file_path)
+}
+
+/** Episodes with no still cached yet, in library order so a show fills together. */
+export function getEpisodesWithoutStill(): string[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT m.file_path FROM media_items m
+       LEFT JOIN thumbnails t ON t.source_path = m.file_path
+       WHERE m.category IN ('tv', 'anime') AND t.source_path IS NULL
+       ORDER BY m.title, m.file_path`
+    )
     .all() as { file_path: string }[]
   return rows.map((r) => r.file_path)
 }
