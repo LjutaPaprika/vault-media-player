@@ -64,7 +64,7 @@
       }
     },
     "mac": {
-      "icon": "build/icon.png",
+      "icon": "build/icon-mac.png",
       "target": [
         {
           "target": "dmg",
