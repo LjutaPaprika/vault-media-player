@@ -973,6 +973,10 @@ export function dropLegacyThumbnailsAndCompact(): { bytesBefore: number; bytesAf
   db.prepare('DELETE FROM thumbnails').run()
   db.pragma('auto_vacuum = INCREMENTAL')
   db.exec('VACUUM')
+  // In WAL mode the compacted pages sit in the WAL until a checkpoint, and
+  // library.db keeps its old size on disk until then. Checkpoint now so the
+  // file actually shrinks, and truncate the WAL the rewrite filled.
+  db.pragma('wal_checkpoint(TRUNCATE)')
   return { bytesBefore, bytesAfter: size() }
 }
 

@@ -35,6 +35,11 @@ function open(): Database.Database {
   // the file at its high-water mark.
   db.pragma('auto_vacuum = INCREMENTAL')
   db.pragma('journal_mode = WAL')
+  // A WAL file keeps its high-water size until the last connection closes;
+  // bulk writes (the first-launch move, a background still fill) would leave
+  // tens of MB beside cache.db for the whole session, and for good if the app
+  // is killed. Truncate it back after each checkpoint instead.
+  db.pragma('journal_size_limit = 4194304')
   db.exec(`
     CREATE TABLE IF NOT EXISTS thumbnails (
       key          TEXT    PRIMARY KEY,
@@ -126,6 +131,8 @@ export function importCached(rows: { key: string; mtime: number; width: number; 
   db.transaction(() => {
     for (const r of rows) added += insert.run(r.key, r.mtime, r.width, r.data).changes
   })()
+  // Fold the bulk write into cache.db now and shrink the WAL behind it.
+  db.pragma('wal_checkpoint(TRUNCATE)')
   return added
 }
 
