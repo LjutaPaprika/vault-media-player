@@ -4,12 +4,14 @@ import MediaGrid from '../components/MediaGrid'
 import BookReaderPage from './BookReaderPage'
 import { useLibrary } from '../hooks/useLibrary'
 import { useAppStore } from '../store/appStore'
+import { startPosition, watchState } from '../utils/resume'
 
 export default function BooksPage(): JSX.Element {
   const { items, loading, error } = useLibrary('books')
   const { contentResetKey }       = useAppStore()
   const [query,        setQuery]        = useState('')
   const [selectedBook, setSelectedBook] = useState<MediaItem | null>(null)
+  const [startAt,      setStartAt]      = useState(0)
 
   useEffect(() => { setSelectedBook(null) }, [contentResetKey])
 
@@ -17,6 +19,7 @@ export default function BooksPage(): JSX.Element {
     return (
       <BookReaderPage
         filePath={selectedBook.filePath}
+        startAt={startAt}
         onBack={() => setSelectedBook(null)}
       />
     )
@@ -39,7 +42,12 @@ export default function BooksPage(): JSX.Element {
           }))}
           onSelect={(card) => {
             const item = items.find(i => i.id === card.id)
-            if (item) setSelectedBook(item)
+            if (!item) return
+            // Reopen where the book was left.
+            window.api.playback.getProgress([item.filePath]).then((p) => {
+              setStartAt(startPosition(watchState(p[item.filePath], 0, 'books')))
+              setSelectedBook(item)
+            })
           }}
           emptyMessage="No books found. Add a folder per book to media/books/ and scan."
         />

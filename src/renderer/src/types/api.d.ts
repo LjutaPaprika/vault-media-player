@@ -227,6 +227,12 @@ interface Window {
       getProgress:  (filePaths: string[]) => Promise<Record<string, VideoProgress>>
       /** Forgets a video's position. */
       clearProgress: (filePath: string) => Promise<void>
+      /**
+       * Records where a comic, manga chapter or book was left, from the app's own
+       * readers. Pages: position = page index, total = page count. Books:
+       * position = chapter index + fraction scrolled, total = chapter count.
+       */
+      saveReadingProgress: (filePath: string, position: number, total: number, finished: boolean) => Promise<void>
       /** Fires shortly after mpv records a position, while a video plays and when it closes. */
       onProgressChanged: (cb: () => void) => () => void
       openAudio:    (filePath: string) => Promise<void>

@@ -30,12 +30,30 @@ export type WatchState =
   | { kind: 'partial'; position: number; duration: number; resumeAt: number }
   | { kind: 'finished' }
 
+/** Categories read in the app's own readers rather than watched in mpv. */
+const READING = new Set(['manga', 'comics', 'books'])
+
+export function isReading(category?: string): boolean {
+  return !!category && READING.has(category)
+}
+
 /**
  * Where a video stands. `fallbackDuration` covers a report from a run where
  * mpv never measured the length.
+ *
+ * Reading positions follow simpler rules. The reader itself reports finished
+ * (it saw the last page, or the end of the last chapter) rather than it being
+ * inferred from a margin, a reader still on the first page has not started,
+ * and resuming goes back to exactly where they were: there is no line to
+ * catch again.
  */
 export function watchState(progress: VideoProgress | undefined, fallbackDuration = 0, category?: string): WatchState {
   if (!progress) return { kind: 'unstarted' }
+  if (isReading(category)) {
+    if (progress.finished) return { kind: 'finished' }
+    if (progress.position <= 0) return { kind: 'unstarted' }
+    return { kind: 'partial', position: progress.position, duration: progress.duration, resumeAt: progress.position }
+  }
   const duration = progress.duration > 0 ? progress.duration : fallbackDuration
   if (progress.finished) return { kind: 'finished' }
   if (duration > 0 && progress.position >= duration - endMargin(duration, category)) return { kind: 'finished' }
@@ -74,6 +92,8 @@ export interface ContinueTarget<T> {
   startAt: number
   /** Where it was left off, to show on the button; null when starting fresh. */
   leftOffAt: number | null
+  /** The length that position is out of (seconds, or pages when reading). */
+  leftOffOf: number | null
 }
 
 /**
@@ -97,8 +117,8 @@ export function continueTarget<T extends { filePath: string; lastOpenedAt: numbe
   const target = (video: T, label: ContinueTarget<T>['label']): ContinueTarget<T> => {
     const state = stateOf(video)
     return state.kind === 'partial'
-      ? { video, label: label === 'Next' ? 'Next' : 'Resume', startAt: state.resumeAt, leftOffAt: state.position }
-      : { video, label, startAt: 0, leftOffAt: null }
+      ? { video, label: label === 'Next' ? 'Next' : 'Resume', startAt: state.resumeAt, leftOffAt: state.position, leftOffOf: state.duration }
+      : { video, label, startAt: 0, leftOffAt: null, leftOffOf: null }
   }
 
   const lastOpened = mostRecentlyOpened(videos)

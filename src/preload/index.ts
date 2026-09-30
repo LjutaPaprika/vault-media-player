@@ -57,6 +57,8 @@ contextBridge.exposeInMainWorld('api', {
     openAudio: (filePath: string) => ipcRenderer.invoke('playback:openAudio', filePath),
     getProgress: (filePaths: string[]): Promise<Record<string, VideoProgress>> => ipcRenderer.invoke('playback:getProgress', filePaths),
     clearProgress: (filePath: string): Promise<void> => ipcRenderer.invoke('playback:clearProgress', filePath),
+    saveReadingProgress: (filePath: string, position: number, total: number, finished: boolean): Promise<void> =>
+      ipcRenderer.invoke('reading:saveProgress', filePath, position, total, finished),
     onProgressChanged: (cb: () => void) => {
       const listener = (): void => cb()
       ipcRenderer.on('playback:progressChanged', listener)

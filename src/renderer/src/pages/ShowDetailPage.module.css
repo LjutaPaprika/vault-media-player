@@ -496,6 +496,15 @@
   background: var(--sidebar-active, #2a2a32);
 }
 
+/* ── Where a partly read chapter was left ("p. 12/40") ── */
+.readingNote {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ── Last watched / last read pill ── */
 .lastOpenedPill {
   font-size: 9px;

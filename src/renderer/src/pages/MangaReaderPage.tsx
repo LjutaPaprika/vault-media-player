@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import styles from './MangaReaderPage.module.css'
 
@@ -6,7 +6,17 @@ interface Props {
   filePath: string
   title: string
   onBack: () => void
+  /** Page index to open at, where the reader left off; 0 for the start. */
+  startPage?: number
 }
+
+/** The reading line: the page crossing this share of the view is "current". */
+const READING_LINE = 0.3
+
+/** How long scrolling must pause before the position is saved. */
+const SAVE_DELAY_MS = 500
+
+const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'Home', 'End'])
 
 /**
  * How far outside the viewport a page starts loading, in CSS pixels.
@@ -45,7 +55,7 @@ const PORTRAIT_COLUMN_PX = 1200
  */
 const SPREAD_COLUMN_PX = PORTRAIT_COLUMN_PX * 2
 
-export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX.Element {
+export default function MangaReaderPage({ filePath, title, onBack, startPage = 0 }: Props): JSX.Element {
   useEscapeKey(onBack)
   const [pages, setPages] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -67,6 +77,19 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
   const [maxWidths, setMaxWidths] = useState<Record<number, number>>({})
   const slotRefs = useRef<(HTMLDivElement | null)[]>([])
   const observerRef = useRef<IntersectionObserver | null>(null)
+  const pagesRef = useRef<HTMLDivElement>(null)
+  // The page on screen, shown in the header and saved as the reading position.
+  const [current, setCurrent] = useState(0)
+  // Saved only once the reader has scrolled themselves. Opening a finished
+  // chapter (it opens at page 1) and backing straight out would otherwise
+  // overwrite "finished" with "page 1", and Continue would offer it again.
+  const userScrolled = useRef(false)
+  const position = useRef({ page: 0, finished: false })
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // While set, this page is held at the top of the view: the resume jump lands
+  // on it, then pages above it decode to their true heights and would push it
+  // off screen. Released as soon as the reader scrolls.
+  const anchor = useRef<number | null>(null)
 
   useEffect(() => {
     setLoading(true)
@@ -152,16 +175,95 @@ export default function MangaReaderPage({ filePath, title, onBack }: Props): JSX
     [markLoaded, measure]
   )
 
+  const save = useCallback(() => {
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null }
+    if (!userScrolled.current || !slotRefs.current.length) return
+    const { page, finished } = position.current
+    window.api.playback.saveReadingProgress(filePath, page, slotRefs.current.length, finished)
+  }, [filePath])
+
+  // Save on the way out; the pending timer may not have fired yet.
+  useEffect(() => () => save(), [save])
+
+  /** Which page crosses the reading line, and whether the last page is in view. */
+  const locate = useCallback((): { page: number; lastInView: boolean } | null => {
+    const view = pagesRef.current
+    const slots = slotRefs.current
+    if (!view || !slots.length) return null
+    const box = view.getBoundingClientRect()
+    const line = box.top + view.clientHeight * READING_LINE
+    let page = 0
+    for (let i = 0; i < slots.length; i++) {
+      const top = slots[i]?.getBoundingClientRect().top
+      if (top === undefined || top > line) break
+      page = i
+    }
+    const lastTop = slots[slots.length - 1]?.getBoundingClientRect().top ?? Infinity
+    return { page, lastInView: lastTop < box.bottom - 40 }
+  }, [])
+
+  const onScroll = useCallback(() => {
+    const at = locate()
+    if (!at) return
+    setCurrent(at.page)
+    if (!userScrolled.current) return
+    // Finished sticks for the rest of the visit: scrolling back up to look at
+    // something again does not un-finish the chapter.
+    position.current = { page: at.page, finished: position.current.finished || at.lastInView }
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(save, SAVE_DELAY_MS)
+  }, [locate, save])
+
+  const userInput = useCallback(() => {
+    userScrolled.current = true
+    anchor.current = null
+  }, [])
+
+  // Keyboard scrolling reaches the page, not the scroll container. Only keys
+  // that scroll count: Escape on the way out must not mark a finished chapter
+  // as reopened at page 1.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (SCROLL_KEYS.has(e.key)) userInput()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [userInput])
+
+  // Resume: jump to the saved page once the slots exist.
+  useLayoutEffect(() => {
+    if (loading || !pages.length || startPage <= 0 || startPage >= pages.length) return
+    anchor.current = startPage
+    slotRefs.current[startPage]?.scrollIntoView({ block: 'start' })
+    setCurrent(startPage)
+    position.current = { page: startPage, finished: false }
+    // Nothing should still be settling after this long; stop holding.
+    const release = setTimeout(() => { anchor.current = null }, 8000)
+    return () => clearTimeout(release)
+  }, [loading, pages.length, startPage])
+
+  // Hold the resumed page in place while pages above it decode and resize.
+  useLayoutEffect(() => {
+    if (anchor.current !== null) slotRefs.current[anchor.current]?.scrollIntoView({ block: 'start' })
+  }, [loaded, maxWidths])
+
   return (
     <div className={styles.reader}>
       <div className={styles.header}>
         <button className={styles.back} onClick={onBack}>‹ Back</button>
         <span className={styles.title}>{title}</span>
         {!loading && pages.length > 0 && (
-          <span className={styles.pageCount}>{pages.length} pages</span>
+          <span className={styles.pageCount}>p. {current + 1} / {pages.length}</span>
         )}
       </div>
-      <div className={styles.pages}>
+      <div
+        className={styles.pages}
+        ref={pagesRef}
+        onScroll={onScroll}
+        onWheel={userInput}
+        onPointerDown={userInput}
+        onTouchStart={userInput}
+      >
         {loading && <p className={styles.status}>Loading...</p>}
         {error && (
           <p className={styles.status} style={{ color: 'var(--danger)' }}>

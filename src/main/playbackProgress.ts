@@ -93,6 +93,17 @@ export function ingestProgressReports(): void {
   }
 }
 
+/**
+ * Records a reading position reported by the app's own readers (no mpv
+ * involved). Same table as video positions: for a comic or manga chapter
+ * `position` is the page index and `duration` the page count; for a book,
+ * `position` is the chapter index plus the fraction scrolled through it and
+ * `duration` the chapter count.
+ */
+export function saveProgress(root: string, filePath: string, p: VideoProgress): void {
+  upsertProgress(progressKey(root, filePath), p)
+}
+
 /** Forgets a video's position, e.g. when it is marked unwatched. */
 export function clearProgress(root: string, filePath: string): void {
   ingestProgressReports()

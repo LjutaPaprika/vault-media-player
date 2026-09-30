@@ -43,7 +43,7 @@ import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
-import { clearProgress, progressFileFor, readProgress, watchProgress, type VideoProgress } from './playbackProgress'
+import { clearProgress, progressFileFor, readProgress, saveProgress, watchProgress, type VideoProgress } from './playbackProgress'
 import { artworkStats, episodesWithoutStill, fillEpisodeStills, moveLegacyThumbnails, pruneArtwork, warmThumbs } from './thumbnails'
 import { setCacheRootResolver } from './cacheDb'
 import { setFfmpegResolver } from './episodeFrames'
@@ -830,6 +830,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('playback:clearProgress', (_event, filePath: string) => {
     clearProgress(resolveLibraryRoot(), filePath)
     if (!win.isDestroyed()) win.webContents.send('playback:progressChanged')
+  })
+
+  // Reading position from the app's own comic, manga and book readers.
+  ipcMain.handle('reading:saveProgress', (_event, filePath: string, position: number, total: number, finished: boolean) => {
+    if (!isFinite(position) || !isFinite(total) || position < 0 || total <= 0) return
+    saveProgress(resolveLibraryRoot(), filePath, {
+      position, duration: total, finished: finished === true, savedAt: Math.floor(Date.now() / 1000)
+    })
   })
 
   ipcMain.handle('settings:get', (_event, key: string, fallback: string) => getConfig(key) ?? fallback)

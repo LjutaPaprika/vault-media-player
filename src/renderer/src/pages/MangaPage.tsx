@@ -7,6 +7,7 @@ import MangaDetailPage from './MangaDetailPage'
 import MangaReaderPage from './MangaReaderPage'
 import { useLibrary } from '../hooks/useLibrary'
 import { useAppStore } from '../store/appStore'
+import { startPosition, watchState } from '../utils/resume'
 
 // Group key is the parent folder name — always the series name regardless of filename format
 function getSeriesName(filePath: string): string {
@@ -54,6 +55,8 @@ export default function MangaPage({
   const [selectedPdf,     setSelectedPdf]      = useState<MediaItem | null>(null)
   const [lastOpenedMap,   setLastOpenedMap]    = useState<Record<string, number>>({})
   const [selectedCbz,     setSelectedCbz]      = useState<MediaItem | null>(null)
+  // Where to resume the chapter or book being opened (page, or chapter position).
+  const [startAt,         setStartAt]          = useState(0)
 
   useEffect(() => { setSelectedSeries(null); setSelectedBook(null); setSelectedPdf(null); setSelectedCbz(null) }, [contentResetKey])
 
@@ -64,6 +67,7 @@ export default function MangaPage({
       <MangaReaderPage
         filePath={selectedCbz.filePath}
         title={selectedCbz.title}
+        startPage={startAt}
         onBack={() => setSelectedCbz(null)}
       />
     )
@@ -85,6 +89,7 @@ export default function MangaPage({
         filePath={selectedBook.filePath}
         title={selectedBook.title}
         isManga
+        startAt={startAt}
         onBack={() => setSelectedBook(null)}
       />
     )
@@ -102,8 +107,10 @@ export default function MangaPage({
       <MangaDetailPage
         seriesName={selectedSeries}
         volumes={volumes}
+        category={category}
         onBack={() => setSelectedSeries(null)}
-        onSelect={(vol) => {
+        onSelect={(vol, resumeAt) => {
+          setStartAt(resumeAt)
           const now = Math.floor(Date.now() / 1000)
           window.api.library.markOpened(vol.filePath)
           setLastOpenedMap((prev) => ({ ...prev, [vol.filePath]: now }))
@@ -145,9 +152,14 @@ export default function MangaPage({
               // Single volume — open directly
               const vol = vols[0]
               window.api.library.markOpened(vol.filePath)
-              if (ext(vol.filePath) === '.epub') setSelectedBook(vol)
-              else if (ext(vol.filePath) === '.pdf') setSelectedPdf(vol)
-              else setSelectedCbz(vol)
+              // No series page in between to have loaded the position, so ask
+              // for it before opening.
+              window.api.playback.getProgress([vol.filePath]).then((p) => {
+                setStartAt(startPosition(watchState(p[vol.filePath], 0, category)))
+                if (ext(vol.filePath) === '.epub') setSelectedBook(vol)
+                else if (ext(vol.filePath) === '.pdf') setSelectedPdf(vol)
+                else setSelectedCbz(vol)
+              })
             } else {
               setSelectedSeries(name)
             }
