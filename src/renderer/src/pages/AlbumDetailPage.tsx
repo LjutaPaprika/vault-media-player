@@ -54,11 +54,16 @@ export default function AlbumDetailPage({ albumTitle, artist, year, artPath, fir
 
     if (isThisAlbum && queue.length > 0) {
       if (isCurrentTrack) { togglePlay(); return }
-      // When shuffle is on, clicking a track restarts shuffle from that track
-      if (shuffleEnabled) {
+      // The queue was built when the album was last played, which may predate
+      // a track added or renamed since. Find the clicked track in it by path:
+      // an index from this list would point past the queue's end (nothing
+      // plays) or at whatever track now sits there. Not in the queue at all,
+      // or shuffle on (clicking restarts shuffle from that track): rebuild.
+      const queueIndex = queue.findIndex((t) => t.path === clickedPath)
+      if (shuffleEnabled || queueIndex === -1 || queue.length !== tracks.length) {
         play(tracks, index, meta)
       } else {
-        playTrack(index)
+        playTrack(queueIndex)
       }
     } else {
       play(tracks, index, meta)
