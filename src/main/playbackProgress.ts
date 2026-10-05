@@ -26,7 +26,9 @@ import { deleteProgress, getAllProgress, getProgressDir, upsertProgress, type Pr
  */
 export type VideoProgress = ProgressRow
 
-function progressKey(root: string, filePath: string): string {
+/** Library-relative, case- and spelling-independent key for a file: the same
+ *  book or video under E:/ on Windows and /Volumes/VAULT on a Mac gets the same key. */
+export function progressKey(root: string, filePath: string): string {
   const rel = relative(root, filePath).replace(/\\/g, '/').normalize('NFC').toLowerCase()
   return createHash('sha1').update(rel).digest('hex')
 }

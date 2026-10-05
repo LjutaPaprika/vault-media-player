@@ -5,6 +5,10 @@ export type ControllerButton =
   | 'confirm'                            // A / Cross
   | 'back'                               // B / Circle
   | 'menu'                               // Start / Options
+  // Reported only to callers that pass extended: true (the book reader).
+  | 'x' | 'y'                            // X / Square, Y / Triangle
+  | 'lb' | 'rb' | 'lt' | 'rt'            // bumpers and triggers
+  | 'view'                               // View / Select / Share
 
 // Standard gamepad button indices (Xbox layout)
 const BUTTON_MAP: Record<number, ControllerButton> = {
@@ -17,6 +21,18 @@ const BUTTON_MAP: Record<number, ControllerButton> = {
   15: 'right'     // D-pad right
 }
 
+// The rest of a standard pad. Opt-in, so screens written against the basic set
+// never receive a button they were not built to ignore.
+const EXTENDED_MAP: Record<number, ControllerButton> = {
+  2: 'x',
+  3: 'y',
+  4: 'lb',
+  5: 'rb',
+  6: 'lt',
+  7: 'rt',
+  8: 'view'
+}
+
 // Left stick axis thresholds
 const STICK_THRESHOLD = 0.5
 
@@ -26,6 +42,8 @@ interface Options {
   pollInterval?: number
   /** Set false to pause handling without unmounting */
   enabled?: boolean
+  /** Also report X, Y, bumpers, triggers and View. */
+  extended?: boolean
 }
 
 /**
@@ -48,7 +66,7 @@ function snapshotGamepad(
   }
 }
 
-export function useController({ onButton, pollInterval = 100, enabled = true }: Options): { resetState: () => void } {
+export function useController({ onButton, pollInterval = 100, enabled = true, extended = false }: Options): { resetState: () => void } {
   const prevButtons = useRef<boolean[]>([])
   const prevStick = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const onButtonRef = useRef(onButton)
@@ -89,7 +107,7 @@ export function useController({ onButton, pollInterval = 100, enabled = true }: 
 
       // ── Buttons ──────────────────────────────────────────────────────────
       gp.buttons.forEach((btn, idx) => {
-        const mapped = BUTTON_MAP[idx]
+        const mapped = BUTTON_MAP[idx] ?? (extended ? EXTENDED_MAP[idx] : undefined)
         if (!mapped) return
         const wasPressed = prevButtons.current[idx] ?? false
         const isPressed = btn.pressed
@@ -114,7 +132,7 @@ export function useController({ onButton, pollInterval = 100, enabled = true }: 
       clearInterval(interval)
       window.removeEventListener('focus', onFocus)
     }
-  }, [pollInterval, enabled]) // onButton intentionally omitted — handled via ref
+  }, [pollInterval, enabled, extended]) // onButton intentionally omitted — handled via ref
 
   return { resetState }
 }

@@ -38,12 +38,12 @@ const MAX_OPEN_CBZ = 1
 const CBZ_PAGE_CACHE_BYTES = 96 * 1024 * 1024
 
 const openCbzFiles = new Map<string, OpenCbz>()
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, getEpisodePaths } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, getEpisodePaths, getBookmarks, addBookmark, removeBookmark, getBookSettings, setBookSettings } from './database'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
-import { clearProgress, progressFileFor, readProgress, saveProgress, watchProgress, type VideoProgress } from './playbackProgress'
+import { clearProgress, progressFileFor, progressKey, readProgress, saveProgress, watchProgress, type VideoProgress } from './playbackProgress'
 import { artworkStats, episodesWithoutStill, fillEpisodeStills, moveLegacyThumbnails, pruneArtwork, warmThumbs } from './thumbnails'
 import { setCacheRootResolver } from './cacheDb'
 import { setFfmpegResolver } from './episodeFrames'
@@ -839,6 +839,21 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       position, duration: total, finished: finished === true, savedAt: Math.floor(Date.now() / 1000)
     })
   })
+
+  // Book reader bookmarks and per-book settings, keyed like reading progress.
+  ipcMain.handle('books:getBookmarks', (_event, filePath: string) =>
+    getBookmarks(progressKey(resolveLibraryRoot(), filePath)))
+  ipcMain.handle('books:addBookmark', (_event, filePath: string, b: { position: number; chapter: string; snippet: string }) => {
+    if (!isFinite(b.position) || b.position < 0) return null
+    return addBookmark(progressKey(resolveLibraryRoot(), filePath), {
+      position: b.position, chapter: String(b.chapter).slice(0, 200), snippet: String(b.snippet).slice(0, 300),
+    })
+  })
+  ipcMain.handle('books:removeBookmark', (_event, id: number) => removeBookmark(id))
+  ipcMain.handle('books:getSettings', (_event, filePath: string) =>
+    getBookSettings(progressKey(resolveLibraryRoot(), filePath)))
+  ipcMain.handle('books:setSettings', (_event, filePath: string, json: string | null) =>
+    setBookSettings(progressKey(resolveLibraryRoot(), filePath), json))
 
   ipcMain.handle('settings:get', (_event, key: string, fallback: string) => getConfig(key) ?? fallback)
   ipcMain.handle('settings:set', (_event, key: string, value: string) => { setConfig(key, value) })

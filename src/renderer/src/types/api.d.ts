@@ -105,6 +105,15 @@ interface MediaTechInfo {
   subtitleTracks: { lang: string }[]
 }
 
+interface Bookmark {
+  id: number
+  /** Chapter index plus fraction through it. */
+  position: number
+  chapter: string
+  snippet: string
+  createdAt: number
+}
+
 interface VideoProgress {
   position: number
   duration: number
@@ -281,6 +290,15 @@ interface Window {
     manga: {
       openCbz: (filePath: string) => Promise<string[]>
       closeCbz: () => Promise<void>
+    }
+    books: {
+      getBookmarks:   (filePath: string) => Promise<Bookmark[]>
+      /** Returns the new bookmark's id, or null if the position was invalid. */
+      addBookmark:    (filePath: string, b: { position: number; chapter: string; snippet: string }) => Promise<number | null>
+      removeBookmark: (id: number) => Promise<void>
+      /** The book's setting overrides as JSON, or null when it uses the defaults. */
+      getSettings:    (filePath: string) => Promise<string | null>
+      setSettings:    (filePath: string, json: string | null) => Promise<void>
     }
     system: {
       getInfo:    () => Promise<SystemInfo>

@@ -140,6 +140,16 @@ contextBridge.exposeInMainWorld('api', {
     closeCbz: () => ipcRenderer.invoke('manga:closeCbz')
   },
 
+  // Book reader: bookmarks and per-book setting overrides
+  books: {
+    getBookmarks:   (filePath: string) => ipcRenderer.invoke('books:getBookmarks', filePath),
+    addBookmark:    (filePath: string, b: { position: number; chapter: string; snippet: string }) =>
+      ipcRenderer.invoke('books:addBookmark', filePath, b),
+    removeBookmark: (id: number) => ipcRenderer.invoke('books:removeBookmark', id),
+    getSettings:    (filePath: string) => ipcRenderer.invoke('books:getSettings', filePath),
+    setSettings:    (filePath: string, json: string | null) => ipcRenderer.invoke('books:setSettings', filePath, json)
+  },
+
   // System info
   system: {
     getInfo:    () => ipcRenderer.invoke('system:getInfo'),

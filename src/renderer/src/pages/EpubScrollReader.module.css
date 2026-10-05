@@ -1,0 +1,217 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-base);
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.back {
+  font-size: 14px;
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.back:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+.headerMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.headerTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headerAuthor {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Body ── */
+.body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Content area ── */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px 0 60px;
+}
+
+.loadingMsg {
+  color: var(--text-muted);
+  padding: 40px;
+}
+
+/* EPUB HTML rendered here — styles are injected from the epub itself */
+.chapterHtml {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 32px;
+  color: var(--text-primary);
+  font-size: 17px;
+  line-height: 1.75;
+}
+
+/* Ensure epub content is legible over dark background */
+.chapterHtml :global(p)        { margin-bottom: 1em; }
+.chapterHtml :global(h1),
+.chapterHtml :global(h2),
+.chapterHtml :global(h3)       { color: var(--text-primary); margin: 1.5em 0 0.5em; }
+.chapterHtml :global(a)        { color: var(--accent); }
+.chapterHtml :global(img)      { max-width: 100%; height: auto; border-radius: var(--radius-sm); }
+.chapterHtml :global(body)     { background: transparent !important; color: inherit !important; }
+
+/* Manga mode — content area centers image with no scroll */
+.contentManga {
+  padding: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Manga mode — full-width images, text suppressed */
+.chapterHtmlManga {
+  max-width: 100%;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  font-size: 0;
+  line-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Force all intermediate epub wrappers (which may have fixed px dimensions) to fit the viewport */
+.chapterHtmlManga :global(*:not(img)) {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.chapterHtmlManga :global(img) {
+  display: block;
+  max-height: 100%;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+/* ── Right sidebar ── */
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebarSection {
+  padding: 16px 0 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+/* TOC section gets all remaining height */
+.sidebarSection:first-child {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebarHeading {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 0 16px 8px;
+  flex-shrink: 0;
+}
+
+.tocList {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tocItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+  line-height: 1.4;
+}
+.tocItem:hover { color: var(--text-primary); background: var(--bg-hover); }
+.tocItemActive { color: var(--accent) !important; background: var(--bg-hover); }
+
+/* ── Nav groups (chapter / page) ── */
+.navGroup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  gap: 8px;
+}
+
+.navBtn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  transition: color 0.15s, border-color 0.15s;
+  flex: 1;
+  text-align: center;
+}
+.navBtn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--text-secondary); }
+.navBtn:disabled { opacity: 0.3; cursor: default; }
+
+.navPos {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
+}

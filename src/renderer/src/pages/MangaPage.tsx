@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import PageShell from '../components/PageShell'
 import MediaGrid from '../components/MediaGrid'
-import BookReaderPage from './BookReaderPage'
+import EpubScrollReader from './EpubScrollReader'
 import PDFReaderPage from './PDFReaderPage'
 import MangaDetailPage from './MangaDetailPage'
 import MangaReaderPage from './MangaReaderPage'
@@ -85,7 +85,7 @@ export default function MangaPage({
 
   if (selectedBook) {
     return (
-      <BookReaderPage
+      <EpubScrollReader
         filePath={selectedBook.filePath}
         title={selectedBook.title}
         isManga

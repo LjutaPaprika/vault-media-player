@@ -205,6 +205,27 @@ function getDb(): Database.Database {
       finished INTEGER NOT NULL,
       saved_at INTEGER NOT NULL
     );
+
+    -- Book reader bookmarks and per-book reading settings, keyed the same way
+    -- as playback_progress so they follow a book across drive letters and
+    -- operating systems. position is chapter index plus fraction through it,
+    -- the reader's layout-independent location.
+    CREATE TABLE IF NOT EXISTS book_bookmarks (
+      id         INTEGER PRIMARY KEY,
+      path_key   TEXT    NOT NULL,
+      position   REAL    NOT NULL,
+      chapter    TEXT    NOT NULL,
+      snippet    TEXT    NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS book_bookmarks_path ON book_bookmarks (path_key);
+
+    -- Only the settings a book overrides, as JSON; the rest come from the
+    -- global defaults in config.
+    CREATE TABLE IF NOT EXISTS book_settings (
+      path_key TEXT PRIMARY KEY,
+      json     TEXT NOT NULL
+    );
   `)
 
   // One-time cleanup: superseded by the dir_mtimes table
@@ -687,6 +708,45 @@ export function upsertProgress(pathKey: string, p: ProgressRow): void {
 
 export function deleteProgress(pathKey: string): void {
   getDb().prepare('DELETE FROM playback_progress WHERE path_key = ?').run(pathKey)
+}
+
+export interface BookmarkRow {
+  id: number
+  position: number
+  chapter: string
+  snippet: string
+  createdAt: number
+}
+
+export function getBookmarks(pathKey: string): BookmarkRow[] {
+  return getDb()
+    .prepare(`SELECT id, position, chapter, snippet, created_at AS createdAt
+              FROM book_bookmarks WHERE path_key = ? ORDER BY position`)
+    .all(pathKey) as BookmarkRow[]
+}
+
+export function addBookmark(pathKey: string, b: Omit<BookmarkRow, 'id' | 'createdAt'>): number {
+  const r = getDb()
+    .prepare('INSERT INTO book_bookmarks (path_key, position, chapter, snippet, created_at) VALUES (?, ?, ?, ?, unixepoch())')
+    .run(pathKey, b.position, b.chapter, b.snippet)
+  return Number(r.lastInsertRowid)
+}
+
+export function removeBookmark(id: number): void {
+  getDb().prepare('DELETE FROM book_bookmarks WHERE id = ?').run(id)
+}
+
+export function getBookSettings(pathKey: string): string | null {
+  const row = getDb().prepare('SELECT json FROM book_settings WHERE path_key = ?').get(pathKey) as { json: string } | undefined
+  return row?.json ?? null
+}
+
+/** null clears the book's overrides, returning it to the global settings. */
+export function setBookSettings(pathKey: string, json: string | null): void {
+  if (json === null) getDb().prepare('DELETE FROM book_settings WHERE path_key = ?').run(pathKey)
+  else getDb()
+    .prepare('INSERT INTO book_settings (path_key, json) VALUES (?, ?) ON CONFLICT(path_key) DO UPDATE SET json = excluded.json')
+    .run(pathKey, json)
 }
 
 export function getAllProgress(): Map<string, ProgressRow> {
