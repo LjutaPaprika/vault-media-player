@@ -134,7 +134,19 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
   const [panel, setPanel] = useState<Panel>(null)
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([])
   const [toast, setToast] = useState<string | null>(null)
-  const frameRef = useRef<HTMLIFrameElement>(null)
+  // Two page frames: the one being read, and one behind it where the next
+  // chapter (or a relayout) is built. Swapping them lets a chapter change
+  // slide like any other page turn, and a rebuild never flashes blank.
+  const frameA = useRef<HTMLIFrameElement>(null)
+  const frameB = useRef<HTMLIFrameElement>(null)
+  const front = useRef(0)
+  const frameRef = useMemo(() => ({
+    get current(): HTMLIFrameElement | null { return (front.current === 0 ? frameA : frameB).current },
+  }), [])
+  const backFrame = (): HTMLIFrameElement | null => (front.current === 0 ? frameB : frameA).current
+  /** Which way the next chapter swap slides: 1 forward, -1 back, 0 none. */
+  const slideDir = useRef<0 | 1 | -1>(0)
+  const buildSeq = useRef(0)
   const measureRef = useRef<HTMLIFrameElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const chromeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -190,22 +202,24 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
       if (pendingChar.current === null) pendingFraction.current = page / chapterPages
     }
     lastBuilt.current = { chapter, key: layoutKey, theme: settings.theme }
-    lastLayout.current = layout
-    setFrameReady(false)
+    const seq = ++buildSeq.current
     loadChapter(chapter).then((ch) => {
-      if (cancelled || !frameRef.current) return
+      const back = backFrame()
+      if (cancelled || !back) return
       setBookWords((w) => (w[chapter] === ch.words ? w : Object.assign([...w], { [chapter]: ch.words })))
-      frameRef.current.srcdoc = buildSrcdoc(ch, settings, layout)
+      back.dataset.seq = String(seq)
+      back.srcdoc = buildSrcdoc(ch, settings, layout)
     })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapter, layoutKey, settings?.theme, chapters.length, loadChapter])
 
-  const onFrameLoad = useCallback(async () => {
-    const frame = frameRef.current
+  const onFrameLoad = useCallback(async (frame: HTMLIFrameElement | null) => {
     const doc = frame?.contentDocument
-    if (!doc || !layout || !doc.getElementById('flow')) return
+    // Only the latest build counts; a superseded one finishing late is ignored.
+    if (!frame || !doc || !layout || !doc.getElementById('flow') || frame.dataset.seq !== String(buildSeq.current)) return
     await doc.fonts?.ready
+    if (frame.dataset.seq !== String(buildSeq.current)) return
     const pages = countPages(doc, layout)
     let target = 0
     if (pendingAnchor.current) {
@@ -225,6 +239,8 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
     target = Math.max(0, Math.min(pages - 1, target))
     target -= target % layout.columns
     showPage(doc, layout, target, false)
+    swapTo(frame, layout)
+    lastLayout.current = layout
     setChapterPages(pages)
     setPage(target)
     setBookPages((b) => (b[chapter] === pages ? b : Object.assign([...b], { [chapter]: pages })))
@@ -235,6 +251,40 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
   // current because the frame is rebuilt whenever they change.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, chapter])
+
+  /**
+   * Bring a freshly built frame to the front. After a page turn across a
+   * chapter boundary both frames slide together, the same distance and speed
+   * as a turn within a chapter; anything else swaps in place.
+   */
+  function swapTo(next: HTMLIFrameElement, l: PageLayout): void {
+    const prev = frameRef.current
+    front.current = next === frameA.current ? 0 : 1
+    const dir = slideDir.current
+    slideDir.current = 0
+    const step = l.columns * l.colWidth + (l.columns - 1) * l.gap + l.gap
+    const reset = (el: HTMLIFrameElement, visible: boolean): void => {
+      el.style.transition = 'none'
+      el.style.transform = 'none'
+      el.style.visibility = visible ? 'visible' : 'hidden'
+      el.style.zIndex = visible ? '1' : '0'
+    }
+    if (!prev || prev === next || dir === 0 || prev.style.visibility !== 'visible') {
+      reset(next, true)
+      if (prev && prev !== next) reset(prev, false)
+      return
+    }
+    next.style.transition = 'none'
+    next.style.transform = `translateX(${dir * step}px)`
+    next.style.visibility = 'visible'
+    next.style.zIndex = '1'
+    void next.offsetWidth // commit the start position before animating
+    for (const [el, to] of [[next, 0], [prev, -dir * step]] as const) {
+      el.style.transition = 'transform 150ms ease-out'
+      el.style.transform = `translateX(${to}px)`
+    }
+    setTimeout(() => { if (frameRef.current !== prev) reset(prev, false); next.style.transition = 'none' }, 170)
+  }
 
   // ─── Whole-book page count ─────────────────────────────────────────────────
   // Every chapter laid out once, offscreen, at the current settings: that is
@@ -353,7 +403,7 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
     wpm.current = wpm.current * 0.9 + rate * 0.1
   }
 
-  function goChapter(i: number, at: 'start' | 'end' | number, anchor?: string): void {
+  function goChapter(i: number, at: 'start' | 'end' | number, anchor?: string, slide: 0 | 1 | -1 = 0): void {
     if (i < 0 || i >= chapters.length) return
     userMoved.current = true
     anchorChar.current = null
@@ -371,6 +421,7 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
     pendingAnchor.current = anchor ?? null
     pendingFraction.current = typeof at === 'number' ? at : null
     landAtEnd.current = at === 'end'
+    slideDir.current = slide
     setChapterPages(0)
     setChapter(i)
   }
@@ -385,13 +436,13 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
       learnPace()
       const next = page + columns
       if (next < chapterPages) { showPage(doc, layout, next, true); setPage(next); pageShownAt.current = Date.now() }
-      else if (chapter < chapters.length - 1) goChapter(chapter + 1, 'start')
+      else if (chapter < chapters.length - 1) goChapter(chapter + 1, 'start', undefined, 1)
       else if (!finished.current) { finished.current = true; saveRef.current(); flash('The end') }
       if (chapter === chapters.length - 1 && next + columns >= chapterPages) finished.current = true
     } else {
       const prev = page - columns
       if (prev >= 0) { showPage(doc, layout, prev, true); setPage(prev); pageShownAt.current = Date.now() }
-      else if (chapter > 0) goChapter(chapter - 1, 'end')
+      else if (chapter > 0) goChapter(chapter - 1, 'end', undefined, -1)
     }
   }
 
@@ -485,8 +536,8 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
     }
     if (k === 'ArrowRight' || k === 'PageDown' || (k === ' ' && !e.shiftKey)) { turn(1); return true }
     if (k === 'ArrowLeft' || k === 'PageUp' || (k === ' ' && e.shiftKey)) { turn(-1); return true }
-    if (k === ']') { goChapter(chapter + 1, 'start'); return true }
-    if (k === '[') { goChapter(chapter - 1, 'start'); return true }
+    if (k === ']') { goChapter(chapter + 1, 'start', undefined, 1); return true }
+    if (k === '[') { goChapter(chapter - 1, 'start', undefined, -1); return true }
     if (k === 'Enter') { toggleChrome(); return true }
     if (k === 'c' || k === 'C') { openPanel('contents'); return true }
     if (k === 'b' || k === 'B') { void toggleBookmark(); return true }
@@ -509,8 +560,8 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
     }
     if (btn === 'right' || btn === 'rb') turn(1)
     else if (btn === 'left' || btn === 'lb') turn(-1)
-    else if (btn === 'rt') goChapter(chapter + 1, 'start')
-    else if (btn === 'lt') goChapter(chapter - 1, 'start')
+    else if (btn === 'rt') goChapter(chapter + 1, 'start', undefined, 1)
+    else if (btn === 'lt') goChapter(chapter - 1, 'start', undefined, -1)
     else if (btn === 'confirm') toggleChrome()
     else if (btn === 'x') openPanel('contents')
     else if (btn === 'y') void toggleBookmark()
@@ -609,19 +660,29 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
       <div ref={stageRef} className={styles.stage} onClick={onStageClick}>
         {layout && (
           <>
-            <iframe
-              ref={frameRef}
-              className={`${styles.frame} ${frameReady ? styles.frameReady : ''}`}
-              title={chapterTitle || 'Book page'}
-              // No allow-scripts: the book's HTML can never run code.
-              sandbox="allow-same-origin"
-              onLoad={() => { void onFrameLoad() }}
+            <div
+              className={`${styles.pageBox} ${frameReady ? styles.pageBoxReady : ''}`}
               style={{
                 left: layout.left, top: layout.top,
                 width: layout.columns * layout.colWidth + (layout.columns - 1) * layout.gap,
                 height: layout.height,
               }}
-            />
+            >
+              {[frameA, frameB].map((ref, i) => (
+                <iframe
+                  key={i}
+                  ref={ref}
+                  className={styles.frame}
+                  title={chapterTitle || 'Book page'}
+                  // No allow-scripts: the book's HTML can never run code.
+                  sandbox="allow-same-origin"
+                  // The book sees the theme as its colour scheme, so its own dark-mode
+                  // rules (inverting black-on-transparent artwork, say) follow the theme.
+                  style={{ colorScheme: settings?.theme === 'dark' ? 'dark' : 'light' }}
+                  onLoad={(e) => { void onFrameLoad(e.currentTarget) }}
+                />
+              ))}
+            </div>
             {frameReady && (
               <div className={styles.folios} style={{ left: layout.left, top: layout.top + layout.height + 8 }}>
                 {Array.from({ length: layout.columns }, (_, i) => (
@@ -660,8 +721,9 @@ export default function BookReaderPage({ filePath, onBack, title: titleProp, sta
       <header className={`${styles.topBar} ${barVisible ? styles.shown : ''}`} onMouseMove={(e) => { e.stopPropagation(); if (chromeTimer.current) clearTimeout(chromeTimer.current) }}>
         <button className={styles.barBtn} onClick={onBack}>‹ Library</button>
         <div className={styles.barTitle}>
-          <span className={styles.barBook}>{shownTitle}{author ? <span className={styles.barAuthor}> · {author}</span> : null}</span>
-          <span className={styles.barChapter}>{chapterTitle}</span>
+          <span className={styles.barBook}>{shownTitle}</span>
+          {author && <span className={styles.barAuthor}>{author}</span>}
+          {chapterTitle && <span className={styles.barChapter}>{chapterTitle}</span>}
         </div>
         <div className={styles.barActions}>
           <button className={styles.barBtn} onClick={() => openPanel('contents')} title="Contents (C / X)">Contents</button>

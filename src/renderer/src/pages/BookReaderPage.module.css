@@ -16,15 +16,27 @@
   cursor: default;
 }
 
-.frame {
+/* The page area. It clips the two frames, so a chapter change slides
+   within the page like any other turn rather than across the margins. */
+.pageBox {
   position: absolute;
-  border: 0;
-  background: transparent;
+  overflow: hidden;
   opacity: 0;
   transition: opacity 0.15s;
 }
 
-.frameReady { opacity: 1; }
+.pageBoxReady { opacity: 1; }
+
+.frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  /* Shown by the reader once built; the back frame stays hidden. */
+  visibility: hidden;
+}
 
 /* Offscreen, laid out at full size: it counts pages for the whole book. */
 .measure {
@@ -114,13 +126,14 @@
   transition: opacity 0.18s, transform 0.18s;
 }
 
-.topBar { top: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); transform: translateY(-6px); }
-.bottomBar { bottom: 0; flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 22px 14px; border-top: 1px solid rgba(255, 255, 255, 0.06); transform: translateY(6px); }
+/* One line, 40px: the narrowest vertical margin is taller, so it never covers text. */
+.topBar { top: 0; height: 40px; padding: 0 12px; gap: 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); transform: translateY(-6px); }
+.bottomBar { bottom: 0; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 22px 9px; border-top: 1px solid rgba(255, 255, 255, 0.06); transform: translateY(6px); }
 
 .shown { opacity: 1; pointer-events: auto; transform: none; }
 
 .barBtn {
-  padding: 6px 10px;
+  padding: 4px 10px;
   border-radius: var(--radius-sm);
   font-size: 13px;
   color: #c9c6bf;
@@ -134,21 +147,17 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-}
-
-.barBook, .barChapter {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  justify-content: center;
+  align-items: baseline;
+  gap: 8px;
   white-space: nowrap;
+  overflow: hidden;
 }
 
-.barBook { font-size: 13px; font-weight: 600; }
-.barAuthor { font-weight: 400; color: #9a978f; }
-.barChapter { font-size: 12px; color: #9a978f; }
+.barBook { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.barAuthor, .barChapter { font-size: 12.5px; color: #9a978f; }
+.barAuthor::before, .barChapter::before { content: '·'; margin-right: 8px; color: #5f5d58; }
+.barChapter { overflow: hidden; text-overflow: ellipsis; }
 
 .barActions {
   display: flex;

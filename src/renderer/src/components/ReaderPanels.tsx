@@ -161,7 +161,7 @@ export function SettingsForm({ settings: s, bookOnly, onChange, onBookOnly }: Se
               data-nav
             >
               <span className={styles.themeAa}>Aa</span>
-              <span className={styles.themeName}>{t === 'black' ? 'Black' : t[0].toUpperCase() + t.slice(1)}</span>
+              <span className={styles.themeName}>{t[0].toUpperCase() + t.slice(1)}</span>
             </button>
           ))}
         </div>

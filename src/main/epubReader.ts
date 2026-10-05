@@ -173,8 +173,13 @@ export function readEpubChapter(filePath: string, chapterHref: string): string {
   const zip  = getCachedZip(filePath)
   let   html = zip.get(chapterHref)?.toString('utf8') ?? '<p>Chapter not found.</p>'
 
-  // Inline stylesheets
-  html = html.replace(/<link\b[^>]*rel=["']stylesheet["'][^>]*href="([^"]+)"[^>]*\/?>/gi, (_, href) => {
+  // Inline stylesheets. Attributes can come in any order: Standard Ebooks
+  // writes href before rel, which the old pattern (rel first) never matched,
+  // so those books lost all their styling.
+  html = html.replace(/<link\b[^>]*>/gi, (tag) => {
+    const rel = tag.match(/\brel\s*=\s*["']([^"']*)["']/i)?.[1] ?? ''
+    const href = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1]
+    if (!href || !/\bstylesheet\b/i.test(rel)) return tag
     const css = zip.get(zipResolve(chapterHref, href))?.toString('utf8') ?? ''
     return `<style>${css}</style>`
   })

@@ -3,7 +3,7 @@
 // follows the defaults or has its own complete set; there is no field-by-field
 // mixing, so what the settings panel shows is always exactly what applies.
 
-export type ReaderTheme = 'dark' | 'sepia' | 'light' | 'black'
+export type ReaderTheme = 'dark' | 'sepia' | 'light'
 export type ReaderFont = 'serif' | 'sans'
 export type ReaderWidth = 'narrow' | 'medium' | 'wide'
 export type ReaderMargin = 'small' | 'medium' | 'large'
@@ -45,14 +45,19 @@ export const FONT_STACKS: Record<ReaderFont, string> = {
 /** Line length in ems: about 60, 70 and 85 characters of a book face. */
 export const MEASURE_EM: Record<ReaderWidth, number> = { narrow: 27, medium: 32, wide: 39 }
 
-/** Space around the page block, in CSS px: [horizontal, vertical]. */
+/**
+ * Space around the page block, in CSS px: [horizontal, vertical]. Vertical
+ * is at least the top bar's height (40px), and the bottom margin plus the
+ * page-number strip clears the bottom bar, so showing the bars never covers
+ * text.
+ */
 export const MARGIN_PX: Record<ReaderMargin, [number, number]> = {
-  small: [24, 28], medium: [56, 44], large: [104, 64],
+  small: [24, 46], medium: [56, 54], large: [104, 74],
 }
 
 /**
  * accent colours the reader's own marks (progress line, bookmark ribbon); on
- * the dark themes it follows the app's accent. link and selection are used
+ * the dark theme it follows the app's accent. link and selection are used
  * inside the book's frame, which cannot see the app's CSS variables.
  */
 export interface ThemeColours { bg: string; page: string; fg: string; muted: string; link: string; selection: string; accent: string }
@@ -61,7 +66,6 @@ export const THEMES: Record<ReaderTheme, ThemeColours> = {
   dark:  { bg: '#121214', page: '#121214', fg: '#d9d6cf', muted: '#77746e', link: '#c9a86a', selection: 'rgba(201, 168, 106, 0.35)', accent: 'var(--accent)' },
   sepia: { bg: '#efe4cf', page: '#f4ead5', fg: '#4b3a26', muted: '#93806a', link: '#8a5a12', selection: 'rgba(176, 123, 34, 0.3)', accent: '#b07b22' },
   light: { bg: '#f6f6f3', page: '#fbfbf9', fg: '#1d1d1f', muted: '#86868b', link: '#2b5fb4', selection: 'rgba(43, 95, 180, 0.25)', accent: '#2b5fb4' },
-  black: { bg: '#000000', page: '#000000', fg: '#c8c6c0', muted: '#5f5d58', link: '#c9a86a', selection: 'rgba(201, 168, 106, 0.35)', accent: 'var(--accent)' },
 }
 
 const GLOBAL_KEY = 'bookReader.settings'
@@ -75,7 +79,7 @@ function sanitise(raw: unknown): ReaderSettings {
     lineHeight: Math.min(LINE_HEIGHT.max, Math.max(LINE_HEIGHT.min, Number(s.lineHeight) || DEFAULT_SETTINGS.lineHeight)),
     width: pick(s.width, ['narrow', 'medium', 'wide'], DEFAULT_SETTINGS.width),
     margin: pick(s.margin, ['small', 'medium', 'large'], DEFAULT_SETTINGS.margin),
-    theme: pick(s.theme, ['dark', 'sepia', 'light', 'black'], DEFAULT_SETTINGS.theme),
+    theme: pick(s.theme, ['dark', 'sepia', 'light'], DEFAULT_SETTINGS.theme),
     publisherStyles: s.publisherStyles !== false,
     pagesPerView: pick(s.pagesPerView, ['auto', 'one'], DEFAULT_SETTINGS.pagesPerView),
   }
