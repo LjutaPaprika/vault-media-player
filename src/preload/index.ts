@@ -53,7 +53,8 @@ contextBridge.exposeInMainWorld('api', {
   // Playback
   playback: {
     openFile:  (filePath: string) => ipcRenderer.invoke('playback:openFile', filePath),
-    openVideo: (filePath: string, category?: string, startSeconds?: number) => ipcRenderer.invoke('playback:openVideo', filePath, category, startSeconds),
+    openVideo: (filePath: string, category?: string, startSeconds?: number, upNext?: { filePath: string; title: string; startSeconds?: number }[], title?: string) =>
+      ipcRenderer.invoke('playback:openVideo', filePath, category, startSeconds, upNext, title),
     openAudio: (filePath: string) => ipcRenderer.invoke('playback:openAudio', filePath),
     getProgress: (filePaths: string[]): Promise<Record<string, VideoProgress>> => ipcRenderer.invoke('playback:getProgress', filePaths),
     clearProgress: (filePath: string): Promise<void> => ipcRenderer.invoke('playback:clearProgress', filePath),

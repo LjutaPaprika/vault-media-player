@@ -27,6 +27,38 @@ export const DEFAULT_BINDINGS: ControllerBinding[] = [
   { action: 'seek-fwd-5',   label: 'Seek Forward 5s (Stick)', command: 'seek 5',           button: 'GAMEPAD_LSTICK_RIGHT',  isLua: false },
 ]
 
+/**
+ * mpv's own name for a button. Bindings store SDL-style names ('GAMEPAD_A',
+ * 'GAMEPAD_LEFTSHOULDER') that mpv does not recognise - it calls A
+ * GAMEPAD_ACTION_DOWN and the bumper GAMEPAD_LEFT_SHOULDER (mpv
+ * --input-keylist) - so until this was translated only the D-pad and Start
+ * ever worked in the player. Names mpv already knows pass through.
+ */
+const MPV_KEY: Record<string, string> = {
+  GAMEPAD_A: 'GAMEPAD_ACTION_DOWN',
+  GAMEPAD_B: 'GAMEPAD_ACTION_RIGHT',
+  GAMEPAD_X: 'GAMEPAD_ACTION_LEFT',
+  GAMEPAD_Y: 'GAMEPAD_ACTION_UP',
+  GAMEPAD_LEFTSHOULDER: 'GAMEPAD_LEFT_SHOULDER',
+  GAMEPAD_RIGHTSHOULDER: 'GAMEPAD_RIGHT_SHOULDER',
+  GAMEPAD_LEFTTRIGGER: 'GAMEPAD_LEFT_TRIGGER',
+  GAMEPAD_RIGHTTRIGGER: 'GAMEPAD_RIGHT_TRIGGER',
+  GAMEPAD_LEFTSTICK: 'GAMEPAD_LEFT_STICK',
+  GAMEPAD_RIGHTSTICK: 'GAMEPAD_RIGHT_STICK',
+  GAMEPAD_LSTICK_UP: 'GAMEPAD_LEFT_STICK_UP',
+  GAMEPAD_LSTICK_DOWN: 'GAMEPAD_LEFT_STICK_DOWN',
+  GAMEPAD_LSTICK_LEFT: 'GAMEPAD_LEFT_STICK_LEFT',
+  GAMEPAD_LSTICK_RIGHT: 'GAMEPAD_LEFT_STICK_RIGHT',
+  GAMEPAD_RSTICK_UP: 'GAMEPAD_RIGHT_STICK_UP',
+  GAMEPAD_RSTICK_DOWN: 'GAMEPAD_RIGHT_STICK_DOWN',
+  GAMEPAD_RSTICK_LEFT: 'GAMEPAD_RIGHT_STICK_LEFT',
+  GAMEPAD_RSTICK_RIGHT: 'GAMEPAD_RIGHT_STICK_RIGHT',
+}
+
+export function toMpvKey(button: string): string {
+  return MPV_KEY[button] ?? button
+}
+
 const CONFIG_KEY = 'controllerBindings'
 
 export function getBindings(): ControllerBinding[] {

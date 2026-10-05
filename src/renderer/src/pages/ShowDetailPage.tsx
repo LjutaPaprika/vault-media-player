@@ -9,6 +9,8 @@ import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useVideoProgress } from '../hooks/useVideoProgress'
 import { useAppStore } from '../store/appStore'
 import { continueTarget, startPosition, watchedFraction, watchState, type ContinueTarget } from '../utils/resume'
+import { upNextAfter } from '../utils/upNext'
+import AutoplayToggle from '../components/AutoplayToggle'
 import styles from './ShowDetailPage.module.css'
 
 interface Props {
@@ -240,7 +242,12 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     flushSync(() => setLaunchingPath(filePath))
     setTimeout(() => setLaunchingPath(null), 1500)
     const start = startAt ?? startPosition(watchState(progress[filePath], 0, category))
-    window.api.playback.openVideo(filePath, category, start > 0 ? start : undefined)
+    // The episodes after this one, in the order the page lists them, play on
+    // in the same window; an extra is not in that list, so it plays alone.
+    const ordered = orderedSeasons.flatMap(([, eps]) => eps)
+    const current = ordered.find((ep) => ep.filePath === filePath)
+    const upNext = upNextAfter(ordered, filePath, episodeLabel, progress, {}, category)
+    window.api.playback.openVideo(filePath, category, start > 0 ? start : undefined, upNext, current ? episodeLabel(current) : undefined)
     const now = Math.floor(Date.now() / 1000)
     setEpisodes((prev) => prev.map((ep) => ep.filePath === filePath ? { ...ep, lastOpenedAt: now } : ep))
   }
@@ -500,6 +507,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
             onClick={() => playFile(next.video.filePath, next.startAt)}
           />
         )}
+        {episodes.length > 1 && <AutoplayToggle noun="episode" />}
 
         {/* Technical metadata from first episode */}
         {techInfo && (

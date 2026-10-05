@@ -15,9 +15,9 @@
 // --script-opts, where a comma in a video title would split the option.
 
 import { createHash } from 'crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, watch } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, watch, writeFileSync } from 'fs'
 import { join, relative } from 'path'
-import { deleteProgress, getAllProgress, getProgressDir, upsertProgress, type ProgressRow } from './database'
+import { deleteProgress, getAllProgress, getProgressDir, markOpenedAt, upsertProgress, type ProgressRow } from './database'
 
 /**
  * position: seconds in when mpv last reported. duration: length as mpv
@@ -40,7 +40,8 @@ export function progressFileFor(root: string, filePath: string): string {
   return join(dir, `${progressKey(root, filePath)}.json`)
 }
 
-function parseReport(text: string): VideoProgress | null {
+/** A report, and the video's path when it came from a queue. */
+function parseReport(text: string): (VideoProgress & { path?: string }) | null {
   try {
     const p = JSON.parse(text)
     if (typeof p.position !== 'number' || !isFinite(p.position)) return null
@@ -48,7 +49,8 @@ function parseReport(text: string): VideoProgress | null {
       position: Math.max(0, p.position),
       duration: typeof p.duration === 'number' && isFinite(p.duration) ? p.duration : 0,
       finished: p.finished === true,
-      savedAt: typeof p.savedAt === 'number' ? p.savedAt : 0
+      savedAt: typeof p.savedAt === 'number' ? p.savedAt : 0,
+      ...(typeof p.path === 'string' && p.path ? { path: p.path } : {})
     }
   } catch {
     return null
@@ -85,7 +87,15 @@ export function ingestProgressReports(): void {
       if (!name.endsWith('.json')) continue
       const text = readFileSync(file, 'utf-8')
       const report = parseReport(text)
-      if (report) upsertProgress(name.slice(0, -'.json'.length), report)
+      if (report) {
+        const { path, ...progress } = report
+        upsertProgress(name.slice(0, -'.json'.length), progress)
+        // A queued video was started by mpv, not by the app, so this is the
+        // first the app hears of it being watched. Stamped with the report's
+        // own time, so when one episode's last report and the next one's
+        // first arrive together, the later episode is the last watched.
+        if (path && !progress.finished && progress.savedAt > 0) markOpenedAt(path, progress.savedAt)
+      }
       // An unparseable report is removed too: it cannot become readable later,
       // and mpv's next write replaces it with a good one.
       if (readFileSync(file, 'utf-8') === text) unlinkSync(file)
@@ -166,35 +176,146 @@ export function watchProgress(onChange: () => void, onError: () => void): () => 
   }
 }
 
+// ─── Queues: several videos in one mpv window ───────────────────────────────
+
+export interface QueueEntry {
+  filePath: string
+  title: string
+  /** Seconds to start at (a resume point); 0 for the beginning. */
+  startSeconds: number
+}
+
+/** Where queue files live: beside the reports, in a folder ingest never reads. */
+function queueDir(): string {
+  return join(getProgressDir(), 'queues')
+}
+
+// A queue file outlives its mpv only if mpv was killed; a binge running this
+// long is not plausible, so older ones are leftovers.
+const STALE_QUEUE_MS = 2 * 24 * 60 * 60 * 1000
+
 /**
- * The mpv side. Inert unless the app passes
- * --script-opts=vault-progress-file=<path>, so mpv started any other way
- * (music, or by hand) is untouched.
+ * Writes what mpv needs to play `entries` back to back: an .m3u8 playlist
+ * (mpv's --playlist) and a JSON details file the Lua scripts read, with each
+ * video's report file, start point and title. Returns both paths. Both go on
+ * the library drive, like the reports, never on the host machine.
+ */
+export function writeQueue(
+  root: string,
+  entries: QueueEntry[],
+  opts: { autoplay: boolean; category?: string }
+): { playlist: string; details: string } {
+  const dir = queueDir()
+  mkdirSync(dir, { recursive: true })
+  try {
+    for (const name of readdirSync(dir)) {
+      const file = join(dir, name)
+      if (Date.now() - statSync(file).mtimeMs > STALE_QUEUE_MS) unlinkSync(file)
+    }
+  } catch { /* best effort */ }
+
+  const id = `queue-${Date.now()}`
+  const playlist = join(dir, `${id}.m3u8`)
+  const details = join(dir, `${id}.json`)
+  writeFileSync(playlist, '#EXTM3U\n' + entries.map((e) => e.filePath).join('\n') + '\n', 'utf-8')
+  writeFileSync(details, JSON.stringify({
+    autoplay: opts.autoplay,
+    category: opts.category ?? null,
+    playlist,
+    entries: entries.map((e) => ({
+      path: e.filePath,
+      title: e.title,
+      start: e.startSeconds > 0 ? e.startSeconds : 0,
+      progressFile: progressFileFor(root, e.filePath),
+    })),
+  }), 'utf-8')
+  return { playlist, details }
+}
+
+/**
+ * The mpv side. Inert unless the app passes --script-opts with either
+ * vault-progress-file=<path> (one video) or vault-queue=<details json> (a
+ * queue), so mpv started any other way (music, or by hand) is untouched.
+ *
+ * In a queue each video has its own report file, its own start point
+ * (applied the first time it loads, through mpv's file-local options), and
+ * its reports carry its path so the app can mark it watched. With autoplay
+ * off the app also passes --keep-open=always: mpv then stops at the end of
+ * each file instead of moving on, and this script records it and quits.
  */
 export function buildProgressLua(): string {
   return `\
-local out = mp.get_opt('vault-progress-file')
-if not out or out == '' then return end
+local utils = require 'mp.utils'
 
+local single = mp.get_opt('vault-progress-file')
+local queue_path = mp.get_opt('vault-queue')
+if (not single or single == '') and (not queue_path or queue_path == '') then return end
+
+local queue = nil
+if queue_path and queue_path ~= '' then
+  local f = io.open(queue_path, 'r')
+  if f then
+    queue = utils.parse_json(f:read('*a'))
+    f:close()
+  end
+  if not queue or not queue.entries then return end
+end
+
+local out = single
+local entry_path = nil
 local position, duration = nil, 0
 local finished = false
 local ready = false
 local last_write = -1e9
+local started = {}
+
+local function current_entry()
+  if not queue then return nil end
+  local pos = mp.get_property_number('playlist-pos', -1)
+  return queue.entries[pos + 1]
+end
 
 local function write()
-  if not position then return end
+  if not position or not out then return end
   local tmp = out .. '.tmp'
   local f = io.open(tmp, 'w')
   if not f then return end
-  f:write(string.format('{"position":%.3f,"duration":%.3f,"finished":%s,"savedAt":%d}',
-    position, duration or 0, finished and 'true' or 'false', os.time()))
+  local report = { position = position, duration = duration or 0, finished = finished, savedAt = os.time() }
+  if entry_path then report.path = entry_path end
+  f:write(utils.format_json(report))
   f:close()
   -- Windows will not rename over an existing file.
   os.remove(out)
   os.rename(tmp, out)
 end
 
--- Ignore the playhead until the initial load (and any --start seek) settles,
+-- Each queued video reports to its own file, starting from a clean slate, so
+-- the first seconds of one can never be recorded over another's position.
+mp.register_event('start-file', function()
+  if not queue then return end
+  local e = current_entry()
+  out = e and e.progressFile or nil
+  entry_path = e and e.path or nil
+  position, duration, finished, ready = nil, 0, false, false
+  last_write = -1e9
+end)
+
+-- A queued video's resume point, the first time it loads. Not on later
+-- visits (going back with Previous), where the saved point is out of date.
+if queue then
+  mp.add_hook('on_load', 50, function()
+    local pos = mp.get_property_number('playlist-pos', -1)
+    local e = queue.entries[pos + 1]
+    if e and not started[pos] then
+      started[pos] = true
+      if e.start and e.start > 0 then
+        mp.set_property('file-local-options/start', tostring(e.start))
+      end
+    end
+  end)
+end
+
+-- Ignore the playhead until the initial load (and any start seek) settles,
 -- or a quick close would record 0 over a real position.
 mp.register_event('playback-restart', function() ready = true end)
 
@@ -211,6 +332,25 @@ mp.observe_property('time-pos', 'number', function(_, t)
   end
 end)
 
+-- Next Episode leaves before the end; it still counts as finished.
+mp.register_script_message('vault-finished', function()
+  if not ready then return end
+  finished = true
+  write()
+end)
+
+-- Autoplay off: mpv holds at the end of the file (keep-open=always); record
+-- it and close, as a single video always has.
+if queue and not queue.autoplay then
+  mp.observe_property('eof-reached', 'bool', function(_, eof)
+    if not eof or not ready then return end
+    finished = true
+    if duration and duration > 0 then position = duration end
+    write()
+    mp.command('quit')
+  end)
+end
+
 mp.register_event('end-file', function(e)
   if not ready then return end
   if e.reason == 'eof' then
@@ -219,5 +359,13 @@ mp.register_event('end-file', function(e)
   end
   write()
 end)
+
+-- The queue's files are only needed while this mpv runs.
+if queue then
+  mp.register_event('shutdown', function()
+    if queue.playlist then os.remove(queue.playlist) end
+    os.remove(queue_path)
+  end)
+end
 `
 }

@@ -43,7 +43,7 @@ import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
-import { clearProgress, progressFileFor, progressKey, readProgress, saveProgress, watchProgress, type VideoProgress } from './playbackProgress'
+import { clearProgress, progressFileFor, progressKey, readProgress, saveProgress, watchProgress, writeQueue, type VideoProgress } from './playbackProgress'
 import { artworkStats, episodesWithoutStill, fillEpisodeStills, moveLegacyThumbnails, pruneArtwork, warmThumbs } from './thumbnails'
 import { setCacheRootResolver } from './cacheDb'
 import { setFfmpegResolver } from './episodeFrames'
@@ -812,13 +812,27 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
   }
 
-  ipcMain.handle('playback:openVideo', (_event, filePath: string, category?: string, startSeconds?: number) => {
+  // `upNext`: the videos that follow this one (rest of a YouTube playlist,
+  // following episodes), played on in the same window. Autoplay decides
+  // whether mpv moves on by itself; the Next button works either way.
+  ipcMain.handle('playback:openVideo', (_event, filePath: string, category?: string, startSeconds?: number,
+    upNext?: { filePath: string; title: string; startSeconds?: number }[], title?: string) => {
     setLastOpened(filePath)
     lastVideoActivity = Date.now()
     const root = resolveLibraryRoot()
-    const progressFile = progressFileFor(root, filePath)
     ensureProgressWatch()
-    openVideo(filePath, root, getConfig('hwdec') ?? 'off', category, { startSeconds, progressFile })
+    const hwdec = getConfig('hwdec') ?? 'off'
+    if (Array.isArray(upNext) && upNext.length > 0) {
+      const autoplay = getConfig('autoplay') === 'on'
+      const entries = [
+        { filePath, title: title ?? '', startSeconds: startSeconds ?? 0 },
+        ...upNext.map((e) => ({ filePath: e.filePath, title: e.title, startSeconds: e.startSeconds ?? 0 })),
+      ]
+      const q = writeQueue(root, entries, { autoplay, category })
+      openVideo(filePath, root, hwdec, category, { queue: { ...q, autoplay } })
+    } else {
+      openVideo(filePath, root, hwdec, category, { startSeconds, progressFile: progressFileFor(root, filePath) })
+    }
     win.webContents.send('music:pause')
   })
 

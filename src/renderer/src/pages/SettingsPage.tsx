@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import AutoplayToggle from '../components/AutoplayToggle'
 import { useAppStore } from '../store/appStore'
 import PageShell from '../components/PageShell'
 import styles from './SettingsPage.module.css'
@@ -532,8 +533,9 @@ export default function SettingsPage(): JSX.Element {
           </section>
 
           <section className={styles.section}>
-            <h2 className={styles.sectionTitle}>Hardware Decoding</h2>
-            <p className={styles.sectionDesc}>Offload video decoding to your GPU. Reduces CPU usage for high-bitrate or 4K content.</p>
+            <h2 className={styles.sectionTitle}>Video Playback</h2>
+            <AutoplayToggle noun="episode" detailed />
+            <p className={styles.sectionDesc} style={{ marginTop: 16 }}>Hardware decoding: offload video decoding to your GPU. Reduces CPU usage for high-bitrate or 4K content.</p>
             <HwdecSelector />
           </section>
         </div>

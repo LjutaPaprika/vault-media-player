@@ -7,6 +7,7 @@ import { useEscapeKey } from '../hooks/useEscapeKey'
 import { formatClock, formatRuntime } from '../utils/duration'
 import { continueTarget, watchedFraction, watchState } from '../utils/resume'
 import { VIDEO_THUMB_WIDTH, type YouTubePlaylist } from '../utils/youtubePlaylists'
+import AutoplayToggle from '../components/AutoplayToggle'
 import sd from './ShowDetailPage.module.css'
 import styles from './YouTubePlaylistPage.module.css'
 
@@ -73,6 +74,9 @@ export default function YouTubePlaylistPage({ playlist, durations, progress, onB
 
         {next && (
           <ContinueButton target={next} title={next.video.title} onClick={() => play(next.video.filePath, next.startAt)} />
+        )}
+        {videos.length > 1 && (
+          <AutoplayToggle noun="video" />
         )}
       </div>
 

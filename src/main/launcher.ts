@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { basename, dirname, extname, join } from 'path'
-import { getBindings, type ControllerBinding } from './controllerBindings'
+import { getBindings, toMpvKey, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings } from './keyboardBindings'
 import { buildSkipSegmentLua } from './skipSegmentLua'
 import { buildProgressLua } from './playbackProgress'
@@ -100,7 +100,7 @@ function buildInputConf(controllerBindings: ControllerBinding[]): string {
 
   const gamepadLines = controllerBindings
     .filter((b) => !b.isLua && b.button !== 'none')
-    .map((b) => `${b.button.padEnd(24)}${b.command}`)
+    .map((b) => `${toMpvKey(b.button).padEnd(24)}${b.command}`)
     .join('\n')
 
   return `\
@@ -124,7 +124,7 @@ function buildLuaScript(
   // Every gamepad key this config binds, so the focus guard below neutralises
   // exactly those and nothing else.
   const guarded = [
-    ...controllerBindings.filter((b) => b.button !== 'none').map((b) => b.button),
+    ...controllerBindings.filter((b) => b.button !== 'none').map((b) => toMpvKey(b.button)),
     ...(subtitleButton !== 'none' ? [subtitleButton] : [])
   ]
   const keyList = [...new Set(guarded)].map((k) => `'${k}'`).join(', ')
@@ -263,10 +263,10 @@ export function getToolPath(driveRoot: string, toolName: string): string {
 function ensureMpvConfig(mpvExePath: string, hwdec: string): string {
   const bindings = getBindings()
   const kbBindings = getKeyboardBindings()
-  const subtitleButton = bindings.find((b) => b.action === 'subtitles')?.button ?? 'GAMEPAD_Y'
+  const subtitleButton = toMpvKey(bindings.find((b) => b.action === 'subtitles')?.button ?? 'GAMEPAD_Y')
   const subtitleKey = kbBindings.find((b) => b.action === 'mpv-subtitles')?.key ?? 'j'
   const skipKey = kbBindings.find((b) => b.action === 'mpv-skip-segment')?.key ?? 's'
-  const skipButton = bindings.find((b) => b.action === 'skip-segment')?.button ?? 'none'
+  const skipButton = toMpvKey(bindings.find((b) => b.action === 'skip-segment')?.button ?? 'none')
 
   const configDir = join(dirname(mpvExePath), 'portable_config')
   const configFile = join(configDir, 'mpv.conf')
@@ -328,6 +328,12 @@ export interface ResumeOptions {
   startSeconds?: number
   /** File for vault-progress.lua to record the playhead in; omit to not track. */
   progressFile?: string
+  /**
+   * Play several videos back to back in one window (playbackProgress.ts
+   * writeQueue). Replaces filePath, startSeconds and progressFile: each
+   * queued video carries its own.
+   */
+  queue?: { playlist: string; details: string; autoplay: boolean }
 }
 
 export function openVideo(filePath: string, driveRoot: string, hwdec = 'off', category?: string, resume: ResumeOptions = {}): void {
@@ -344,6 +350,20 @@ export function openVideo(filePath: string, driveRoot: string, hwdec = 'off', ca
     const configArg = process.platform === 'win32'
       ? `--include=${configFile}`
       : `--config-dir=${configDir}`
+    if (resume.queue) {
+      // One window for the whole queue. mpv opens the next file while this
+      // one plays, so moving on is a cut, not a reload. With autoplay off it
+      // holds at the end of each file, where vault-progress.lua closes it.
+      const q = resume.queue
+      spawnDetached(mpv, [
+        '--fullscreen', configArg, ...langArgs,
+        '--prefetch-playlist=yes',
+        ...(q.autoplay ? [] : ['--keep-open=always']),
+        `--script-opts=vault-queue=${q.details}`,
+        `--playlist=${q.playlist}`
+      ])
+      return
+    }
     const resumeArgs = [
       ...(resume.startSeconds && resume.startSeconds > 0 ? [`--start=${resume.startSeconds.toFixed(1)}`] : []),
       ...(resume.progressFile ? [`--script-opts=vault-progress-file=${resume.progressFile}`] : [])

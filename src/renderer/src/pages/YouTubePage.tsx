@@ -7,6 +7,7 @@ import { useVideoProgress } from '../hooks/useVideoProgress'
 import { useAppStore } from '../store/appStore'
 import { formatClock, formatRuntime } from '../utils/duration'
 import { startPosition, watchedFraction, watchState } from '../utils/resume'
+import { upNextAfter } from '../utils/upNext'
 import { buildPlaylists, openedAgo, sortByTitle, VIDEO_THUMB_WIDTH, type YouTubePlaylist } from '../utils/youtubePlaylists'
 import YouTubePlaylistPage from './YouTubePlaylistPage'
 import styles from './YouTubePage.module.css'
@@ -266,7 +267,12 @@ export default function YouTubePage(): JSX.Element {
   /** Opens a video, resuming where it was left off unless told where to start. */
   function playVideo(filePath: string, startAt?: number): void {
     const start = startAt ?? startPosition(watchState(progress[filePath], durations[filePath], 'youtube'))
-    window.api.playback.openVideo(filePath, 'youtube', start > 0 ? start : undefined)
+    // A video in a playlist is followed by the rest of that playlist, in the
+    // order the playlist page lists it; a loose video plays alone.
+    const playlist = playlists.find((p) => p.videos.some((v) => v.filePath === filePath))
+    const upNext = playlist ? upNextAfter(playlist.videos, filePath, (v) => v.title, progress, durations, 'youtube') : []
+    const title = playlist?.videos.find((v) => v.filePath === filePath)?.title
+    window.api.playback.openVideo(filePath, 'youtube', start > 0 ? start : undefined, upNext, title)
     setOpenedAt((prev) => ({ ...prev, [filePath]: Math.floor(Date.now() / 1000) }))
   }
 

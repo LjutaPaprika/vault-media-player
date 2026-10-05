@@ -681,6 +681,16 @@ export function setLastOpened(filePath: string): void {
     .run(filePath)
 }
 
+/**
+ * Marks a video opened at a given time (unix seconds), never moving it
+ * backwards: used for queued videos, from the time mpv reported them playing.
+ */
+export function markOpenedAt(filePath: string, at: number): void {
+  getDb()
+    .prepare('UPDATE media_items SET last_opened_at = MAX(COALESCE(last_opened_at, 0), ?) WHERE file_path = ?')
+    .run(Math.floor(at), filePath)
+}
+
 export interface ProgressRow {
   position: number
   duration: number

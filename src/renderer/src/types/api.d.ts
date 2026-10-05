@@ -105,6 +105,13 @@ interface MediaTechInfo {
   subtitleTracks: { lang: string }[]
 }
 
+interface UpNextEntry {
+  filePath: string
+  title: string
+  /** Where to start it: a resume point, or omitted for the beginning. */
+  startSeconds?: number
+}
+
 interface Bookmark {
   id: number
   /** Chapter index plus fraction through it. */
@@ -231,7 +238,12 @@ interface Window {
     playback: {
       openFile:     (filePath: string) => Promise<void>
       /** startSeconds resumes partway. */
-      openVideo:    (filePath: string, category?: string, startSeconds?: number) => Promise<void>
+      /**
+       * upNext: the videos that follow, played on in the same mpv window
+       * (Next Episode button; automatically when autoplay is on). title
+       * names this video for that button's "up next" line.
+       */
+      openVideo:    (filePath: string, category?: string, startSeconds?: number, upNext?: UpNextEntry[], title?: string) => Promise<void>
       /** Where each of these videos was left off, for those played since positions were recorded. */
       getProgress:  (filePaths: string[]) => Promise<Record<string, VideoProgress>>
       /** Forgets a video's position. */
