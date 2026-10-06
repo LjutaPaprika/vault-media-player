@@ -89,7 +89,7 @@ local next_deadline = nil      -- playback time at which Next fires; nil = no co
 -- Button geometry, in OSD pixel space. set_osd_ass is given osd-dimensions so
 -- these stay constant-size regardless of video resolution. Positioned bottom-
 -- right with enough bottom padding to clear the player's control bar.
-local BTN_W, BTN_H = 440, 100
+local BTN_W, BTN_H = 500, 100
 local RIGHT_PAD, BOTTOM_PAD = 40, 200
 local osd_w, osd_h = 1920, 1080
 local button_visible = false
@@ -238,8 +238,10 @@ local function draw_button_at(label, sub, a, progress)
       [[{\an5\pos(%d,%d)\bord0\1c&Hffffff&\1a&H%02x&\fs38\b1}%s]],
       x + math.floor(w / 2), y + math.floor(h / 2) - 18, text_a, label
     ) .. '\n' .. string.format(
-      [[{\an5\pos(%d,%d)\bord0\1c&Hffffff&\1a&H%02x&\fs24\b0}%s]],
-      x + math.floor(w / 2), y + math.floor(h / 2) + 16, sub_a, ass_escape(sub)
+      -- Clipped to the slab: a title that still runs long is cut at its
+      -- edge instead of spilling past it.
+      [[{\an5\pos(%d,%d)\clip(%d,%d,%d,%d)\bord0\1c&Hffffff&\1a&H%02x&\fs24\b0}%s]],
+      x + math.floor(w / 2), y + math.floor(h / 2) + 16, x + 14, y, x + w - 14, y + h, sub_a, ass_escape(sub)
     )
   else
     text = string.format(
@@ -429,7 +431,7 @@ end
 
 local function next_label(entry)
   local what = (queue and queue.category == 'youtube') and 'Next Video' or 'Next Episode'
-  return what .. '  ›', shorten(entry.title or '', 40)
+  return what .. '  ›', shorten(entry.title or '', 36)
 end
 
 mp.observe_property('time-pos', 'number', function(_, t)
@@ -478,14 +480,83 @@ mp.observe_property('time-pos', 'number', function(_, t)
   end
 end)
 
+-- ── Transition between queued videos: a dip to black ───────────────────────
+-- A full-screen black overlay (above the button) fades in with the sound
+-- fading out, the next file loads behind it - already prefetched - and it
+-- fades away once that file's first frame is up, which also hides the jump
+-- to a resume point. Volume is restored exactly.
+local FADE_OUT, FADE_IN = 0.45, 0.6
+local fade_ov = mp.create_osd_overlay('ass-events')
+fade_ov.z = 100
+local fade = { alpha = 0, from = 0, to = 0, t0 = 0, dur = 1, timer = nil, done = nil }
+local saved_volume = nil
+local advancing = false
+
+local function fade_draw()
+  if fade.alpha <= 0.002 then fade_ov:remove(); return end
+  fade_ov.res_x, fade_ov.res_y = osd_w, osd_h
+  fade_ov.data = string.format(
+    [[{\an7\pos(0,0)\bord0\shad0\1c&H000000&\1a&H%02x&\p1}m 0 0 l %d 0 %d %d 0 %d{\p0}]],
+    math.floor(0xFF * (1 - fade.alpha) + 0.5), osd_w, osd_w, osd_h, osd_h)
+  fade_ov:update()
+end
+
+local function fade_to(target, dur, done)
+  if target > 0 and saved_volume == nil then saved_volume = mp.get_property_number('volume', 100) end
+  fade.from, fade.to, fade.t0, fade.dur, fade.done = fade.alpha, target, mp.get_time(), math.max(dur, 0.05), done
+  if fade.timer then fade.timer:kill() end
+  fade.timer = mp.add_periodic_timer(0.016, function()
+    local p = math.min(1, (mp.get_time() - fade.t0) / fade.dur)
+    fade.alpha = fade.from + (fade.to - fade.from) * p
+    fade_draw()
+    if saved_volume then mp.set_property_number('volume', saved_volume * (1 - fade.alpha)) end
+    if p >= 1 then
+      fade.timer:kill()
+      fade.timer = nil
+      if fade.alpha <= 0.002 and saved_volume then
+        mp.set_property_number('volume', saved_volume)
+        saved_volume = nil
+      end
+      local cb = fade.done
+      fade.done = nil
+      if cb then cb() end
+    end
+  end)
+end
+
+-- Natural end with autoplay: start the fade so it finishes as the file does.
+mp.observe_property('time-pos', 'number', function(_, t)
+  if not t or not autoplay or not next_entry() then return end
+  local d = mp.get_property_number('duration', 0)
+  if d <= 0 then return end
+  if not advancing and fade.to == 0 and t >= d - FADE_OUT then
+    fade_to(1, math.max(0.05, d - t))
+  elseif not advancing and fade.to > 0 and t < d - FADE_OUT - 1 then
+    fade_to(0, 0.2)   -- sought back from the end: undo it
+  end
+end)
+
+-- The next file's first frame is up: fade back in.
+mp.register_event('playback-restart', function()
+  advancing = false
+  if fade.to > 0 then fade_to(0, FADE_IN) end
+end)
+-- A file that fails to load must not leave the screen black.
+mp.register_event('end-file', function(e)
+  if e.reason == 'error' and fade.to > 0 then fade_to(0, 0.2) end
+end)
+
 activate = function()
   msg.verbose('pressed: ' .. tostring(current.active))
   if current.active == 'next' then
     hide_button()
     current.active = nil
-    -- Leaving early still counts as having finished the episode.
-    mp.commandv('script-message', 'vault-finished')
-    mp.command('playlist-next')
+    advancing = true
+    fade_to(1, FADE_OUT, function()
+      -- Leaving early still counts as having finished the episode.
+      mp.commandv('script-message', 'vault-finished')
+      mp.command('playlist-next')
+    end)
     return
   end
   local range = nil

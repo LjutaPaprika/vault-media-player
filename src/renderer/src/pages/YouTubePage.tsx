@@ -251,6 +251,19 @@ export default function YouTubePage(): JSX.Element {
   const [openedAt, setOpenedAt] = useState<Record<string, number>>({})
   const progress = useVideoProgress(items.map((i) => i.filePath))
 
+  // Videos autoplay moved on to were opened by mpv, so their position reports
+  // are the live sign of it (the database marks them opened at that time).
+  useEffect(() => {
+    setOpenedAt((prev) => {
+      let next: Record<string, number> | null = null
+      for (const i of items) {
+        const at = progress[i.filePath]?.savedAt ?? 0
+        if (at > (prev[i.filePath] ?? i.lastOpenedAt ?? 0)) (next ??= { ...prev })[i.filePath] = at
+      }
+      return next ?? prev
+    })
+  }, [progress, items])
+
   useEffect(() => {
     window.api.library.getDurations('youtube').then(setDurations)
     window.api.youtube.getPlaylistCovers().then(setCovers)

@@ -237,6 +237,22 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
 
   const progress = useVideoProgress([...episodes, ...extras].map((e) => e.filePath))
 
+  // An episode autoplay moved on to was opened by mpv, not by this page, so
+  // the only live sign of it is its position reports. The database marks it
+  // opened at the report's time; mirror that here so Last watched and
+  // Continue follow the binge without leaving the page.
+  useEffect(() => {
+    setEpisodes((prev) => {
+      let changed = false
+      const next = prev.map((ep) => {
+        const at = progress[ep.filePath]?.savedAt ?? 0
+        if (at > (ep.lastOpenedAt ?? 0)) { changed = true; return { ...ep, lastOpenedAt: at } }
+        return ep
+      })
+      return changed ? next : prev
+    })
+  }, [progress])
+
   /** Opens a video, resuming where it was left off unless told where to start. */
   function playFile(filePath: string, startAt?: number): void {
     flushSync(() => setLaunchingPath(filePath))
