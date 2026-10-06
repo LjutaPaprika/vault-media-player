@@ -253,11 +253,13 @@ export default function YouTubePage(): JSX.Element {
 
   // Videos autoplay moved on to were opened by mpv, so their position reports
   // are the live sign of it (the database marks them opened at that time).
+  // Not a report that a video finished: that is the one being left.
   useEffect(() => {
     setOpenedAt((prev) => {
       let next: Record<string, number> | null = null
       for (const i of items) {
-        const at = progress[i.filePath]?.savedAt ?? 0
+        const p = progress[i.filePath]
+        const at = p && !p.finished ? p.savedAt : 0
         if (at > (prev[i.filePath] ?? i.lastOpenedAt ?? 0)) (next ??= { ...prev })[i.filePath] = at
       }
       return next ?? prev

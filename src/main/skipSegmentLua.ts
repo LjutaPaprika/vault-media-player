@@ -15,14 +15,17 @@
 //   * When story follows the ending (Epilogue, Part C, Bonus, an "Outro" after
 //     the ED, or any chapter name it does not recognise) nothing is skipped:
 //     the ending offers "Skip Ending", which lands on that scene, and Next only
-//     appears at the very end, without cutting anything short.
+//     appears for the last 30 s, without cutting anything short; with autoplay
+//     its bar runs out as the episode ends, where it moves on by itself.
 //   * With no chapters at all (most TV, all YouTube), Next shows for the last
-//     30 s (15 s for YouTube) and never cuts the video short either.
+//     30 s (15 s for YouTube) the same way.
 //   * With autoplay off the button still appears, without a countdown.
 //
 // While a button is up: click it, Enter, the skip key or controller A press
 // it; Esc or controller B dismiss it ("watch credits"). Those keys go back to
-// their usual jobs (B quits, A pauses) once it is gone.
+// their usual jobs (B quits, A pauses) once it is gone - except while Next is
+// fading to the next file, when they stay held: mpv's own Enter is "next
+// file", and a second press there would skip an episode.
 //
 // Tradeoff (accepted): while a button is showing, MBTN_LEFT is force-bound for
 // hit-testing, so clicks that miss it are swallowed for that stretch.
@@ -84,7 +87,11 @@ local current = { op = nil, ed = nil, tail = nil, active = nil }
 local last_tick = 0
 local dismissed_active = nil   -- 'op', 'ed' or 'next' once dismissed for this instance
 local shown_at = nil           -- mp.get_time() when a skip button was shown; nil = no countdown
-local next_deadline = nil      -- playback time at which Next fires; nil = no countdown
+local next_deadline = nil      -- playback time the countdown bar runs out at; nil = no bar
+local next_span = 1            -- the bar's full length, seconds
+local next_fires = false       -- true: Next presses itself then; false: the file ends then
+local advancing = false        -- Next was pressed; true until the next file is up
+local advance_from = -1        -- the playlist position it was pressed in
 
 -- Button geometry, in OSD pixel space. set_osd_ass is given osd-dimensions so
 -- these stay constant-size regardless of video resolution. Positioned bottom-
@@ -320,13 +327,15 @@ local function anim_tick()
   if next_deadline and target_alpha == 1.0 then
     -- Next's countdown runs on playback time, so pausing pauses it.
     local t = mp.get_property_number('time-pos', 0)
-    progress = math.max(0, math.min(1, (next_deadline - t) / NEXT_COUNTDOWN))
+    progress = math.max(0, math.min(1, (next_deadline - t) / next_span))
     if t >= next_deadline then
       next_deadline = nil
-      anim_timer = nil
-      last_anim_time = nil
-      activate()
-      return
+      if next_fires then
+        anim_timer = nil
+        last_anim_time = nil
+        activate()
+        return
+      end
     end
   elseif shown_at and target_alpha == 1.0 then
     -- Skip buttons dismiss themselves after a few seconds. Once that fires,
@@ -350,7 +359,8 @@ local function anim_tick()
   else
     anim_timer = nil
     last_anim_time = nil
-    if target_alpha == 0 and button_visible then
+    -- Held through an advance; released once the next file is up.
+    if target_alpha == 0 and button_visible and not advancing then
       unbind_while_visible()
       button_visible = false
     end
@@ -439,6 +449,8 @@ mp.observe_property('time-pos', 'number', function(_, t)
   local now = mp.get_time()
   if now - last_tick < 0.5 then return end
   last_tick = now
+  -- Leaving this file already; the button must not come back over the fade.
+  if advancing then return end
 
   local was_active = current.active
   local now_active = nil
@@ -461,9 +473,16 @@ mp.observe_property('time-pos', 'number', function(_, t)
     if now_active == 'next' and dismissed_active ~= 'next' then
       local label, sub = next_label(entry)
       shown_at = nil
-      -- Counting down only where the credits are known: a guessed window
-      -- never cuts a video short.
-      next_deadline = (autoplay and current.tail) and (t + NEXT_COUNTDOWN) or nil
+      next_deadline = nil
+      if autoplay and current.tail then
+        -- Credits: count down, then move on.
+        next_deadline, next_span, next_fires = t + NEXT_COUNTDOWN, NEXT_COUNTDOWN, true
+      elseif autoplay then
+        -- Story to the end, or no chapters: nothing is cut. The bar runs out
+        -- with the file, which then moves on by itself.
+        local d = mp.get_property_number('duration', 0)
+        if d > t then next_deadline, next_span, next_fires = d, d - t, false end
+      end
       show_button(label, sub)
     elseif now_active == 'op' and dismissed_active ~= 'op' then
       next_deadline = nil
@@ -490,7 +509,16 @@ local fade_ov = mp.create_osd_overlay('ass-events')
 fade_ov.z = 100
 local fade = { alpha = 0, from = 0, to = 0, t0 = 0, dur = 1, timer = nil, done = nil }
 local saved_volume = nil
-local advancing = false
+
+-- The advance is over (the next file is up, or it failed): let go of the keys
+-- held through it.
+local function end_advance()
+  advancing = false
+  if button_visible and target_alpha == 0 then
+    unbind_while_visible()
+    button_visible = false
+  end
+end
 
 local function fade_draw()
   if fade.alpha <= 0.002 then fade_ov:remove(); return end
@@ -538,21 +566,40 @@ end)
 
 -- The next file's first frame is up: fade back in.
 mp.register_event('playback-restart', function()
-  advancing = false
+  -- A seek during the fade restarts playback too; only the next file ends it,
+  -- a moment after it is up, so a press that comes late lands harmlessly.
+  if advancing and mp.get_property_number('playlist-pos', -1) ~= advance_from then
+    advance_from = -2
+    mp.add_timeout(FADE_IN + 0.5, end_advance)
+  end
   if fade.to > 0 then fade_to(0, FADE_IN) end
 end)
 -- A file that fails to load must not leave the screen black.
 mp.register_event('end-file', function(e)
-  if e.reason == 'error' and fade.to > 0 then fade_to(0, 0.2) end
+  if e.reason == 'error' then
+    if advancing then end_advance() end
+    if fade.to > 0 then fade_to(0, 0.2) end
+  end
 end)
 
 activate = function()
   msg.verbose('pressed: ' .. tostring(current.active))
   if current.active == 'next' then
+    if advancing then return end
+    advancing = true
+    -- Hold Enter, A and clicks until the next file is up (even if the button
+    -- had been dismissed and this came from the skip key).
+    if not button_visible then
+      bind_while_visible()
+      button_visible = true
+    end
     hide_button()
     current.active = nil
-    advancing = true
+    advance_from = mp.get_property_number('playlist-pos', -1)
     fade_to(1, FADE_OUT, function()
+      -- Pressed in the last moments, the file may have ended during the fade
+      -- and mpv moved on by itself; moving on again would skip one.
+      if mp.get_property_number('playlist-pos', -1) ~= advance_from then return end
       -- Leaving early still counts as having finished the episode.
       mp.commandv('script-message', 'vault-finished')
       mp.command('playlist-next')
@@ -576,5 +623,11 @@ dismiss = function()
 end
 
 mp.add_forced_key_binding(SKIP_KEY, 'skip-segment', function() activate() end)
+-- mpv's own Enter is "next file". In a queue, the button is how to move on;
+-- Enter pressed a beat late, or with no button up, must not skip an episode.
+if queue then
+  mp.add_key_binding('ENTER', 'skip-segment-queue-enter', function() activate() end)
+  mp.add_key_binding('KP_ENTER', 'skip-segment-queue-kpenter', function() activate() end)
+end
 ${gamepadBind}`
 }

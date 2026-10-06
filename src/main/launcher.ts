@@ -95,12 +95,12 @@ function buildInputConf(controllerBindings: ControllerBinding[]): string {
   const kbBindings = getKeyboardBindings()
   const keyboardLines = kbBindings
     .filter((b) => b.context === 'mpv' && MPV_KEY_COMMANDS[b.action])
-    .map((b) => `${b.key.padEnd(24)}${MPV_KEY_COMMANDS[b.action]}`)
+    .map((b) => `${b.key.padEnd(23)} ${MPV_KEY_COMMANDS[b.action]}`)
     .join('\n')
 
   const gamepadLines = controllerBindings
     .filter((b) => !b.isLua && b.button !== 'none')
-    .map((b) => `${toMpvKey(b.button).padEnd(24)}${b.command}`)
+    .map((b) => `${toMpvKey(b.button).padEnd(23)} ${b.command}`)
     .join('\n')
 
   return `\

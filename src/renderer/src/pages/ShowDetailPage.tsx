@@ -240,12 +240,14 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   // An episode autoplay moved on to was opened by mpv, not by this page, so
   // the only live sign of it is its position reports. The database marks it
   // opened at the report's time; mirror that here so Last watched and
-  // Continue follow the binge without leaving the page.
+  // Continue follow the binge without leaving the page. Not a report that an
+  // episode finished: that is the one being left, and the database skips it too.
   useEffect(() => {
     setEpisodes((prev) => {
       let changed = false
       const next = prev.map((ep) => {
-        const at = progress[ep.filePath]?.savedAt ?? 0
+        const p = progress[ep.filePath]
+        const at = p && !p.finished ? p.savedAt : 0
         if (at > (ep.lastOpenedAt ?? 0)) { changed = true; return { ...ep, lastOpenedAt: at } }
         return ep
       })
