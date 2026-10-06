@@ -11,6 +11,8 @@ interface MediaCard {
   genre?: string | null
   subtitle?: string
   playSeconds?: number
+  /** Every entry gone through: shows the "Series complete" dot. */
+  complete?: boolean
 }
 
 interface LibraryConfig {

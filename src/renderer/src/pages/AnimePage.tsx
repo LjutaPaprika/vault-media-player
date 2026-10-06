@@ -4,6 +4,7 @@ import MediaGrid from '../components/MediaGrid'
 import ShowDetailPage from './ShowDetailPage'
 import { useLibrary } from '../hooks/useLibrary'
 import { useAppStore } from '../store/appStore'
+import { isSeriesComplete } from '../utils/seriesComplete'
 
 interface SelectedShow {
   title: string
@@ -57,11 +58,4 @@ export default function AnimePage(): JSX.Element {
       )}
     </PageShell>
   )
-}
-
-// "Complete" = every canonical (non-extras) entry in the series has been opened.
-// Extras are excluded upstream by useLibrary('anime'), so every row here counts.
-function isSeriesComplete(episodes: MediaItem[]): boolean {
-  if (episodes.length === 0) return false
-  return episodes.every((ep) => ep.lastOpenedAt != null)
 }

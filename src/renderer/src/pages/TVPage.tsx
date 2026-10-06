@@ -4,6 +4,7 @@ import MediaGrid from '../components/MediaGrid'
 import ShowDetailPage from './ShowDetailPage'
 import { useLibrary } from '../hooks/useLibrary'
 import { useAppStore } from '../store/appStore'
+import { isSeriesComplete } from '../utils/seriesComplete'
 
 
 interface SelectedShow {
@@ -32,13 +33,17 @@ export default function TVPage(): JSX.Element {
     )
   }
 
-  // Deduplicate: one card per unique series title
+  // Deduplicate: one card per unique series title; collect all episodes per series for completion check
   const seriesMap = new Map<string, MediaItem>()
+  const episodesByTitle = new Map<string, MediaItem[]>()
   for (const item of items) {
     if (!seriesMap.has(item.title)) seriesMap.set(item.title, item)
+    if (!episodesByTitle.has(item.title)) episodesByTitle.set(item.title, [])
+    episodesByTitle.get(item.title)!.push(item)
   }
   const series = Array.from(seriesMap.values())
     .filter((i) => i.title.toLowerCase().includes(query.toLowerCase()))
+    .map((i) => ({ ...i, complete: isSeriesComplete(episodesByTitle.get(i.title) ?? []) }))
 
   return (
     <PageShell title="TV Shows" searchValue={query} onSearch={setQuery}>

@@ -1,18 +1,24 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import ContinueButton from '../components/ContinueButton'
 import PosterImage from '../components/PosterImage'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { useVideoProgress } from '../hooks/useVideoProgress'
 import { continueTarget, startPosition, watchState } from '../utils/resume'
+import { isExtra, sortKey } from '../utils/readingEntries'
+import { isSeriesComplete } from '../utils/seriesComplete'
 import styles from './ShowDetailPage.module.css'
 
 interface Props {
   seriesName: string
   volumes: MediaItem[]
   category: 'manga' | 'comics'
+  /** Changes when reading positions changed without this page seeing it. */
+  progressTick: number
   onBack: () => void
   /** Opens a chapter; `startAt` is where to resume (a page, or for a book a chapter position). */
   onSelect: (item: MediaItem, startAt: number) => void
+  /** Marks a chapter read or unread by hand, e.g. one read outside the app. */
+  onMarkRead: (item: MediaItem, read: boolean) => void
 }
 
 /** EPUB volumes remember a chapter position; everything else a page. */
@@ -30,30 +36,16 @@ function cleanDisplayTitle(raw: string): string {
   return title
 }
 
-function sortKey(title: string): number {
-  const ch = title.match(/ch(?:apter)?\.?\s*(\d+(?:\.\d+)?)/i)
-  if (ch) return parseFloat(ch[1])
-  const vol = title.match(/vol(?:ume)?\.?\s*(\d+(?:\.\d+)?)/i)
-  if (vol) return parseFloat(vol[1])
-  const num = title.match(/(\d+(?:\.\d+)?)/)
-  if (num) return parseFloat(num[1])
-  return Infinity
-}
-
-function isExtra(title: string): boolean {
-  const key = sortKey(title)
-  return isFinite(key) && key !== Math.floor(key)
-}
-
 // Chapter-list scroll offset per series, kept for the life of the app. Opening
 // a chapter replaces this page with the reader, which unmounts the list, so
 // without this every return from the reader landed back at the top of the list.
 const listScrollBySeries = new Map<string, number>()
 
-export default function MangaDetailPage({ seriesName, volumes, category, onBack, onSelect }: Props): JSX.Element {
-  useEscapeKey(onBack)
+export default function MangaDetailPage({ seriesName, volumes, category, progressTick, onBack, onSelect, onMarkRead }: Props): JSX.Element {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; vol: MediaItem } | null>(null)
+  useEscapeKey(() => (contextMenu ? setContextMenu(null) : onBack()))
   const listRef = useRef<HTMLDivElement>(null)
-  const progress = useVideoProgress(volumes.map((v) => v.filePath))
+  const progress = useVideoProgress(volumes.map((v) => v.filePath), progressTick)
   const open = (vol: MediaItem): void =>
     onSelect(vol, startPosition(watchState(progress[vol.filePath], 0, category)))
 
@@ -74,6 +66,8 @@ export default function MangaDetailPage({ seriesName, volumes, category, onBack,
   const sortedVolumes = useMemo(() =>
     [...volumes].sort((a, b) => sortKey(a.title) - sortKey(b.title))
   , [volumes])
+
+  const seriesComplete = isSeriesComplete(volumes, { progress, category, isExtra: (v) => isExtra(v.title) })
 
   // Continue follows the list's own order, so "next" is the row below.
   const next = continueTarget(sortedVolumes, progress, {}, category)
@@ -101,6 +95,7 @@ export default function MangaDetailPage({ seriesName, volumes, category, onBack,
         <div className={styles.heroInfo}>
           <div className={styles.heroTitle}>{seriesName}</div>
           <div className={styles.heroMeta}>{volumes.length} {volumes.length !== 1 ? unitPlural : unitSingular}</div>
+          {seriesComplete && <span className={styles.seriesCompletePill}>Series Complete</span>}
         </div>
         {next && (
           <ContinueButton
@@ -132,12 +127,16 @@ export default function MangaDetailPage({ seriesName, volumes, category, onBack,
                     key={vol.id}
                     className={styles.episodeRow}
                     onClick={() => open(vol)}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setContextMenu({ x: e.clientX, y: e.clientY, vol })
+                    }}
                   >
                     <span className={styles.episodeTitle}>{cleanDisplayTitle(vol.title)}</span>
                     {isExtra(vol.title) && (
                       <span className={styles.extraPill}>Extra</span>
                     )}
-                    {vol.id === lastReadId && (
+                    {!seriesComplete && vol.id === lastReadId && (
                       <span className={styles.lastOpenedPill}>Last Read</span>
                     )}
                     {state.kind === 'partial' && (
@@ -152,6 +151,27 @@ export default function MangaDetailPage({ seriesName, volumes, category, onBack,
           </div>
         </div>
       </div>
+
+      {contextMenu && (() => {
+        const vol = contextMenu.vol
+        const read = vol.lastOpenedAt != null
+        const close = (): void => setContextMenu(null)
+        return (
+          <>
+            <div className={styles.contextMenuShield} onClick={close} onContextMenu={(e) => { e.preventDefault(); close() }} />
+            <div className={styles.contextMenu} style={{ left: contextMenu.x, top: contextMenu.y }}>
+              {watchState(progress[vol.filePath], 0, category).kind === 'partial' && (
+                <button type="button" className={styles.contextMenuItem} onClick={() => { close(); onSelect(vol, 0) }}>
+                  Read from beginning
+                </button>
+              )}
+              <button type="button" className={styles.contextMenuItem} onClick={() => { close(); onMarkRead(vol, !read) }}>
+                {read ? 'Mark as unread' : 'Mark as read'}
+              </button>
+            </div>
+          </>
+        )
+      })()}
     </div>
   )
 }

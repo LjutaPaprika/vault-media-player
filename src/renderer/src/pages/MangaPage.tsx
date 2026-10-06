@@ -6,8 +6,11 @@ import PDFReaderPage from './PDFReaderPage'
 import MangaDetailPage from './MangaDetailPage'
 import MangaReaderPage from './MangaReaderPage'
 import { useLibrary } from '../hooks/useLibrary'
+import { useVideoProgress } from '../hooks/useVideoProgress'
 import { useAppStore } from '../store/appStore'
 import { startPosition, watchState } from '../utils/resume'
+import { isExtra } from '../utils/readingEntries'
+import { isSeriesComplete } from '../utils/seriesComplete'
 
 // Group key is the parent folder name — always the series name regardless of filename format
 function getSeriesName(filePath: string): string {
@@ -53,10 +56,26 @@ export default function MangaPage({
   const [selectedSeries,  setSelectedSeries]  = useState<string | null>(null)
   const [selectedBook,    setSelectedBook]     = useState<MediaItem | null>(null)
   const [selectedPdf,     setSelectedPdf]      = useState<MediaItem | null>(null)
-  const [lastOpenedMap,   setLastOpenedMap]    = useState<Record<string, number>>({})
+  // Opened / marked read (a time) or marked unread (null) since the library loaded.
+  const [lastOpenedMap,   setLastOpenedMap]    = useState<Record<string, number | null>>({})
   const [selectedCbz,     setSelectedCbz]      = useState<MediaItem | null>(null)
   // Where to resume the chapter or book being opened (page, or chapter position).
   const [startAt,         setStartAt]          = useState(0)
+  // Bumped when reading positions change behind this page's back: a reader
+  // closing (they save without telling anyone), or a chapter marked read.
+  const [progressTick,    setProgressTick]     = useState(0)
+  const progress = useVideoProgress(items.map((i) => i.filePath), progressTick)
+  const closeReader = (): void => {
+    setSelectedCbz(null); setSelectedPdf(null); setSelectedBook(null)
+    setProgressTick((n) => n + 1)
+  }
+
+  /** Marks a chapter read or unread by hand; either way its saved page no longer applies. */
+  function markRead(vol: MediaItem, read: boolean): void {
+    window.api.library.setWatched(vol.filePath, read)
+    window.api.playback.clearProgress(vol.filePath).then(() => setProgressTick((n) => n + 1))
+    setLastOpenedMap((prev) => ({ ...prev, [vol.filePath]: read ? Math.floor(Date.now() / 1000) : null }))
+  }
 
   useEffect(() => { setSelectedSeries(null); setSelectedBook(null); setSelectedPdf(null); setSelectedCbz(null) }, [contentResetKey])
 
@@ -68,7 +87,7 @@ export default function MangaPage({
         filePath={selectedCbz.filePath}
         title={selectedCbz.title}
         startPage={startAt}
-        onBack={() => setSelectedCbz(null)}
+        onBack={closeReader}
       />
     )
   }
@@ -78,7 +97,7 @@ export default function MangaPage({
       <PDFReaderPage
         filePath={selectedPdf.filePath}
         title={selectedPdf.title}
-        onBack={() => setSelectedPdf(null)}
+        onBack={closeReader}
       />
     )
   }
@@ -90,25 +109,24 @@ export default function MangaPage({
         title={selectedBook.title}
         isManga
         startAt={startAt}
-        onBack={() => setSelectedBook(null)}
+        onBack={closeReader}
       />
     )
   }
 
-  const grouped = groupBySeries(items)
+  const grouped = groupBySeries(items.map((vol) =>
+    vol.filePath in lastOpenedMap ? { ...vol, lastOpenedAt: lastOpenedMap[vol.filePath] } : vol
+  ))
 
   if (selectedSeries) {
-    const volumes = (grouped.get(selectedSeries) ?? []).map((vol) =>
-      lastOpenedMap[vol.filePath] !== undefined
-        ? { ...vol, lastOpenedAt: lastOpenedMap[vol.filePath] }
-        : vol
-    )
     return (
       <MangaDetailPage
         seriesName={selectedSeries}
-        volumes={volumes}
+        volumes={grouped.get(selectedSeries) ?? []}
         category={category}
+        progressTick={progressTick}
         onBack={() => setSelectedSeries(null)}
+        onMarkRead={markRead}
         onSelect={(vol, resumeAt) => {
           setStartAt(resumeAt)
           const now = Math.floor(Date.now() / 1000)
@@ -134,6 +152,7 @@ export default function MangaPage({
       title: name,
       subtitle: `${vols.length} ${vols.length !== 1 ? plural : singular}`,
       posterPath: vols[0].posterPath,
+      complete: isSeriesComplete(vols, { progress, category, isExtra: (v) => isExtra(v.title) }),
     }
   })
 
@@ -152,6 +171,7 @@ export default function MangaPage({
               // Single volume — open directly
               const vol = vols[0]
               window.api.library.markOpened(vol.filePath)
+              setLastOpenedMap((prev) => ({ ...prev, [vol.filePath]: Math.floor(Date.now() / 1000) }))
               // No series page in between to have loaded the position, so ask
               // for it before opening.
               window.api.playback.getProgress([vol.filePath]).then((p) => {

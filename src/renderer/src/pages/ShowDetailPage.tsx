@@ -10,6 +10,7 @@ import { useVideoProgress } from '../hooks/useVideoProgress'
 import { useAppStore } from '../store/appStore'
 import { continueTarget, startPosition, watchedFraction, watchState, type ContinueTarget } from '../utils/resume'
 import { upNextAfter } from '../utils/upNext'
+import { isSeriesComplete } from '../utils/seriesComplete'
 import AutoplayToggle from '../components/AutoplayToggle'
 import styles from './ShowDetailPage.module.css'
 
@@ -321,10 +322,7 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     )?.id ?? -1
   }, [episodes])
 
-  const seriesComplete = useMemo(() => {
-    if (episodes.length === 0) return false
-    return episodes.every((ep) => ep.lastOpenedAt != null)
-  }, [episodes])
+  const seriesComplete = useMemo(() => isSeriesComplete(episodes), [episodes])
 
   const seasons = useMemo(() => {
     const map = new Map<number, ParsedEpisode[]>()
