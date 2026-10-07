@@ -422,10 +422,21 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
     // Don't use detached mode for MAME — it needs foreground focus for input to work
     const mameDir = dirname(emulatorExe)
     const cfgDir  = join(mameDir, 'cfg')
-    const mameKeyboard = process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'osx' : 'x11'
-    const child = spawn(emulatorExe, ['-rompath', romDir, '-cfg_directory', cfgDir, '-skip_gameinfo', '-keyboardprovider', mameKeyboard, gameName], {
-      stdio: 'ignore'
-    })
+    const args = ['-rompath', romDir]
+    // On macOS, -cfg_directory + -skip_gameinfo together confuse MAME 0.288's
+    // SDL build — one eats the game name and MAME falls into its empty menu.
+    // Drop -cfg_directory on Mac and let MAME use its default under
+    // ~/Library/Application Support/mame.
+    if (process.platform !== 'darwin') args.push('-cfg_directory', cfgDir)
+    args.push('-skip_gameinfo')
+    // The old 'osx' native keyboardprovider was removed when Mac MAME switched
+    // to SDL; MAME 0.288 silently drops the next positional arg when it is
+    // passed. Letting Mac default to auto works. Windows and Linux keep their
+    // explicit values.
+    if (process.platform === 'win32') args.push('-keyboardprovider', 'win32')
+    else if (process.platform === 'linux') args.push('-keyboardprovider', 'x11')
+    args.push(gameName)
+    const child = spawn(emulatorExe, args, { stdio: 'ignore' })
     child.unref()
     startPlaytimeSession(filePath, basename(emulatorExe))
     return
@@ -468,6 +479,19 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
       windowsHide: true
     })
     child.unref()
+    startPlaytimeSession(filePath, basename(emulatorExe))
+    return
+  }
+
+  // Dolphin on Mac needs its user folder on the drive so saves don't land on the
+  // host. The folder holds a Mac-specific Config/ and symlinks Wii/ and GC/ into
+  // the Windows user dir so NAND and memcards stay shared across OSes.
+  // Note: Wii emulation on Apple Silicon currently crashes partway into boot
+  // for the games we have (two Dolphin stables tested); the flag still points
+  // the user dir at the drive so saves route correctly once that's fixed.
+  if ((platform === 'wii' || platform === 'gamecube') && process.platform === 'darwin') {
+    const userDir = join(driveRoot, 'emulators', 'dolphin', 'mac-userdir')
+    spawnDetached(emulatorExe, ['-u', userDir, filePath])
     startPlaytimeSession(filePath, basename(emulatorExe))
     return
   }
