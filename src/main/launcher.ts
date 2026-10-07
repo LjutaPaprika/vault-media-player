@@ -390,12 +390,48 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
   try { ensureSaveLinks(driveRoot) } catch { /* never block a launch */ }
 
   if (platform === 'pc') {
-    if (process.platform !== 'win32') {
-      throw new Error('PC games are Windows-only and cannot be launched on this OS.')
+    if (process.platform === 'win32') {
+      spawnDetached(filePath, [])
+      startPlaytimeSession(filePath, basename(filePath))
+      return
     }
-    spawnDetached(filePath, [])
-    startPlaytimeSession(filePath, basename(filePath))
-    return
+    if (process.platform === 'darwin') {
+      // Launch Windows games through Heroic Games Launcher's bundled Game
+      // Porting Toolkit runtime, into the shared "vault" Wine prefix. Heroic
+      // itself is not involved at launch — we just reuse the files it ships.
+      // The runtime path moves if Heroic updates it, so the error names what
+      // to install if we don't find it.
+      const home = process.env['HOME'] ?? ''
+      const wine = join(home, 'Library/Application Support/heroic/tools/game-porting-toolkit/Game-Porting-Toolkit-latest/Contents/Resources/wine/bin/wine64')
+      const prefix = join(home, 'Library/Application Support/heroic/Prefixes/vault')
+      if (!existsSync(wine)) {
+        throw new Error(
+          `Wine runtime not found. Install Heroic Games Launcher (brew install --cask heroic) ` +
+          `and ensure the Game Porting Toolkit runtime is downloaded. Expected at ${wine}.`
+        )
+      }
+      if (!existsSync(prefix)) {
+        throw new Error(
+          `Mac Wine prefix not found at ${prefix}. Set it up (wineboot --init plus vcrun2019) ` +
+          `before launching PC games on Mac.`
+        )
+      }
+      // WINEDLLOVERRIDES skips the Mono/Gecko install dialogs that would block
+      // headless launches. WINEDEBUG=-all silences Wine's noisy stderr so Vault's
+      // own logs stay useful.
+      const child = spawn(wine, [filePath], {
+        env: { ...process.env, WINEPREFIX: prefix, WINEDLLOVERRIDES: 'mscoree=;mshtml=', WINEDEBUG: '-all' },
+        detached: true,
+        stdio: 'ignore'
+      })
+      child.unref()
+      // Playtime: pgrep -x cannot see GPTK-launched processes (hidden from the
+      // process list by whatever Apple's launcher does), so we hand playtime the
+      // wine child's PID instead. Checked with kill(0), which works regardless.
+      startPlaytimeSession(filePath, basename(filePath), child.pid)
+      return
+    }
+    throw new Error('PC games are supported on Windows and macOS only.')
   }
 
   const emulatorName = PLATFORM_EMULATOR[platform]

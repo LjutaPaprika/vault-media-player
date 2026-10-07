@@ -43,9 +43,18 @@ interface Session {
   lastSeenAt: number   // last poll that found the game; startedAt until then
   timer: NodeJS.Timeout
   watchExe: string
+  watchPid?: number    // when set, polled with kill(0) instead of pgrep -x
 }
 
 const activeSessions = new Map<string, Session>()
+
+// kill(pid, 0) returns without sending a signal: throws ESRCH if the pid is
+// gone, EPERM if the pid exists but is owned by someone else. Either way, if
+// it does not throw, the process is alive. Used for Mac PC-game launches,
+// where GPTK runs the game in a way `pgrep -x` cannot see.
+function isPidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch { return false }
+}
 
 function isProcessRunning(name: string): Promise<boolean> {
   return new Promise((resolve) => {
@@ -92,7 +101,7 @@ function finishSession(filePath: string, reason: 'exit' | 'cap' | 'quit'): void 
  * basename is `watchExe`. Idempotent — a re-launch while a session is in
  * flight is a no-op so we don't reset the clock or double-count.
  */
-export function startPlaytimeSession(filePath: string, watchExe: string): void {
+export function startPlaytimeSession(filePath: string, watchExe: string, watchPid?: number): void {
   if (activeSessions.has(filePath)) return
 
   const startedAt = Date.now()
@@ -101,6 +110,7 @@ export function startPlaytimeSession(filePath: string, watchExe: string): void {
     lastSeenAt: startedAt,
     timer: setTimeout(check, LAUNCH_GRACE_MS),
     watchExe,
+    watchPid,
   })
 
   async function check(): Promise<void> {
@@ -112,7 +122,10 @@ export function startPlaytimeSession(filePath: string, watchExe: string): void {
       return
     }
 
-    if (await isProcessRunning(cur.watchExe)) {
+    const alive = cur.watchPid !== undefined
+      ? isPidAlive(cur.watchPid)
+      : await isProcessRunning(cur.watchExe)
+    if (alive) {
       cur.lastSeenAt = Date.now()
     } else if (Date.now() - cur.lastSeenAt >= ABSENCE_TO_END_MS) {
       finishSession(filePath, 'exit')
