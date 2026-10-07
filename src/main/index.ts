@@ -16,6 +16,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 import { registerIpcHandlers, reconcileDriveRoot } from './ipc'
 import { closeDb, probeDrive } from './database'
+import { flushPlaytimeSessions } from './playtime'
 import { closeCache } from './cacheDb'
 import { ensureSaveLinks } from './saveLinks'
 import { hideSystemPaths } from './sync'
@@ -223,6 +224,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  // Before the database closes: play sessions live in memory until saved.
+  flushPlaytimeSessions()
   closeDb()
   closeCache()
 })

@@ -4,11 +4,16 @@
 // on Windows (to dodge exFAT EACCES and give the game foreground focus). That
 // makes the direct child cmd.exe, which returns in ~50ms — long before the
 // game closes. So we poll the OS process list every 10s and stop when the
-// game's exe disappears.
+// game's exe has been gone for a while.
 //
 // The polling target is a process basename ('P5R.exe', 'shadPS4.exe', ...).
 // For PC games it's the game exe; for emulator-launched ROMs it's the
 // emulator's exe — one launch = one process = one session.
+//
+// A session is only ever held in memory, so it is saved when it ends and also
+// when Vault quits: closing Vault right after the game used to throw away the
+// whole session, because it was only written once the game had been missed
+// twice, 10-20 s after it closed.
 
 import { exec } from 'child_process'
 import { EventEmitter } from 'events'
@@ -26,16 +31,17 @@ const MAX_SESSION_SECONDS = 12 * 3600
 // Grace before first poll — the launched process needs a moment to appear
 // in the OS process list, especially with the shell-wrap trampoline.
 const LAUNCH_GRACE_MS = 5_000
-// Consecutive misses required before ending a session — one is not enough
-// because tasklist/pgrep occasionally returns empty on the frame the game
-// transitions windows or the OS is under load.
-const MISSES_TO_END = 2
+// How long the game must stay out of the process list before the session is
+// over. A miss or two is not enough: tasklist/pgrep occasionally comes back
+// empty under load, and some games restart themselves (a launcher that
+// relaunches, a re-exec to apply display settings). Seen again within this
+// window, the session simply carries on.
+const ABSENCE_TO_END_MS = 60_000
 
 interface Session {
   startedAt: number
-  lastSeenAt: number
+  lastSeenAt: number   // last poll that found the game; startedAt until then
   timer: NodeJS.Timeout
-  misses: number
   watchExe: string
 }
 
@@ -61,6 +67,27 @@ function isProcessRunning(name: string): Promise<boolean> {
 }
 
 /**
+ * Ends a session and records it. Time counts only up to the last poll that
+ * found the game, so the minute spent confirming it had closed (or the moments
+ * since the last poll, when Vault quits) are never added.
+ */
+function finishSession(filePath: string, reason: 'exit' | 'cap' | 'quit'): void {
+  const session = activeSessions.get(filePath)
+  if (!session) return
+  activeSessions.delete(filePath)
+  clearTimeout(session.timer)
+  const seconds = reason === 'cap'
+    ? MAX_SESSION_SECONDS
+    : Math.max(0, Math.floor((session.lastSeenAt - session.startedAt) / 1000))
+  if (seconds > 0) addPlaySeconds(filePath, seconds)
+  console.log(`[playtime] session ended (${reason}): +${seconds}s for ${filePath}`)
+  // Notify subscribers (bridged to renderer by ipc.ts). Emit even when
+  // seconds=0 so the renderer knows the session ended in case it wants
+  // to clear any "currently playing" UI in future.
+  playtimeEvents.emit('session-ended', { filePath, secondsAdded: seconds })
+}
+
+/**
  * Start tracking a play session for `filePath`, watching for a process whose
  * basename is `watchExe`. Idempotent — a re-launch while a session is in
  * flight is a no-op so we don't reset the clock or double-count.
@@ -69,50 +96,44 @@ export function startPlaytimeSession(filePath: string, watchExe: string): void {
   if (activeSessions.has(filePath)) return
 
   const startedAt = Date.now()
-  const session: Session = {
+  activeSessions.set(filePath, {
     startedAt,
     lastSeenAt: startedAt,
     timer: setTimeout(check, LAUNCH_GRACE_MS),
-    misses: 0,
     watchExe,
-  }
-  activeSessions.set(filePath, session)
+  })
 
   async function check(): Promise<void> {
     const cur = activeSessions.get(filePath)
-    if (!cur) return  // finished elsewhere
+    if (!cur) return  // finished elsewhere (Vault quitting)
 
-    const elapsedSec = Math.floor((Date.now() - cur.startedAt) / 1000)
-    if (elapsedSec >= MAX_SESSION_SECONDS) {
-      finish(MAX_SESSION_SECONDS, 'cap')
+    if (Date.now() - cur.startedAt >= MAX_SESSION_SECONDS * 1000) {
+      finishSession(filePath, 'cap')
       return
     }
 
-    const running = await isProcessRunning(cur.watchExe)
-    if (running) {
+    if (await isProcessRunning(cur.watchExe)) {
       cur.lastSeenAt = Date.now()
-      cur.misses = 0
-    } else {
-      cur.misses++
-      if (cur.misses >= MISSES_TO_END) {
-        // Attribute time only up to the last confirmed sighting so we don't
-        // count the poll window during which the game was actually closed.
-        const seconds = Math.max(0, Math.floor((cur.lastSeenAt - cur.startedAt) / 1000))
-        finish(seconds, 'exit')
-        return
-      }
+    } else if (Date.now() - cur.lastSeenAt >= ABSENCE_TO_END_MS) {
+      finishSession(filePath, 'exit')
+      return
     }
 
-    cur.timer = setTimeout(check, POLL_INTERVAL_MS)
+    // The session may have been saved by a quit while the poll was running.
+    if (activeSessions.get(filePath) === cur) cur.timer = setTimeout(check, POLL_INTERVAL_MS)
   }
+}
 
-  function finish(seconds: number, reason: 'exit' | 'cap'): void {
-    activeSessions.delete(filePath)
-    if (seconds > 0) addPlaySeconds(filePath, seconds)
-    console.log(`[playtime] session ended (${reason}): +${seconds}s for ${filePath}`)
-    // Notify subscribers (bridged to renderer by ipc.ts). Emit even when
-    // seconds=0 so the renderer knows the session ended in case it wants
-    // to clear any "currently playing" UI in future.
-    playtimeEvents.emit('session-ended', { filePath, secondsAdded: seconds })
+/**
+ * Saves every session still in progress. Called as Vault quits, before the
+ * database closes: a game closed moments earlier, or one still running, keeps
+ * the time it was seen to be played. A game left running after this is not
+ * tracked further.
+ */
+export function flushPlaytimeSessions(): void {
+  for (const filePath of [...activeSessions.keys()]) {
+    try { finishSession(filePath, 'quit') } catch (err) {
+      console.warn(`[playtime] could not save session for ${filePath} —`, err)
+    }
   }
 }
