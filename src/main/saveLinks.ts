@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, lstatSync, readlinkSync, mkdirSync } from 'fs'
-import { join, dirname } from 'path'
+import { join, dirname, isAbsolute } from 'path'
 import { execFileSync } from 'child_process'
+import { app } from 'electron'
 
 /**
  * Some games hardcode their save location to the host machine rather than the
@@ -24,13 +25,27 @@ import { execFileSync } from 'child_process'
 
 interface SaveLink {
   name: string
-  host: string    // may contain %APPDATA% / %LOCALAPPDATA%
+  host: string    // may contain %APPDATA%, %LOCALAPPDATA%, %DOCUMENTS% ...
   drive: string   // relative to the drive root
 }
 
-/** Expand %VAR% against the environment, leaving unknown names untouched. */
+/**
+ * The user's Documents folder as Windows itself reports it. Unlike
+ * %USERPROFILE%\Documents this follows a redirect: on a PC where OneDrive
+ * backs up Documents, games save under %USERPROFILE%\OneDrive\Documents.
+ */
+function documentsDir(): string | undefined {
+  try { return app.getPath('documents') } catch { return undefined }
+}
+
+/**
+ * Expand %VAR% against the environment, leaving unknown names untouched.
+ * %DOCUMENTS% is not an environment variable; it stands for documentsDir(), so
+ * one manifest entry finds "Documents\My Games\..." on every machine.
+ */
 function expandEnv(p: string): string {
-  return p.replace(/%([^%]+)%/g, (whole, name: string) => process.env[name] ?? whole)
+  return p.replace(/%([^%]+)%/g, (whole, name: string) =>
+    (name.toUpperCase() === 'DOCUMENTS' ? documentsDir() : process.env[name]) ?? whole)
 }
 
 /** Junction targets come back in assorted shapes; compare them insensitively. */
@@ -43,6 +58,13 @@ function samePath(a: string, b: string): boolean {
 function ensureOne(driveRoot: string, link: SaveLink): void {
   const hostPath = expandEnv(link.host)
   const target = join(driveRoot, link.drive)
+
+  // A name that did not expand would leave a relative path, and the link (and
+  // its parent folders) would be made wherever the app happens to be running.
+  if (/%[^%]+%/.test(hostPath) || !isAbsolute(hostPath)) {
+    console.warn(`[savelinks] ${link.name}: could not resolve ${link.host} — skipped`)
+    return
+  }
 
   // Nothing on the drive to point at — a manifest entry for a game whose data
   // was never migrated. Silently skip; creating a link to a missing folder would
