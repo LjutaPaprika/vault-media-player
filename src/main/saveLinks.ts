@@ -1,13 +1,14 @@
 import { existsSync, readFileSync, lstatSync, readlinkSync, mkdirSync } from 'fs'
-import { join, dirname, isAbsolute } from 'path'
+import { join, dirname } from 'path'
 import { execFileSync } from 'child_process'
 import { app } from 'electron'
 
 /**
  * Some games hardcode their save location to the host machine rather than the
- * folder they run from — Unreal writes to %LOCALAPPDATA%\<Game>, the Steam-emu
- * layer to %APPDATA%\GSE Saves, and so on. On a drive meant to be fully
- * self-contained that's a hole: the media travels, the progress doesn't.
+ * folder they run from — Unreal writes to AppData\Local\<Game>, Unity to
+ * AppData\LocalLow, the Steam-emu layer to AppData\Roaming\GSE Saves, and so
+ * on. On a drive meant to be fully self-contained that's a hole: the media
+ * travels, the progress doesn't.
  *
  * This recreates those host paths as directory junctions pointing at the drive,
  * so the game writes where it always did and the bytes land on the Vault.
@@ -18,34 +19,58 @@ import { app } from 'electron'
  * the drive carries its own configuration and adding a game later is a data edit
  * on the drive, not a rebuild and redeploy.
  *
- * Windows-only. The macOS equivalents live under ~/Library/Application Support
- * with per-app layouts that haven't been mapped, and a half-correct link there
- * would be worse than none — so this no-ops rather than guessing.
+ * Each entry names one of a fixed set of save locations plus a folder inside
+ * it, never a raw path. Games only ever save to these few places, and each
+ * platform resolves them its own way: Windows asks the system, so a folder
+ * moved elsewhere (Documents into OneDrive) is followed; a Mac running the game
+ * under Wine maps them into its prefix. An entry naming anything else is
+ * rejected rather than guessed at.
+ *
+ * Windows-only for now. The Mac side resolves the same locations inside its
+ * Wine prefix; until that lands here this no-ops rather than guessing.
  */
+
+/** Where Windows games put saves. The manifest may name only these. */
+const LOCATIONS = ['Documents', 'LocalAppData', 'RoamingAppData', 'LocalLow', 'PublicDocuments'] as const
+type Location = typeof LOCATIONS[number]
 
 interface SaveLink {
   name: string
-  host: string    // may contain %APPDATA%, %LOCALAPPDATA%, %DOCUMENTS% ...
-  drive: string   // relative to the drive root
+  location: Location   // one of LOCATIONS
+  path: string         // folder inside it, e.g. "My Games/LIVEALIVE"
+  drive: string        // relative to the drive root
+}
+
+/** A Windows location's folder on this PC, as the system reports it. */
+function windowsLocation(location: Location): string | undefined {
+  const localAppData = process.env.LOCALAPPDATA
+  switch (location) {
+    // Follows a redirect: with OneDrive backing up Documents, this is
+    // %USERPROFILE%\OneDrive\Documents, which is where games then save.
+    case 'Documents':       return app.getPath('documents')
+    case 'RoamingAppData':  return app.getPath('appData')
+    case 'LocalAppData':    return localAppData
+    // No environment variable of its own; always the sibling of AppData\Local.
+    case 'LocalLow':        return localAppData ? join(dirname(localAppData), 'LocalLow') : undefined
+    case 'PublicDocuments': return process.env.PUBLIC ? join(process.env.PUBLIC, 'Documents') : undefined
+  }
 }
 
 /**
- * The user's Documents folder as Windows itself reports it. Unlike
- * %USERPROFILE%\Documents this follows a redirect: on a PC where OneDrive
- * backs up Documents, games save under %USERPROFILE%\OneDrive\Documents.
+ * The host folder a manifest entry links, or why it cannot be resolved. The
+ * path inside the location must stay inside it: no absolute paths, no "..".
  */
-function documentsDir(): string | undefined {
-  try { return app.getPath('documents') } catch { return undefined }
-}
-
-/**
- * Expand %VAR% against the environment, leaving unknown names untouched.
- * %DOCUMENTS% is not an environment variable; it stands for documentsDir(), so
- * one manifest entry finds "Documents\My Games\..." on every machine.
- */
-function expandEnv(p: string): string {
-  return p.replace(/%([^%]+)%/g, (whole, name: string) =>
-    (name.toUpperCase() === 'DOCUMENTS' ? documentsDir() : process.env[name]) ?? whole)
+export function hostPathFor(link: SaveLink): { path: string } | { error: string } {
+  if (!LOCATIONS.includes(link.location)) {
+    return { error: `unknown location "${link.location}" (expected one of ${LOCATIONS.join(', ')})` }
+  }
+  const parts = link.path.split(/[\\/]+/).filter(Boolean)
+  if (parts.length === 0 || parts.includes('..') || /^([a-z]:|[\\/])/i.test(link.path)) {
+    return { error: `"${link.path}" must be a folder inside ${link.location}` }
+  }
+  const base = windowsLocation(link.location)
+  if (!base) return { error: `${link.location} could not be found on this PC` }
+  return { path: join(base, ...parts) }
 }
 
 /** Junction targets come back in assorted shapes; compare them insensitively. */
@@ -56,15 +81,13 @@ function samePath(a: string, b: string): boolean {
 }
 
 function ensureOne(driveRoot: string, link: SaveLink): void {
-  const hostPath = expandEnv(link.host)
-  const target = join(driveRoot, link.drive)
-
-  // A name that did not expand would leave a relative path, and the link (and
-  // its parent folders) would be made wherever the app happens to be running.
-  if (/%[^%]+%/.test(hostPath) || !isAbsolute(hostPath)) {
-    console.warn(`[savelinks] ${link.name}: could not resolve ${link.host} — skipped`)
+  const resolved = hostPathFor(link)
+  if ('error' in resolved) {
+    console.warn(`[savelinks] ${link.name}: ${resolved.error} — skipped`)
     return
   }
+  const hostPath = resolved.path
+  const target = join(driveRoot, ...link.drive.split(/[\\/]+/))
 
   // Nothing on the drive to point at — a manifest entry for a game whose data
   // was never migrated. Silently skip; creating a link to a missing folder would
@@ -120,9 +143,13 @@ export function ensureSaveLinks(driveRoot: string): void {
   }
 
   for (const link of links) {
-    if (!link?.host || !link?.drive) continue
+    if (!link?.location || !link?.path || !link?.drive) {
+      // The old raw-path form ("host": "%LOCALAPPDATA%\\..."), or a broken entry.
+      console.warn(`[savelinks] ${link?.name ?? '(unnamed)'}: not in the location/path form — skipped`)
+      continue
+    }
     try { ensureOne(driveRoot, link) } catch (err) {
-      console.warn(`[savelinks] ${link.name ?? link.host}: skipped —`, err)
+      console.warn(`[savelinks] ${link.name}: skipped —`, err)
     }
   }
 }
