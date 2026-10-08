@@ -211,9 +211,12 @@ The app expects a specific folder structure on the external drive. Run the inclu
   "year": 2022,
   "genre": ["Action", "RPG"],
   "description": "An action RPG set in the Lands Between.",
-  "executable": "EldenRing.exe"
+  "executable": "EldenRing.exe",
+  "poster": "poster.jpg"
 }
 ```
+
+`executable` and `poster` are optional. Without them the scanner takes the first `.exe` (skipping uninstallers and installers) and the first image in the folder, which can pick a repack's crash reporter or its logo.
 
 ---
 
