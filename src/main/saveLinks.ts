@@ -33,7 +33,7 @@ import { MAC_WINE_PREFIX, MAC_WINE_USER } from './winePrefix'
  */
 
 /** Where Windows games put saves. The manifest may name only these. */
-const LOCATIONS = ['Documents', 'LocalAppData', 'RoamingAppData', 'LocalLow', 'PublicDocuments'] as const
+const LOCATIONS = ['Documents', 'LocalAppData', 'RoamingAppData', 'LocalLow', 'PublicDocuments', 'SavedGames'] as const
 type Location = typeof LOCATIONS[number]
 
 interface SaveLink {
@@ -55,7 +55,25 @@ function windowsLocation(location: Location): string | undefined {
     // No environment variable of its own; always the sibling of AppData\Local.
     case 'LocalLow':        return localAppData ? join(dirname(localAppData), 'LocalLow') : undefined
     case 'PublicDocuments': return process.env.PUBLIC ? join(process.env.PUBLIC, 'Documents') : undefined
+    case 'SavedGames':      return savedGamesFolder()
   }
+}
+
+/**
+ * %USERPROFILE%\Saved Games, unless the user has moved it. Electron has no
+ * getPath name for it, so read what Explorer reads: a moved folder is recorded
+ * under User Shell Folders by its known-folder ID; an unmoved one is not.
+ */
+function savedGamesFolder(): string | undefined {
+  try {
+    const out = execFileSync('reg', [
+      'query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders',
+      '/v', '{4C5C32FF-BB9D-43b0-B5B4-2D72E54EAAA4}'
+    ], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] })
+    const m = out.match(/REG_(?:EXPAND_)?SZ\s+(.+?)\s*$/m)
+    if (m) return m[1].replace(/%([^%]+)%/g, (whole, name: string) => process.env[name] ?? whole)
+  } catch { /* not moved: the value is absent and reg exits non-zero */ }
+  return process.env.USERPROFILE ? join(process.env.USERPROFILE, 'Saved Games') : undefined
 }
 
 /**
@@ -73,6 +91,7 @@ function macLocation(location: Location): string {
     case 'LocalAppData':    return join(user, 'AppData', 'Local')
     case 'LocalLow':        return join(user, 'AppData', 'LocalLow')
     case 'PublicDocuments': return join(MAC_WINE_PREFIX, 'drive_c', 'users', 'Public', 'Documents')
+    case 'SavedGames':      return join(user, 'Saved Games')
   }
 }
 

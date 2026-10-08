@@ -979,7 +979,13 @@ function scanPcGames(rootDir: string): number {
     const execName = (meta.executable as string) ?? findExe(gameDir)
     if (!execName) { preserveStoredPaths(gameDir); continue }
     const exePath = join(gameDir, execName)
-    const posterRes = findPosterStrict(gameDir)
+    // game.json can name the cover outright. Without it the first image in the
+    // folder wins, and on exFAT that's creation order, so a repack's own icons
+    // (a crash reporter's logo, say) can beat the cover added afterwards.
+    const namedPoster = typeof meta.poster === 'string' ? join(gameDir, meta.poster) : null
+    const posterRes = namedPoster && existsSync(namedPoster)
+      ? { path: namedPoster, readable: true }
+      : findPosterStrict(gameDir)
     checkAndUpsert(exePath, {
       title: (meta.title as string) ?? entry.name,
       year: (meta.year as number) ?? null,
