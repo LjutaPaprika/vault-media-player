@@ -462,9 +462,10 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
     // empty menu. Move the dir settings into a mame.ini next to the binary on
     // the drive and point MAME at it with -inipath instead; the ini is a
     // default and does not conflict with -skip_gameinfo on the CLI. The ini
-    // sets cfg_directory, nvram_directory, hiscore_directory and the rest to
-    // folders inside the drive's MAME folder, so config, NVRAM and high scores
-    // all live on the drive like every other save.
+    // sets cfg_directory, nvram_directory and the other output folders to
+    // relative names, which MAME resolves against its working directory - so
+    // MAME is started in its own folder below (high scores belong to the
+    // hiscore plugin, which MAME 0.288 has no core option for).
     if (process.platform === 'darwin') {
       args.push('-inipath', mameDir)
     } else {
@@ -478,7 +479,11 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
     if (process.platform === 'win32') args.push('-keyboardprovider', 'win32')
     else if (process.platform === 'linux') args.push('-keyboardprovider', 'x11')
     args.push(gameName)
-    const child = spawn(emulatorExe, args, { stdio: 'ignore' })
+    // Started in its own folder on the drive: MAME resolves every relative
+    // output folder (nvram, inp, sta, snap, ... and the Mac ini's cfg) against
+    // its working directory, which would otherwise be wherever Vault was
+    // launched from - "/" for a Mac app opened from the Dock.
+    const child = spawn(emulatorExe, args, { stdio: 'ignore', cwd: mameDir })
     child.unref()
     startPlaytimeSession(filePath, basename(emulatorExe))
     return
