@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, lstatSync, readlinkSync, mkdirSync } from 'fs'
+import { existsSync, readFileSync, lstatSync, readlinkSync, mkdirSync, symlinkSync } from 'fs'
 import { join, dirname } from 'path'
 import { execFileSync } from 'child_process'
 import { app } from 'electron'
+import { MAC_WINE_PREFIX, MAC_WINE_USER } from './winePrefix'
 
 /**
  * Some games hardcode their save location to the host machine rather than the
@@ -26,8 +27,9 @@ import { app } from 'electron'
  * under Wine maps them into its prefix. An entry naming anything else is
  * rejected rather than guessed at.
  *
- * Windows-only for now. The Mac side resolves the same locations inside its
- * Wine prefix; until that lands here this no-ops rather than guessing.
+ * On Windows these are directory junctions via `mklink /J` (no admin needed).
+ * On macOS the game runs under Wine and the locations are mapped into the
+ * prefix; links there are POSIX symlinks via `symlinkSync`.
  */
 
 /** Where Windows games put saves. The manifest may name only these. */
@@ -57,6 +59,24 @@ function windowsLocation(location: Location): string | undefined {
 }
 
 /**
+ * The matching path inside the Mac Wine prefix. GPTK's fixed user name is
+ * `crossover` (see winePrefix.ts), so %USERPROFILE% resolves under
+ * `drive_c/users/crossover/`. The Documents folder inside the prefix is itself
+ * typically a Wine-created symlink to `~/Documents`, which is fine: the real
+ * save still lands on the drive once this link is made.
+ */
+function macLocation(location: Location): string {
+  const user = join(MAC_WINE_PREFIX, 'drive_c', 'users', MAC_WINE_USER)
+  switch (location) {
+    case 'Documents':       return join(user, 'Documents')
+    case 'RoamingAppData':  return join(user, 'AppData', 'Roaming')
+    case 'LocalAppData':    return join(user, 'AppData', 'Local')
+    case 'LocalLow':        return join(user, 'AppData', 'LocalLow')
+    case 'PublicDocuments': return join(MAC_WINE_PREFIX, 'drive_c', 'users', 'Public', 'Documents')
+  }
+}
+
+/**
  * The host folder a manifest entry links, or why it cannot be resolved. The
  * path inside the location must stay inside it: no absolute paths, no "..".
  */
@@ -68,7 +88,9 @@ export function hostPathFor(link: SaveLink): { path: string } | { error: string 
   if (parts.length === 0 || parts.includes('..') || /^([a-z]:|[\\/])/i.test(link.path)) {
     return { error: `"${link.path}" must be a folder inside ${link.location}` }
   }
-  const base = windowsLocation(link.location)
+  const base = process.platform === 'darwin'
+    ? macLocation(link.location)
+    : windowsLocation(link.location)
   if (!base) return { error: `${link.location} could not be found on this PC` }
   return { path: join(base, ...parts) }
 }
@@ -115,10 +137,15 @@ function ensureOne(driveRoot: string, link: SaveLink): void {
 
   try {
     mkdirSync(dirname(hostPath), { recursive: true })
-    execFileSync('cmd', ['/c', 'mklink', '/J', hostPath, target], { stdio: 'ignore', windowsHide: true })
+    if (process.platform === 'darwin') {
+      // POSIX symlink; the game writes to this path and the bytes land on the drive.
+      symlinkSync(target, hostPath)
+    } else {
+      execFileSync('cmd', ['/c', 'mklink', '/J', hostPath, target], { stdio: 'ignore', windowsHide: true })
+    }
     console.log(`[savelinks] linked ${hostPath} -> ${target}`)
   } catch (err) {
-    console.warn(`[savelinks] ${link.name}: could not create junction —`, err)
+    console.warn(`[savelinks] ${link.name}: could not create link —`, err)
   }
 }
 
@@ -128,7 +155,13 @@ function ensureOne(driveRoot: string, link: SaveLink): void {
  * entry is isolated and errors are logged rather than thrown.
  */
 export function ensureSaveLinks(driveRoot: string): void {
-  if (process.platform !== 'win32') return
+  if (process.platform !== 'win32' && process.platform !== 'darwin') return
+  // On Mac, nothing to link into if the prefix hasn't been built. Vault doesn't
+  // build it (Heroic + the user do); until it exists, skip rather than guess.
+  if (process.platform === 'darwin' && !existsSync(MAC_WINE_PREFIX)) {
+    console.warn(`[savelinks] darwin: Wine prefix not found at ${MAC_WINE_PREFIX} — nothing to link`)
+    return
+  }
 
   const manifestPath = join(driveRoot, 'data', 'save-links.json')
   if (!existsSync(manifestPath)) return

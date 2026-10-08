@@ -7,6 +7,7 @@ import { buildSkipSegmentLua } from './skipSegmentLua'
 import { buildProgressLua } from './playbackProgress'
 import { startPlaytimeSession } from './playtime'
 import { ensureSaveLinks } from './saveLinks'
+import { MAC_WINE_PREFIX, MAC_WINE_BIN } from './winePrefix'
 
 // ─── Emulator map ─────────────────────────────────────────────────────────────
 
@@ -399,28 +400,25 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
       // Launch Windows games through Heroic Games Launcher's bundled Game
       // Porting Toolkit runtime, into the shared "vault" Wine prefix. Heroic
       // itself is not involved at launch — we just reuse the files it ships.
-      // The runtime path moves if Heroic updates it, so the error names what
-      // to install if we don't find it.
-      const home = process.env['HOME'] ?? ''
-      const wine = join(home, 'Library/Application Support/heroic/tools/game-porting-toolkit/Game-Porting-Toolkit-latest/Contents/Resources/wine/bin/wine64')
-      const prefix = join(home, 'Library/Application Support/heroic/Prefixes/vault')
-      if (!existsSync(wine)) {
+      // Paths are shared with saveLinks.ts via winePrefix.ts; the error names
+      // what to install if we don't find them.
+      if (!existsSync(MAC_WINE_BIN)) {
         throw new Error(
           `Wine runtime not found. Install Heroic Games Launcher (brew install --cask heroic) ` +
-          `and ensure the Game Porting Toolkit runtime is downloaded. Expected at ${wine}.`
+          `and ensure the Game Porting Toolkit runtime is downloaded. Expected at ${MAC_WINE_BIN}.`
         )
       }
-      if (!existsSync(prefix)) {
+      if (!existsSync(MAC_WINE_PREFIX)) {
         throw new Error(
-          `Mac Wine prefix not found at ${prefix}. Set it up (wineboot --init plus vcrun2019) ` +
+          `Mac Wine prefix not found at ${MAC_WINE_PREFIX}. Set it up (wineboot --init plus vcrun2019) ` +
           `before launching PC games on Mac.`
         )
       }
       // WINEDLLOVERRIDES skips the Mono/Gecko install dialogs that would block
       // headless launches. WINEDEBUG=-all silences Wine's noisy stderr so Vault's
       // own logs stay useful.
-      const child = spawn(wine, [filePath], {
-        env: { ...process.env, WINEPREFIX: prefix, WINEDLLOVERRIDES: 'mscoree=;mshtml=', WINEDEBUG: '-all' },
+      const child = spawn(MAC_WINE_BIN, [filePath], {
+        env: { ...process.env, WINEPREFIX: MAC_WINE_PREFIX, WINEDLLOVERRIDES: 'mscoree=;mshtml=', WINEDEBUG: '-all' },
         detached: true,
         stdio: 'ignore'
       })
@@ -459,11 +457,19 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
     const mameDir = dirname(emulatorExe)
     const cfgDir  = join(mameDir, 'cfg')
     const args = ['-rompath', romDir]
-    // On macOS, -cfg_directory + -skip_gameinfo together confuse MAME 0.288's
-    // SDL build — one eats the game name and MAME falls into its empty menu.
-    // Drop -cfg_directory on Mac and let MAME use its default under
-    // ~/Library/Application Support/mame.
-    if (process.platform !== 'darwin') args.push('-cfg_directory', cfgDir)
+    // On macOS, -cfg_directory + -skip_gameinfo on the CLI together confuse
+    // MAME 0.288's SDL build — one eats the game name and MAME falls into its
+    // empty menu. Move the dir settings into a mame.ini next to the binary on
+    // the drive and point MAME at it with -inipath instead; the ini is a
+    // default and does not conflict with -skip_gameinfo on the CLI. The ini
+    // sets cfg_directory, nvram_directory, hiscore_directory and the rest to
+    // folders inside the drive's MAME folder, so config, NVRAM and high scores
+    // all live on the drive like every other save.
+    if (process.platform === 'darwin') {
+      args.push('-inipath', mameDir)
+    } else {
+      args.push('-cfg_directory', cfgDir)
+    }
     args.push('-skip_gameinfo')
     // The old 'osx' native keyboardprovider was removed when Mac MAME switched
     // to SDL; MAME 0.288 silently drops the next positional arg when it is
