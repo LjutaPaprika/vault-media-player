@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
-import { join, dirname, basename } from 'path'
+import { join, dirname, basename, sep } from 'path'
 import { mkdirSync, existsSync, readdirSync, copyFileSync, statSync } from 'fs'
 import type { MediaTechInfo } from './mediaInfo'
 
@@ -673,6 +673,52 @@ export function rerootPaths(oldRoot: string, newRoot: string): void {
   if (collisions > 0) {
     console.warn(`[db] reroot skipped ${collisions} row(s) whose new path already exists — the next scan will retire the duplicates`)
   }
+}
+
+/**
+ * One shelf entry per PC game folder. When a game's executable changes, say a
+ * game.json added to correct the scanner's first guess, the row for the old
+ * exe would otherwise stay forever: orphan cleanup only drops rows whose file
+ * is gone, and the old exe is still on disk. Fold each old row's last-opened
+ * time and playtime into the current exe's row, then delete it.
+ *
+ * Returns how many rows were retired. Does nothing unless the current exe's
+ * row already exists, so a failed upsert can never cost the old row.
+ */
+export function retireOtherGameExes(gameDir: string, exePath: string): number {
+  const db = getDb()
+  const prefix = join(gameDir, sep).toLowerCase()
+  const current = db.prepare('SELECT 1 FROM media_items WHERE file_path = ?').get(exePath)
+  if (!current) return 0
+  const stale = (db
+    .prepare("SELECT file_path, last_opened_at FROM media_items WHERE category = 'games' AND platform = 'pc'")
+    .all() as { file_path: string; last_opened_at: number | null }[])
+    .filter((r) => r.file_path !== exePath && r.file_path.toLowerCase().startsWith(prefix))
+  if (stale.length === 0) return 0
+
+  const carryOpened = db.prepare(
+    'UPDATE media_items SET last_opened_at = MAX(COALESCE(last_opened_at, 0), ?) WHERE file_path = ?'
+  )
+  const readPlaytime = db.prepare('SELECT play_seconds FROM game_playtime WHERE file_path = ?')
+  // Sessions under different exes were different sessions, so they add up.
+  const addPlaytime = db.prepare(`
+    INSERT INTO game_playtime (file_path, play_seconds) VALUES (?, ?)
+    ON CONFLICT(file_path) DO UPDATE SET play_seconds = play_seconds + excluded.play_seconds
+  `)
+  const deletePlaytime = db.prepare('DELETE FROM game_playtime WHERE file_path = ?')
+  const deleteRow = db.prepare('DELETE FROM media_items WHERE file_path = ?')
+
+  db.transaction(() => {
+    for (const row of stale) {
+      if (row.last_opened_at !== null) carryOpened.run(row.last_opened_at, exePath)
+      const played = readPlaytime.get(row.file_path) as { play_seconds: number } | undefined
+      if (played && played.play_seconds > 0) addPlaytime.run(exePath, played.play_seconds)
+      deletePlaytime.run(row.file_path)
+      deleteRow.run(row.file_path)
+    }
+  })()
+  console.log(`[db] ${gameDir}: replaced ${stale.length} old executable entr${stale.length === 1 ? 'y' : 'ies'} with ${basename(exePath)}`)
+  return stale.length
 }
 
 export function setLastOpened(filePath: string): void {

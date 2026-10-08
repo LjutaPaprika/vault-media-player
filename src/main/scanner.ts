@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs'
 import { join, extname, basename, dirname, sep } from 'path'
 import { execSync } from 'child_process'
-import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, migrateRenamedPaths, updateTechInfo, needsTechInfo, setConfig, getStoredDirTimes, setStoredDirTimes } from './database'
+import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, migrateRenamedPaths, updateTechInfo, needsTechInfo, setConfig, getStoredDirTimes, setStoredDirTimes, retireOtherGameExes } from './database'
 import { probeFile, probeAudioFileSync } from './mediaInfo'
 
 // macOS Finder drops these into any directory it touches — `.DS_Store` for
@@ -998,6 +998,7 @@ function scanPcGames(rootDir: string): number {
       platform: 'pc',
       executable: execName
     })
+    retireOtherGameExes(gameDir, exePath)
     // The exe is one file in a much larger directory — accumulate the rest of the dir
     // so the stats page reflects the actual on-disk footprint (game data, saves, etc).
     const exeSize = statSync(exePath).size
