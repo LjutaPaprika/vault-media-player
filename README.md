@@ -218,6 +218,19 @@ The app expects a specific folder structure on the external drive. Run the inclu
 
 `executable` and `poster` are optional. Without them the scanner takes the first `.exe` (skipping uninstallers and installers) and the first image in the folder, which can pick a repack's crash reporter or its logo.
 
+### Game saves and settings (`data/save-links.json`)
+
+Games that save to the PC instead of their own folder are listed under `links`: each entry names a save location (`Documents`, `LocalAppData`, `RoamingAppData`, `LocalLow`, `PublicDocuments`, `SavedGames`), a folder inside it, and where that folder lives on the drive. Vault links the PC folder to the drive at startup and before each launch.
+
+Settings a game keeps in the Windows registry (Unity games' key bindings and display options, for example) cannot be linked. They go under `registry`:
+
+```json
+{ "name": "Rain World", "key": "Software\\Videocult\\Rain World",
+  "game": "games/pc/Rain World", "drive": "saves/_registry/Rain World.reg" }
+```
+
+After each play session of a game in `game`, Vault exports `HKCU\<key>` to `drive`, with a `.reg.json` sidecar naming the computer that wrote it. Before a launch it imports that file, unless this computer wrote it, in which case its own settings are at least as new. Only keys under `HKCU\Software` are accepted, and a `.reg` that names any other key is never imported. `setup-saves.cmd` imports the settings on a PC that has none of them yet.
+
 ---
 
 ## Episode Filename Formats
