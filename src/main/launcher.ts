@@ -255,10 +255,18 @@ function getMpvPath(driveRoot: string): string {
 }
 
 // Returns a path to a bundled tool, falling back to the bare command name (PATH lookup).
+// On Mac, the still-grabber needs ffmpeg and a stock Mac has none on PATH, so the
+// DMG ships one inside the .app Resources folder as a last-resort fallback. The
+// drive copy still wins when present — the drive stays the source of truth.
 export function getToolPath(driveRoot: string, toolName: string): string {
   const ext = process.platform === 'win32' ? '.exe' : ''
   const bundled = join(driveRoot, 'players', 'mpv', platformFolder(), `${toolName}${ext}`)
-  return existsSync(bundled) ? bundled : toolName
+  if (existsSync(bundled)) return bundled
+  if (process.platform === 'darwin') {
+    const inApp = join(process.resourcesPath, toolName)
+    if (existsSync(inApp)) return inApp
+  }
+  return toolName
 }
 
 function ensureMpvConfig(mpvExePath: string, hwdec: string): string {

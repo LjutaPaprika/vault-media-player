@@ -19,6 +19,11 @@ media/
 emulators/
 players/
 
+# Mac ffmpeg binaries bundled into the DMG. Fetched by scripts/fetch-mac-ffmpeg.js
+# before `electron-builder --mac` runs — kept out of git because of their size.
+resources/mac-arm64/
+resources/mac-x64/
+
 # Generated build artifacts
 build/icon.png
 build/icon.ico
