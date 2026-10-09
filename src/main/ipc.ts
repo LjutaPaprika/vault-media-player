@@ -47,7 +47,7 @@ import { clearProgress, progressFileFor, progressKey, readProgress, saveProgress
 import { artworkStats, episodesWithoutStill, fillEpisodeStills, moveLegacyThumbnails, pruneArtwork, warmThumbs } from './thumbnails'
 import { setCacheRootResolver } from './cacheDb'
 import { setFfmpegResolver } from './episodeFrames'
-import { findDriveByLabel, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
+import { findDriveByLabel, findDriveByLabelAsync, hideSystemPaths, runAdditiveSync, getDriveStats, isRsyncAvailable } from './sync'
 import { runTransfer, checkConflicts, type TransferRequest, type Side as TransferSide } from './storageTransfer'
 import { getBindings, setBindings, resetBindings, type ControllerBinding } from './controllerBindings'
 import { getKeyboardBindings, setKeyboardBindings, resetKeyboardBindings, type KeyboardBinding } from './keyboardBindings'
@@ -383,7 +383,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     cachedLibraryRoot = null  // invalidate so next call re-resolves the new drive
   })
 
-  ipcMain.handle('library:findDrive', (_event, label: string) => findDriveByLabel(label))
+  ipcMain.handle('library:findDrive', (_event, label: string) => findDriveByLabelAsync(label))
 
   // ─── Library scan ─────────────────────────────────────────────────────────
   function resolveRootForScan(label: string): string {
@@ -1204,7 +1204,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   // was retired in Phase 5 — additive sync now lives on the Storage page.)
   ipcMain.handle('sync:getBackupLabel', () => getConfig('backupLabel'))
   ipcMain.handle('sync:setBackupLabel', (_event, label: string) => setConfig('backupLabel', label))
-  ipcMain.handle('sync:findDrive', (_event, label: string) => findDriveByLabel(label))
+  ipcMain.handle('sync:findDrive', (_event, label: string) => findDriveByLabelAsync(label))
 
   // ─── Storage (cold-store sync) ────────────────────────────────────────────
 
@@ -1233,17 +1233,19 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   }
 
   /** Resolve the root of a drive by side ("vault" or "cold"). null if unavailable. */
-  function resolveStorageRoot(side: 'vault' | 'cold'): string | null {
+  async function resolveStorageRoot(side: 'vault' | 'cold'): Promise<string | null> {
     if (side === 'vault') return resolveLibraryRoot()
     const backupLabel = getConfig('backupLabel')
     if (!backupLabel) return null
-    return findDriveByLabel(backupLabel)
+    return findDriveByLabelAsync(backupLabel)
   }
 
   ipcMain.handle('storage:getDrives', async () => {
     const vaultRoot = resolveLibraryRoot()
     const backupLabel = getConfig('backupLabel')
-    const coldRoot = backupLabel ? findDriveByLabel(backupLabel) : null
+    // The sidebar asks for this every minute. A blocking lookup here froze the
+    // whole app for seconds each time the cold-store drive was unplugged.
+    const coldRoot = backupLabel ? await findDriveByLabelAsync(backupLabel) : null
 
     const [vault, cold] = await Promise.all([
       getDriveStats(vaultRoot),
@@ -1268,7 +1270,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     _event,
     { side, relPath }: { side: 'vault' | 'cold'; relPath: string }
   ) => {
-    const root = resolveStorageRoot(side)
+    const root = await resolveStorageRoot(side)
     if (!root) return null
     const mediaRoot = join(root, 'media')
     const target = relPath ? join(mediaRoot, ...relPath.split('/').filter(Boolean)) : mediaRoot
@@ -1296,13 +1298,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     { items, destSide }: { items: { side: TransferSide; relPath: string }[]; destSide: TransferSide }
   ) => {
     const vaultRoot = resolveLibraryRoot()
-    const coldRoot = resolveStorageRoot('cold')
+    const coldRoot = await resolveStorageRoot('cold')
     return checkConflicts(items, destSide, vaultRoot, coldRoot)
   })
 
   ipcMain.handle('storage:runTransfer', async (_event, req: TransferRequest) => {
     const vaultRoot = resolveLibraryRoot()
-    const coldRoot = resolveStorageRoot('cold')
+    const coldRoot = await resolveStorageRoot('cold')
     const result = await runTransfer(req, vaultRoot, coldRoot, win)
     // Invalidate folder-size cache for any affected paths — quickest is full clear.
     folderSizeCache.clear()
@@ -1313,7 +1315,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     _event,
     { side, relPath }: { side: TransferSide; relPath: string }
   ) => {
-    const root = resolveStorageRoot(side)
+    const root = await resolveStorageRoot(side)
     if (!root) return null
     const abs = join(root, 'media', ...relPath.split('/').filter(Boolean))
     if (!existsSync(abs)) return null
@@ -1339,7 +1341,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       throw new Error(`Please wait ${Math.ceil((SYNC_COOLDOWN_MS - sinceLast) / 1000)}s before syncing again.`)
     }
     const vaultRoot = resolveLibraryRoot()
-    const coldRoot = resolveStorageRoot('cold')
+    const coldRoot = await resolveStorageRoot('cold')
     if (!coldRoot) throw new Error('Cold-store drive not detected. Plug it in and refresh.')
     syncInProgress = true
     try {

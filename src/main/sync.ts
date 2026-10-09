@@ -1,6 +1,6 @@
-import { execSync, spawn, spawnSync } from 'child_process'
+import { execFile, execFileSync, execSync, spawn, spawnSync } from 'child_process'
 import { BrowserWindow } from 'electron'
-import { existsSync, readdirSync, statSync } from 'fs'
+import { existsSync, readdirSync, statSync, statfsSync, promises as fsp } from 'fs'
 import { join } from 'path'
 
 export interface DriveStats {
@@ -26,23 +26,12 @@ export function isRsyncAvailable(): boolean {
 /** Read free/total bytes for the drive that contains the given path. */
 export async function getDriveStats(rootPath: string): Promise<DriveStats | null> {
   if (process.platform === 'win32') {
-    if (rootPath.length < 2) return null
-    const driveLetter = rootPath.charAt(0)
-    const stdout = await new Promise<string>((resolve) => {
-      let out = ''
-      const ps = spawn('powershell', [
-        '-NoProfile', '-Command',
-        `Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='${driveLetter}:'" | Select-Object FreeSpace,Size | ConvertTo-Json -Compress`
-      ])
-      ps.stdout.on('data', (d: Buffer) => { out += d.toString() })
-      ps.on('close', () => resolve(out.trim()))
-      ps.on('error', () => resolve(''))
-      setTimeout(() => { try { ps.kill() } catch { /* ignore */ } resolve('') }, 5000)
-    })
-    if (!stdout) return null
+    // Asked of the filesystem directly. The sidebar refreshes this every
+    // minute, and the PowerShell query it replaces took ~1.7 s and started a
+    // process, which on its own stalls the main process.
     try {
-      const data = JSON.parse(stdout) as { FreeSpace: number; Size: number }
-      return { path: rootPath, freeBytes: data.FreeSpace, totalBytes: data.Size }
+      const s = await fsp.statfs(rootPath)
+      return { path: rootPath, freeBytes: s.bavail * s.bsize, totalBytes: s.blocks * s.bsize }
     } catch { return null }
   }
 
@@ -59,25 +48,87 @@ export async function getDriveStats(rootPath: string): Promise<DriveStats | null
   } catch { return null }
 }
 
-/** Find the drive root whose volume label matches the given label. */
+/**
+ * Windows drive-label lookup.
+ *
+ * The label comes from `vol`, which means starting a cmd.exe. On this PC
+ * every process start stalls the main process (~50 ms of it is synchronous
+ * even through the async API, ~200 ms end to end with real-time antivirus),
+ * and the sidebar asks for the cold-store drive every minute. Asking all 26
+ * letters each time froze the app for over 5 s whenever that drive was
+ * unplugged.
+ *
+ * So only mounted letters are asked (an exists check costs nothing), and each
+ * answer is remembered per volume. A volume is its letter plus its size: if a
+ * different drive turns up on the same letter, the size differs and it is
+ * asked again. Steady state is no processes at all.
+ */
+const volCache = new Map<string, string>()  // "E|8001526169600" -> vol output
+
+function mountedVolumes(): { letter: string; key: string }[] {
+  const volumes: { letter: string; key: string }[] = []
+  for (let c = 65; c <= 90; c++) {
+    const letter = String.fromCharCode(c)
+    if (!existsSync(`${letter}:\\`)) continue
+    let size = 0
+    try { const s = statfsSync(`${letter}:\\`); size = s.blocks * s.bsize } catch { /* not ready */ }
+    volumes.push({ letter, key: `${letter}|${size}` })
+  }
+  return volumes
+}
+
+function volOutputMatches(out: string, label: string): boolean {
+  return out.toLowerCase().includes(label.toLowerCase())
+}
+
+/**
+ * Find the drive root whose volume label matches the given label.
+ *
+ * Can block the main process while it asks new drives, so it is for one-off
+ * lookups such as startup. Anything called repeatedly, or from an IPC handler,
+ * should use findDriveByLabelAsync.
+ */
 export function findDriveByLabel(label: string): string | null {
   if (process.platform === 'win32') {
-    // On Windows, scan drive letters A-Z
-    for (let c = 65; c <= 90; c++) {
-      const letter = String.fromCharCode(c)
-      const drive = `${letter}:\\`
-      try {
-        // Use vol command to read label (vol needs "E:" not "E:\")
-        const { execSync } = require('child_process') as typeof import('child_process')
-        const out = execSync(`cmd.exe /c vol ${letter}:`, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] })
-        if (out.toLowerCase().includes(label.toLowerCase())) return drive
-      } catch {
-        // Drive doesn't exist or isn't ready
+    for (const { letter, key } of mountedVolumes()) {
+      let out = volCache.get(key)
+      if (out === undefined) {
+        try {
+          // vol needs "E:", not "E:\"
+          out = execFileSync('cmd.exe', ['/c', 'vol', `${letter}:`], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+          volCache.set(key, out)
+        } catch { continue /* not ready (an empty card reader, say); ask again next time */ }
       }
+      if (volOutputMatches(out, label)) return `${letter}:\\`
     }
     return null
   }
+  return findMountByLabel(label)
+}
 
+/**
+ * findDriveByLabel without blocking on the answer: new drives are asked in
+ * parallel, and the first matching letter in A-Z order wins, as before.
+ */
+export async function findDriveByLabelAsync(label: string): Promise<string | null> {
+  if (process.platform !== 'win32') return findMountByLabel(label)
+  const volumes = mountedVolumes()
+  const outputs = await Promise.all(volumes.map(({ letter, key }) => {
+    const cached = volCache.get(key)
+    if (cached !== undefined) return Promise.resolve<string | null>(cached)
+    return new Promise<string | null>((resolve) => {
+      execFile('cmd.exe', ['/c', 'vol', `${letter}:`], { encoding: 'utf-8', windowsHide: true, timeout: 10_000 }, (err, out) => {
+        if (err) { resolve(null); return }
+        volCache.set(key, out)
+        resolve(out)
+      })
+    })
+  }))
+  const i = outputs.findIndex((out) => out !== null && volOutputMatches(out, label))
+  return i === -1 ? null : `${volumes[i].letter}:\\`
+}
+
+function findMountByLabel(label: string): string | null {
   // macOS / Linux: check /Volumes or /mnt
   const mountRoots = process.platform === 'darwin' ? ['/Volumes'] : ['/mnt', '/media', '/run/media']
   for (const root of mountRoots) {
