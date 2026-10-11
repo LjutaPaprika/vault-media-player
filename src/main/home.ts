@@ -6,6 +6,9 @@
 import { dirname, basename } from 'path'
 import { getItems } from './database'
 import { readProgress, type VideoProgress } from './playbackProgress'
+// The manga shelf's own test for a bonus chapter (Ch. 10.5), so Home and the
+// shelf agree on when a series is complete.
+import { isExtra } from '../renderer/src/utils/readingEntries'
 
 interface Item {
   id: number
@@ -77,13 +80,35 @@ function endMargin(duration: number): number {
   return Math.min(600, duration * 0.1)
 }
 
+/** Left partway, as the renderer's watchState has it (a video under 15 s in hasn't really started). */
+function isPartway(item: Item, p: VideoProgress | undefined): boolean {
+  if (!p || p.finished) return false
+  if (READING.has(item.category)) return p.position > 0
+  return p.position >= 15 && !(p.duration > 0 && p.position >= p.duration - endMargin(p.duration))
+}
+
 /**
  * Gone through: played or read to the end, or opened before positions were
- * recorded (or marked watched by hand), which leaves no position behind.
+ * recorded (or marked watched by hand), which leaves no position behind. A
+ * chapter is read once opened and not left partway, as the manga shelf has it.
  */
 function isDone(item: Item, p: VideoProgress | undefined): boolean {
-  if (p) return p.finished || (p.duration > 0 && p.position >= p.duration - endMargin(p.duration) && !READING.has(item.category))
+  if (READING.has(item.category)) return item.lastOpenedAt != null && !isPartway(item, p)
+  if (p) return p.finished || (p.duration > 0 && p.position >= p.duration - endMargin(p.duration))
   return item.lastOpenedAt != null
+}
+
+/**
+ * The whole series gone through, as its shelf's "Series complete" has it
+ * (renderer utils/seriesComplete.ts): every episode opened; for manga and
+ * comics, every chapter opened and none partway, bonus chapters not required
+ * unless the series is nothing but.
+ */
+function isComplete(items: Item[], progress: Record<string, VideoProgress>): boolean {
+  if (!READING.has(items[0].category)) return items.every((i) => i.lastOpenedAt != null)
+  const main = items.filter((i) => !isExtra(i.title))
+  const required = main.length > 0 ? main : items
+  return required.every((i) => i.lastOpenedAt != null && !isPartway(i, progress[i.filePath]))
 }
 
 export function getHomeData(root: string, limit = 24): HomeData {
@@ -103,18 +128,32 @@ export function getHomeData(root: string, limit = 24): HomeData {
   const entries: HomeEntry[] = []
   for (const items of groups.values()) {
     const activityOf = (i: Item): number => Math.max(i.lastOpenedAt ?? 0, progress[i.filePath]?.savedAt ?? 0)
-    let current: Item | null = null
-    for (const i of items) if (activityOf(i) > 0 && (!current || activityOf(i) > activityOf(current))) current = i
-    if (!current) continue
-
     const first = items[0]
     // Chapters run in title order, as their pages list them; episodes in
     // file order (S01E01, S01E02…).
     const byTitle = READING.has(first.category)
     const ordered = [...items].sort((a, b) => collator.compare(byTitle ? a.title : a.filePath, byTitle ? b.title : b.filePath))
+
+    // The entry touched last. Ties go to the one furthest along: marking a
+    // whole series watched stamps every episode with the same time, and the
+    // first of them would wrongly offer the second as "next".
+    let current: Item | null = null
+    for (const i of ordered) if (activityOf(i) > 0 && (!current || activityOf(i) >= activityOf(current))) current = i
+    if (!current) continue
+
     const ref = (i: Item): HomeEntryRef => ({ id: i.id, filePath: i.filePath, title: i.title, description: i.description, progress: progress[i.filePath] ?? null })
     const currentDone = isDone(current, progress[current.filePath])
     const after = ordered[ordered.findIndex((i) => i.filePath === current!.filePath) + 1]
+    const doneCount = items.filter((i) => isDone(i, progress[i.filePath])).length
+    // Nothing to continue when the entry touched last is finished with
+    // nothing after it. An entry opened with no position at all counts as
+    // finished (history from before positions were recorded, or marked
+    // watched by hand).
+    if (currentDone && !after) continue
+    // Nor once the series is complete, unless an entry is actually partway (a
+    // rewatch): reopening an episode for a moment doesn't put it back on Home.
+    // The series pages offer Continue by the same rule.
+    if (isComplete(items, progress) && !items.some((i) => isPartway(i, progress[i.filePath]))) continue
 
     entries.push({
       category: first.category,
@@ -122,7 +161,7 @@ export function getHomeData(root: string, limit = 24): HomeData {
       year: first.year,
       posterPath: ordered.find((i) => i.posterPath)?.posterPath ?? null,
       entryCount: items.length,
-      doneCount: items.filter((i) => isDone(i, progress[i.filePath])).length,
+      doneCount,
       current: ref(current),
       next: currentDone && after ? ref(after) : null,
       activityAt: activityOf(current)
