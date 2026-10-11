@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import PageShell from '../components/PageShell'
 import MediaGrid from '../components/MediaGrid'
+import GameLaunchModal, { type CompareRow } from '../components/GameLaunchModal'
+import { usePosterModal } from '../components/PosterModal'
 import { useLibrary } from '../hooks/useLibrary'
-import styles from './GamesPage.module.css'
 
 const PLATFORM_LABELS: Record<string, string> = {
   pc:       'PC',
@@ -45,15 +46,6 @@ function formatPlaytime(seconds: number | undefined): string | null {
   if (hours === 0) return `${minutes}m`
   if (minutes === 0) return `${hours}h`
   return `${hours}h ${minutes}m`
-}
-
-type Status = 'ok' | 'warn' | 'fail' | 'info'
-
-interface CompareRow {
-  label: string
-  required: string
-  actual: string
-  status: Status
 }
 
 function buildComparison(platform: string, sys: SystemInfo): CompareRow[] {
@@ -142,14 +134,7 @@ interface PendingGame {
   platform: string
   title: string
   playSeconds?: number
-}
-
-const STATUS_ICON: Record<Status, string> = { ok: '✓', warn: '⚠', fail: '✗', info: '·' }
-const STATUS_COLOR: Record<Status, string> = {
-  ok:   'var(--text-success, #4caf50)',
-  warn: '#ffaa00',
-  fail: 'var(--danger, #e05252)',
-  info: 'var(--text-muted)'
+  posterPath?: string | null
 }
 
 export default function GamesPage(): JSX.Element {
@@ -158,6 +143,7 @@ export default function GamesPage(): JSX.Element {
   const [pending, setPending] = useState<PendingGame | null>(null)
   const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
   const [launchError, setLaunchError] = useState<string | null>(null)
+  const { closing, close: closeModal } = usePosterModal(() => setPending(null))
 
   useEffect(() => {
     window.api.system.getInfo().then(setSysInfo)
@@ -171,9 +157,11 @@ export default function GamesPage(): JSX.Element {
   }, [reload])
 
   function handleSelect(item: MediaCard): void {
+    // A click landing during the fade-out would be cleared by its timer.
+    if (closing) return
     if (item.filePath && item.platform) {
       setLaunchError(null)
-      setPending({ filePath: item.filePath, platform: item.platform, title: item.title, playSeconds: item.playSeconds })
+      setPending({ filePath: item.filePath, platform: item.platform, title: item.title, playSeconds: item.playSeconds, posterPath: item.posterPath })
     }
   }
 
@@ -186,7 +174,7 @@ export default function GamesPage(): JSX.Element {
     setLaunchError(null)
     try {
       await window.api.playback.launchGame(pending.filePath, pending.platform)
-      setPending(null)
+      closeModal()
     } catch (e) {
       // ipcRenderer.invoke wraps the main-process error as
       // "Error invoking remote method 'playback:launchGame': Error: <real msg>".
@@ -213,81 +201,27 @@ export default function GamesPage(): JSX.Element {
             subtitle: i.platform ? (PLATFORM_LABELS[i.platform] ?? i.platform) : undefined
           }))}
           onSelect={handleSelect}
+          suspended={!!pending}
           emptyMessage="No games found. Add games to games/pc/ or games/roms/ and scan your library."
         />
       )}
 
       {pending && (
-        <div className={styles.overlay} onClick={() => setPending(null)}>
-          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-
-            <div className={styles.header}>
-              <span className={styles.gameTitle}>{pending.title}</span>
-              <span className={styles.platformBadge}>
-                {PLATFORM_LABELS[pending.platform] ?? pending.platform}
-                {' · '}
-                {PLATFORM_EMULATOR[pending.platform] ?? pending.platform}
-              </span>
-              {formatPlaytime(pending.playSeconds) && (
-                <div className={styles.playtimeRow}>
-                  <span className={styles.playtimeIcon}>●</span>
-                  <span className={styles.playtimeValue}>{formatPlaytime(pending.playSeconds)}</span>
-                  <span className={styles.playtimeLabel}>played</span>
-                </div>
-              )}
-            </div>
-
-            <div className={styles.divider} />
-
-            <div className={styles.compareHeader}>
-              <span />
-              <span className={styles.colHead}>Required</span>
-              <span className={styles.colHead}>Your System</span>
-            </div>
-
-            {!sysInfo && (
-              <p className={styles.detecting}>Detecting system specs...</p>
-            )}
-
-            {comparison && comparison.map((row) => (
-              <div key={row.label} className={styles.compareRow}>
-                <span className={styles.compareLabel}>{row.label}</span>
-                <span className={styles.compareRequired}>{row.required}</span>
-                <span className={styles.compareActual}>
-                  <span style={{ color: STATUS_COLOR[row.status], marginRight: 5, fontWeight: 600 }}>
-                    {STATUS_ICON[row.status]}
-                  </span>
-                  {row.actual}
-                </span>
-              </div>
-            ))}
-
-            {warning && (
-              <>
-                <div className={styles.divider} />
-                <div className={styles.warning}>{warning}</div>
-              </>
-            )}
-
-            {launchError && (
-              <>
-                <div className={styles.divider} />
-                <div className={styles.warning} style={{ color: 'var(--danger, #e05252)' }}>{launchError}</div>
-              </>
-            )}
-
-            <div className={styles.actions}>
-              <button className={styles.btnCancel} onClick={() => setPending(null)}>Cancel</button>
-              <button
-                className={hasFail ? styles.btnLaunchWarn : styles.btnLaunch}
-                onClick={handleLaunch}
-              >
-                {hasFail ? 'Launch Anyway' : 'Launch'}
-              </button>
-            </div>
-
-          </div>
-        </div>
+        <GameLaunchModal
+          key={pending.filePath}
+          title={pending.title}
+          platform={PLATFORM_LABELS[pending.platform] ?? pending.platform}
+          emulator={pending.platform === 'pc' ? null : (PLATFORM_EMULATOR[pending.platform] ?? null)}
+          playtime={formatPlaytime(pending.playSeconds)}
+          posterPath={pending.posterPath ?? null}
+          comparison={comparison}
+          warning={warning}
+          launchError={launchError}
+          hasFail={hasFail}
+          closing={closing}
+          onCancel={closeModal}
+          onLaunch={handleLaunch}
+        />
       )}
     </PageShell>
   )
