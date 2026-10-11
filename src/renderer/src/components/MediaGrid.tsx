@@ -24,6 +24,8 @@ interface Props {
   emptyMessage?: string
   /** Category of items in this grid — enables right-click Archive action when set. */
   category?: string
+  /** Ignore keyboard and controller input, e.g. while a modal is open over the grid. */
+  suspended?: boolean
 }
 
 interface ContextMenuState {
@@ -32,7 +34,7 @@ interface ContextMenuState {
   relPath: string
 }
 
-export default function MediaGrid({ items, onSelect, emptyMessage = 'No items found.', category }: Props): JSX.Element {
+export default function MediaGrid({ items, onSelect, emptyMessage = 'No items found.', category, suspended = false }: Props): JSX.Element {
   const { focusZone, setFocusZone } = useAppStore()
   const [focusedIdx, setFocusedIdx] = useState(0)
   const cardRefs = useRef<(HTMLButtonElement | null)[]>([])
@@ -83,7 +85,7 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
   // Keyboard: only active when content owns focus
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent): void {
-      if (!isFocused) return
+      if (!isFocused || suspended) return
       if (e.key === 'ArrowRight')              move('right')
       if (e.key === 'ArrowLeft')               move('left')
       if (e.key === 'ArrowDown')               move('down')
@@ -93,18 +95,18 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [items, onSelect, focusedIdx, isFocused])
+  }, [items, onSelect, focusedIdx, isFocused, suspended])
 
   // Controller: guard with isFocused so sidebar inputs are ignored
   const handleButton = useCallback((btn: ControllerButton) => {
-    if (!isFocused) return
+    if (!isFocused || suspended) return
     if (btn === 'right')   move('right')
     if (btn === 'left')    move('left')
     if (btn === 'down')    move('down')
     if (btn === 'up')      move('up')
     if (btn === 'confirm' && items[focusedIdx]) onSelect(items[focusedIdx])
     if (btn === 'back')    setFocusZone('sidebar')
-  }, [items, onSelect, focusedIdx, isFocused])
+  }, [items, onSelect, focusedIdx, isFocused, suspended])
 
   const { resetState } = useController({ onButton: handleButton })
 

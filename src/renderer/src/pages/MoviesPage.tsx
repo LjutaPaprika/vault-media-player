@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo } from 'react'
 import PageShell from '../components/PageShell'
 import MediaGrid from '../components/MediaGrid'
-import MovieDetailPage from './MovieDetailPage'
+import MovieModal from '../components/MovieModal'
+import { usePosterModal } from '../components/PosterModal'
 import { useLibrary } from '../hooks/useLibrary'
 import { useAppStore } from '../store/appStore'
 import styles from './MoviesPage.module.css'
@@ -20,35 +21,30 @@ export default function MoviesPage(): JSX.Element {
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<SelectedMovie | null>(null)
   const [activeGenres, setActiveGenres] = useState<Set<string>>(new Set())
+  // Genres edited in the modal this session. The shelf list isn't refetched
+  // for a genre edit, so these keep the filter pills, the filtering and a
+  // reopened modal in step with the edit.
+  const [genreEdits, setGenreEdits] = useState<Record<string, string | null>>({})
+  const genreOf = (i: MediaItem): string | null => (i.filePath in genreEdits ? genreEdits[i.filePath] : i.genre)
+  const { closing, close } = usePosterModal(() => setSelected(null))
 
   const allGenres = useMemo(() => {
     const set = new Set<string>()
     items.forEach(i => {
-      if (i.genre) i.genre.split(',').forEach(g => set.add(g.trim()))
+      const g = genreOf(i)
+      if (g) g.split(',').forEach(x => set.add(x.trim()))
     })
     return [...set].sort()
-  }, [items])
+  }, [items, genreEdits])
 
   useEffect(() => { setSelected(null) }, [contentResetKey])
-
-  if (selected) {
-    return (
-      <MovieDetailPage
-        title={selected.title}
-        year={selected.year}
-        posterPath={selected.posterPath}
-        filePath={selected.filePath}
-        initialGenre={selected.genre}
-        onBack={() => setSelected(null)}
-      />
-    )
-  }
 
   const filtered = items.filter((i) => {
     if (!i.title.toLowerCase().includes(query.toLowerCase())) return false
     if (activeGenres.size === 0) return true
-    if (!i.genre) return false
-    const movieGenres = i.genre.split(',').map(g => g.trim())
+    const genre = genreOf(i)
+    if (!genre) return false
+    const movieGenres = genre.split(',').map(g => g.trim())
     return [...activeGenres].every(g => movieGenres.includes(g))
   })
 
@@ -87,16 +83,35 @@ export default function MoviesPage(): JSX.Element {
           <MediaGrid
             category="movies"
             items={filtered.map((i) => ({ ...i, subtitle: i.year?.toString() ?? undefined }))}
-            onSelect={(item) => setSelected({
-              title: item.title,
-              year: item.year ?? null,
-              posterPath: item.posterPath ?? null,
-              filePath: item.filePath ?? '',
-              genre: item.genre ?? null
-            })}
+            onSelect={(item) => {
+              // A click landing during the fade-out would be cleared by its timer.
+              if (closing) return
+              setSelected({
+                title: item.title,
+                year: item.year ?? null,
+                posterPath: item.posterPath ?? null,
+                filePath: item.filePath ?? '',
+                genre: item.genre ?? null
+              })
+            }}
+            suspended={!!selected}
             emptyMessage="No movies found. Add .mkv or .mp4 files to media/movies/ and scan your library."
           />
         </>
+      )}
+
+      {selected && (
+        <MovieModal
+          key={selected.filePath}
+          title={selected.title}
+          year={selected.year}
+          posterPath={selected.posterPath}
+          filePath={selected.filePath}
+          genre={selected.filePath in genreEdits ? genreEdits[selected.filePath] : selected.genre}
+          onGenreChange={(g) => setGenreEdits((prev) => ({ ...prev, [selected.filePath]: g }))}
+          closing={closing}
+          onClose={close}
+        />
       )}
     </PageShell>
   )

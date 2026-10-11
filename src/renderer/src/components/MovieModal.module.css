@@ -1,0 +1,275 @@
+/* Movie-specific parts of the modal; the frame is PosterModal. */
+
+/* ── Genres ─────────────────────────────────────────────────────────────── */
+
+.genreRow {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.genreChip {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--genre-pill) 30%, rgba(12, 12, 16, 0.6));
+  border: 1px solid color-mix(in srgb, var(--genre-pill) 45%, transparent);
+  color: var(--text-primary);
+}
+
+.genreEdit {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  background: rgba(12, 12, 16, 0.45);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.genreEdit:hover {
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Floats over the modal rather than pushing it taller. */
+.genrePicker {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(22, 22, 27, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+.pickerChip {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.pickerChip:hover {
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.pickerChipOn {
+  background: var(--genre-pill);
+  border-color: var(--genre-pill);
+  color: #fff;
+}
+
+/* ── Progress in the first tile ─────────────────────────────────────────── */
+
+.tileBar.tileBar {
+  height: 3px;
+}
+
+/* ── Details ────────────────────────────────────────────────────────────── */
+
+.details {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: 8px 12px;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12.5px;
+}
+
+.details dt {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  opacity: 0.75;
+  padding-top: 2px;
+}
+
+.details dd {
+  color: var(--text-primary);
+  line-height: 1.45;
+  min-width: 0;
+}
+
+.detailLine {
+  display: block;
+}
+
+.dim {
+  color: var(--text-secondary);
+}
+
+.count {
+  margin-left: 4px;
+  opacity: 0.7;
+  font-weight: 500;
+}
+
+/* ── Extras ─────────────────────────────────────────────────────────────── */
+
+.extrasList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+}
+
+.extraRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.extraRow:hover,
+.extraRow:focus-visible,
+.extraFocus {
+  background: rgba(255, 255, 255, 0.07);
+  outline: none;
+}
+
+.extraRow:focus-visible,
+.extraFocus {
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+
+.extraPlay {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  transition: background 0.12s, color 0.12s;
+}
+
+.extraPlay svg {
+  width: 10px;
+  height: 10px;
+}
+
+.extraRow:hover .extraPlay,
+.extraRow:focus-visible .extraPlay,
+.extraFocus .extraPlay {
+  background: var(--accent);
+  color: #121216;
+}
+
+.extraTitle {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.extraDone {
+  flex: none;
+  color: #6fd17e;
+  display: flex;
+}
+
+.extraRow .extraBar {
+  left: 44px;
+  right: 10px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 3px;
+  width: fit-content;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tab {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tabOn {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+/* Fixed height whichever tab is showing, so switching never resizes the modal. */
+.tabPanel {
+  height: 196px;
+  overflow-y: auto;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tabPanel .details {
+  margin-top: 0;
+  background: none;
+  border: none;
+}
+
+/* Thin, quiet scrollbars for the scrolling parts. */
+.tabPanel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.tabPanel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
