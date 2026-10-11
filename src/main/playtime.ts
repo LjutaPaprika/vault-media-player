@@ -10,19 +10,27 @@
 // For PC games it's the game exe; for emulator-launched ROMs it's the
 // emulator's exe — one launch = one process = one session.
 //
-// A session is only ever held in memory, so it is saved when it ends and also
-// when Vault quits: closing Vault right after the game used to throw away the
-// whole session, because it was only written once the game had been missed
-// twice, 10-20 s after it closed.
+// Time is saved as it is played, once a minute, rather than only when the
+// session ends. A session held only in memory was lost whole when Vault quit
+// right after the game (fixed in 1.30.2 by saving on quit) and still was when
+// the PC crashed mid-game; now at most the last minute is. It also means the
+// Games page can show the new total as soon as the game is first missed,
+// ~10 s after it closes, while the session itself still waits out the full
+// absence below before it ends.
 
 import { exec } from 'child_process'
 import { EventEmitter } from 'events'
 import { addPlaySeconds } from './database'
 
 /**
- * Fires when a play session ends, so the renderer can patch its cached view
- * of the games list without waiting for a manual refresh. ipc.ts bridges this
- * to `playtime:updated` on the active window's webContents.
+ * Events for the rest of the app. ipc.ts bridges both to `playtime:updated`
+ * on the renderer, which refetches playtime from the database.
+ *
+ * - 'saved': time was written while the session goes on — the game was just
+ *   missed for the first time (it has probably closed). Fires at most once per
+ *   absence, so the Games page updates promptly without refreshing every minute.
+ * - 'session-ended': the game has been gone long enough that the session is
+ *   over. Fires once per session; the registry-settings save waits for this.
  */
 export const playtimeEvents = new EventEmitter()
 
@@ -37,10 +45,28 @@ const LAUNCH_GRACE_MS = 5_000
 // relaunches, a re-exec to apply display settings). Seen again within this
 // window, the session simply carries on.
 const ABSENCE_TO_END_MS = 60_000
+// How often time is written while the game runs. Each write is one small
+// database update on the drive; once a minute keeps that negligible while
+// limiting what a crash can lose to a minute.
+const SAVE_EVERY_MS = 60_000
+// Checks run every 10 s, plus up to 5 s for the process query. A gap far
+// longer than that means the PC was asleep or hibernating (timers don't run
+// while it is), and the time across it isn't play.
+const SLEEP_GAP_MS = 45_000
 
 interface Session {
   startedAt: number
-  lastSeenAt: number   // last poll that found the game; startedAt until then
+  /** Last check that found the game running; startedAt until the first one. */
+  lastSeenAt: number
+  /** When the last check ran, to tell a sleep from a normal interval. */
+  lastCheckAt: number
+  /** Play counted so far, in ms: time it was seen running, less any sleep. */
+  playedMs: number
+  /** Whole seconds of `playedMs` already written to the database. */
+  savedSeconds: number
+  lastSaveAt: number
+  /** The current absence has already been reported with a 'saved' event. */
+  missReported: boolean
   timer: NodeJS.Timeout
   watchExe: string
   watchPid?: number    // when set, polled with kill(0) instead of pgrep -x
@@ -76,24 +102,42 @@ function isProcessRunning(name: string): Promise<boolean> {
 }
 
 /**
- * Ends a session and records it. Time counts only up to the last poll that
- * found the game, so the minute spent confirming it had closed (or the moments
- * since the last poll, when Vault quits) are never added.
+ * Writes the time played since the last save. Only the difference is ever
+ * added, so saving often never counts a second twice. A failed write (the
+ * drive unplugged mid-game) keeps the time for the next attempt.
+ */
+function persist(filePath: string, s: Session): number {
+  const total = Math.min(MAX_SESSION_SECONDS, Math.floor(s.playedMs / 1000))
+  const add = total - s.savedSeconds
+  if (add <= 0) return 0
+  try {
+    addPlaySeconds(filePath, add)
+    s.savedSeconds = total
+    s.lastSaveAt = Date.now()
+    return add
+  } catch (err) {
+    console.warn(`[playtime] could not save ${add}s for ${filePath}; will retry —`, err)
+    return 0
+  }
+}
+
+/**
+ * Ends a session and records whatever hasn't been saved yet. Time counts only
+ * up to the last check that found the game, so the minute spent confirming it
+ * had closed (or the moments since the last check, when Vault quits) are never
+ * added.
  */
 function finishSession(filePath: string, reason: 'exit' | 'cap' | 'quit'): void {
   const session = activeSessions.get(filePath)
   if (!session) return
   activeSessions.delete(filePath)
   clearTimeout(session.timer)
-  const seconds = reason === 'cap'
-    ? MAX_SESSION_SECONDS
-    : Math.max(0, Math.floor((session.lastSeenAt - session.startedAt) / 1000))
-  if (seconds > 0) addPlaySeconds(filePath, seconds)
-  console.log(`[playtime] session ended (${reason}): +${seconds}s for ${filePath}`)
+  persist(filePath, session)
+  console.log(`[playtime] session ended (${reason}): ${session.savedSeconds}s in all for ${filePath}`)
   // Notify subscribers (bridged to renderer by ipc.ts). Emit even when
-  // seconds=0 so the renderer knows the session ended in case it wants
-  // to clear any "currently playing" UI in future.
-  playtimeEvents.emit('session-ended', { filePath, secondsAdded: seconds })
+  // nothing was played so the renderer knows the session ended in case it
+  // wants to clear any "currently playing" UI in future.
+  playtimeEvents.emit('session-ended', { filePath, secondsAdded: session.savedSeconds })
 }
 
 /**
@@ -108,6 +152,11 @@ export function startPlaytimeSession(filePath: string, watchExe: string, watchPi
   activeSessions.set(filePath, {
     startedAt,
     lastSeenAt: startedAt,
+    lastCheckAt: startedAt,
+    playedMs: 0,
+    savedSeconds: 0,
+    lastSaveAt: startedAt,
+    missReported: false,
     timer: setTimeout(check, LAUNCH_GRACE_MS),
     watchExe,
     watchPid,
@@ -117,23 +166,50 @@ export function startPlaytimeSession(filePath: string, watchExe: string, watchPi
     const cur = activeSessions.get(filePath)
     if (!cur) return  // finished elsewhere (Vault quitting)
 
-    if (Date.now() - cur.startedAt >= MAX_SESSION_SECONDS * 1000) {
+    const alive = cur.watchPid !== undefined
+      ? isPidAlive(cur.watchPid)
+      : await isProcessRunning(cur.watchExe)
+    // The session may have been saved by a quit while the query was running.
+    if (activeSessions.get(filePath) !== cur) return
+
+    const now = Date.now()
+    const slept = now - cur.lastCheckAt > SLEEP_GAP_MS
+    if (alive) {
+      // Count from the last sighting, which also takes in a brief absence the
+      // game came back from. Across a sleep, count only up to the check
+      // before it: the hours the PC was off are not play.
+      cur.playedMs += (slept ? cur.lastCheckAt : now) - cur.lastSeenAt
+      cur.lastSeenAt = now
+      cur.missReported = false
+    }
+    cur.lastCheckAt = now
+
+    if (cur.playedMs >= MAX_SESSION_SECONDS * 1000) {
       finishSession(filePath, 'cap')
       return
     }
 
-    const alive = cur.watchPid !== undefined
-      ? isPidAlive(cur.watchPid)
-      : await isProcessRunning(cur.watchExe)
     if (alive) {
-      cur.lastSeenAt = Date.now()
-    } else if (Date.now() - cur.lastSeenAt >= ABSENCE_TO_END_MS) {
-      finishSession(filePath, 'exit')
-      return
+      if (now - cur.lastSaveAt >= SAVE_EVERY_MS) persist(filePath, cur)
+    } else {
+      if (!cur.missReported) {
+        // Probably closed: save now so the Games page can show the new total
+        // straight away, rather than after the full absence below.
+        cur.missReported = true
+        const added = persist(filePath, cur)
+        // Even with nothing new to add (the minute's save fell on the last
+        // check), the page hasn't been told about the earlier saves yet.
+        if (cur.savedSeconds > 0) playtimeEvents.emit('saved', { filePath, secondsAdded: added })
+      }
+      // Waking from a sleep with the game gone: the absence started before
+      // the sleep, so it may already be long enough.
+      if (now - cur.lastSeenAt >= ABSENCE_TO_END_MS) {
+        finishSession(filePath, 'exit')
+        return
+      }
     }
 
-    // The session may have been saved by a quit while the poll was running.
-    if (activeSessions.get(filePath) === cur) cur.timer = setTimeout(check, POLL_INTERVAL_MS)
+    cur.timer = setTimeout(check, POLL_INTERVAL_MS)
   }
 }
 

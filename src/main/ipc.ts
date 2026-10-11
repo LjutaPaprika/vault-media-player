@@ -882,13 +882,16 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     launchGame(filePath, platform, resolveLibraryRoot())
   )
 
-  // Bridge play-session-end events to the renderer so games views can refresh
-  // in place without a manual scan. Fires once per session end (~20s after the
-  // game closes). Payload is intentionally minimal — the renderer refetches
-  // authoritative playtime from the DB.
-  playtimeEvents.on('session-ended', (payload: { filePath: string; secondsAdded: number }) => {
+  // Bridge playtime saves to the renderer so games views can refresh in place
+  // without a manual scan: 'saved' ~10 s after the game closes (its first
+  // missed check), 'session-ended' once it has stayed gone a minute. Payload
+  // is intentionally minimal — the renderer refetches authoritative playtime
+  // from the DB.
+  const sendPlaytime = (payload: { filePath: string; secondsAdded: number }): void => {
     if (!win.isDestroyed()) win.webContents.send('playtime:updated', payload)
-  })
+  }
+  playtimeEvents.on('saved', sendPlaytime)
+  playtimeEvents.on('session-ended', sendPlaytime)
 
   // ─── YouTube import ───────────────────────────────────────────────────────
   ipcMain.handle('library:getMusicAlbums', () => {
