@@ -103,18 +103,30 @@ export function getHomeData(root: string, limit = 24): HomeData {
   const entries: HomeEntry[] = []
   for (const items of groups.values()) {
     const activityOf = (i: Item): number => Math.max(i.lastOpenedAt ?? 0, progress[i.filePath]?.savedAt ?? 0)
-    let current: Item | null = null
-    for (const i of items) if (activityOf(i) > 0 && (!current || activityOf(i) > activityOf(current))) current = i
-    if (!current) continue
-
     const first = items[0]
     // Chapters run in title order, as their pages list them; episodes in
     // file order (S01E01, S01E02…).
     const byTitle = READING.has(first.category)
     const ordered = [...items].sort((a, b) => collator.compare(byTitle ? a.title : a.filePath, byTitle ? b.title : b.filePath))
+
+    // The entry touched last. Ties go to the one furthest along: marking a
+    // whole series watched stamps every episode with the same time, and the
+    // first of them would wrongly offer the second as "next".
+    let current: Item | null = null
+    for (const i of ordered) if (activityOf(i) > 0 && (!current || activityOf(i) >= activityOf(current))) current = i
+    if (!current) continue
+
     const ref = (i: Item): HomeEntryRef => ({ id: i.id, filePath: i.filePath, title: i.title, description: i.description, progress: progress[i.filePath] ?? null })
     const currentDone = isDone(current, progress[current.filePath])
     const after = ordered[ordered.findIndex((i) => i.filePath === current!.filePath) + 1]
+    const doneCount = items.filter((i) => isDone(i, progress[i.filePath])).length
+    // Nothing to continue when the entry touched last is finished and either
+    // nothing comes after it, or the whole series has been gone through: a
+    // finished series shows only while an entry is actually partway (a
+    // rewatch), not because an episode was reopened for a moment. An entry
+    // opened with no position at all counts as finished (history from before
+    // positions were recorded, or marked watched by hand).
+    if (currentDone && (!after || doneCount === items.length)) continue
 
     entries.push({
       category: first.category,
@@ -122,7 +134,7 @@ export function getHomeData(root: string, limit = 24): HomeData {
       year: first.year,
       posterPath: ordered.find((i) => i.posterPath)?.posterPath ?? null,
       entryCount: items.length,
-      doneCount: items.filter((i) => isDone(i, progress[i.filePath])).length,
+      doneCount,
       current: ref(current),
       next: currentDone && after ? ref(after) : null,
       activityAt: activityOf(current)
