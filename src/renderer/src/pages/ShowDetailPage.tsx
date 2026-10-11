@@ -282,14 +282,18 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   }, [seasons, watchOrder, subLabelMap])
 
   // Continue follows the episodes in the order the page lists them, custom
-  // watch orders included, so "next" means the row below.
+  // watch orders included, so "next" means the row below. A series watched
+  // through has none, unless an episode is partway (a rewatch): reopening an
+  // episode for a moment shouldn't bring back "Next". Home follows the same
+  // rule, so the two agree.
   const next = useMemo((): ContinueTarget<ParsedEpisode> | null => {
+    if (seriesComplete && !episodes.some((e) => watchState(progress[e.filePath], 0, category).kind === 'partial')) return null
     const openedAt = new Map(episodes.map((e) => [e.id, e.lastOpenedAt]))
     const ordered = orderedSeasons.flatMap(([, eps]) =>
       eps.map((ep) => ({ ...ep, lastOpenedAt: openedAt.get(ep.id) ?? null }))
     )
     return continueTarget(ordered, progress, {}, category)
-  }, [orderedSeasons, episodes, progress, category])
+  }, [orderedSeasons, episodes, progress, category, seriesComplete])
   const nextRef = useRef(next)
   nextRef.current = next
 
