@@ -51,6 +51,7 @@ export interface SeriesSummary {
   total: number
   done: number
   complete: boolean
+  /** What Continue opens; null once the series is read through and nothing is partway. */
   next: ContinueTarget<MediaItem> | null
   /** The entry opened most recently, for the "Last read" marker. */
   lastRead: MediaItem | null
@@ -63,14 +64,18 @@ export function summarize(volumes: MediaItem[], progress: Record<string, VideoPr
     const state = watchState(progress[item.filePath], 0, category)
     return { item, state, done: item.lastOpenedAt != null && state.kind !== 'partial' }
   })
+  const complete = isSeriesComplete(volumes, { progress, category, isExtra: (v) => isExtra(v.title) })
   const lastRead = sorted.reduce<MediaItem | null>(
     (best, v) => ((v.lastOpenedAt ?? 0) > (best?.lastOpenedAt ?? 0) ? v : best), null)
   return {
     entries,
     total: sorted.length,
     done: entries.filter((e) => e.done).length,
-    complete: isSeriesComplete(volumes, { progress, category, isExtra: (v) => isExtra(v.title) }),
-    next: continueTarget(sorted, progress, {}, category),
+    complete,
+    // A series read through has no Continue, unless an entry is partway (a
+    // reread): reopening a chapter for a moment shouldn't bring back "Read
+    // next". Show pages and Home follow the same rule.
+    next: complete && !entries.some((e) => e.state.kind === 'partial') ? null : continueTarget(sorted, progress, {}, category),
     lastRead,
     unit: unitOf(volumes)
   }

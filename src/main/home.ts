@@ -6,6 +6,9 @@
 import { dirname, basename } from 'path'
 import { getItems } from './database'
 import { readProgress, type VideoProgress } from './playbackProgress'
+// The manga shelf's own test for a bonus chapter (Ch. 10.5), so Home and the
+// shelf agree on when a series is complete.
+import { isExtra } from '../renderer/src/utils/readingEntries'
 
 interface Item {
   id: number
@@ -77,13 +80,35 @@ function endMargin(duration: number): number {
   return Math.min(600, duration * 0.1)
 }
 
+/** Left partway, as the renderer's watchState has it (a video under 15 s in hasn't really started). */
+function isPartway(item: Item, p: VideoProgress | undefined): boolean {
+  if (!p || p.finished) return false
+  if (READING.has(item.category)) return p.position > 0
+  return p.position >= 15 && !(p.duration > 0 && p.position >= p.duration - endMargin(p.duration))
+}
+
 /**
  * Gone through: played or read to the end, or opened before positions were
- * recorded (or marked watched by hand), which leaves no position behind.
+ * recorded (or marked watched by hand), which leaves no position behind. A
+ * chapter is read once opened and not left partway, as the manga shelf has it.
  */
 function isDone(item: Item, p: VideoProgress | undefined): boolean {
-  if (p) return p.finished || (p.duration > 0 && p.position >= p.duration - endMargin(p.duration) && !READING.has(item.category))
+  if (READING.has(item.category)) return item.lastOpenedAt != null && !isPartway(item, p)
+  if (p) return p.finished || (p.duration > 0 && p.position >= p.duration - endMargin(p.duration))
   return item.lastOpenedAt != null
+}
+
+/**
+ * The whole series gone through, as its shelf's "Series complete" has it
+ * (renderer utils/seriesComplete.ts): every episode opened; for manga and
+ * comics, every chapter opened and none partway, bonus chapters not required
+ * unless the series is nothing but.
+ */
+function isComplete(items: Item[], progress: Record<string, VideoProgress>): boolean {
+  if (!READING.has(items[0].category)) return items.every((i) => i.lastOpenedAt != null)
+  const main = items.filter((i) => !isExtra(i.title))
+  const required = main.length > 0 ? main : items
+  return required.every((i) => i.lastOpenedAt != null && !isPartway(i, progress[i.filePath]))
 }
 
 export function getHomeData(root: string, limit = 24): HomeData {
@@ -120,13 +145,15 @@ export function getHomeData(root: string, limit = 24): HomeData {
     const currentDone = isDone(current, progress[current.filePath])
     const after = ordered[ordered.findIndex((i) => i.filePath === current!.filePath) + 1]
     const doneCount = items.filter((i) => isDone(i, progress[i.filePath])).length
-    // Nothing to continue when the entry touched last is finished and either
-    // nothing comes after it, or the whole series has been gone through: a
-    // finished series shows only while an entry is actually partway (a
-    // rewatch), not because an episode was reopened for a moment. An entry
-    // opened with no position at all counts as finished (history from before
-    // positions were recorded, or marked watched by hand).
-    if (currentDone && (!after || doneCount === items.length)) continue
+    // Nothing to continue when the entry touched last is finished with
+    // nothing after it. An entry opened with no position at all counts as
+    // finished (history from before positions were recorded, or marked
+    // watched by hand).
+    if (currentDone && !after) continue
+    // Nor once the series is complete, unless an entry is actually partway (a
+    // rewatch): reopening an episode for a moment doesn't put it back on Home.
+    // The series pages offer Continue by the same rule.
+    if (isComplete(items, progress) && !items.some((i) => isPartway(i, progress[i.filePath]))) continue
 
     entries.push({
       category: first.category,
