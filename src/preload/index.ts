@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
     forceScan: () => ipcRenderer.invoke('library:forceScan'),
     getAlbumTracks: (firstTrackPath: string) => ipcRenderer.invoke('library:getAlbumTracks', firstTrackPath),
     getStats: () => ipcRenderer.invoke('library:getStats'),
+    getHome: () => ipcRenderer.invoke('library:getHome'),
     getItems: (category: string) => ipcRenderer.invoke('library:getItems', category),
     getItem: (id: number) => ipcRenderer.invoke('library:getItem', id),
     readImage: (filePath: string) => ipcRenderer.invoke('library:readImage', filePath),

@@ -328,6 +328,24 @@
   background: rgba(255, 170, 0, 0.2);
 }
 
+.wide {
+  width: 100%;
+  min-width: 0;
+  padding: 0 22px;
+}
+
+.wide svg {
+  flex: none;
+}
+
+/* A label cut short with an ellipsis inside a wide button. */
+.wide > span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .secondary {
   padding: 0 22px;
   border: 1px solid rgba(255, 255, 255, 0.14);

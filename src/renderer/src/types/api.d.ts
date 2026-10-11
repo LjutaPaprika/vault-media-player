@@ -181,6 +181,48 @@ interface LibraryStats {
   storage: StorageStats | null
 }
 
+interface HomeEntryRef {
+  id: number
+  filePath: string
+  title: string
+  /** The scanner's "S01E05 · Title" for an episode; how a show's page names it. */
+  description: string | null
+  progress: VideoProgress | null
+}
+
+/** A film or series in progress, for the Home page. */
+interface HomeEntry {
+  category: string
+  /** The film's title, or the series a chapter or episode belongs to. */
+  series: string
+  year: number | null
+  posterPath: string | null
+  /** Episodes or chapters in the series; 1 for a film. */
+  entryCount: number
+  /** Of those, how many have been gone through. */
+  doneCount: number
+  /** The entry touched most recently. */
+  current: HomeEntryRef
+  /** The entry after it, when `current` has been finished. */
+  next: HomeEntryRef | null
+  /** Unix seconds of the last activity in the series. */
+  activityAt: number
+}
+
+interface HomeGame {
+  title: string
+  platform: string | null
+  filePath: string
+  posterPath: string | null
+  playSeconds: number
+  lastOpenedAt: number | null
+}
+
+interface HomeData {
+  entries: HomeEntry[]
+  games: HomeGame[]
+}
+
 interface AppInfo {
   version: string
   runtime: { electron: string; node: string; chrome: string }
@@ -204,6 +246,7 @@ interface Window {
       scan: () => Promise<{ count: number }>
       forceScan: () => Promise<{ count: number }>
       getStats: () => Promise<LibraryStats>
+      getHome: () => Promise<HomeData>
       getItems: (category: string) => Promise<MediaItem[]>
       getItem: (id: number) => Promise<MediaItem | null>
       readImage: (filePath: string) => Promise<string | null>

@@ -66,8 +66,34 @@ body {
   overflow: hidden;
 }
 
+.content-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Fades the content out and back in around a jump from Home to another shelf.
+   Above the shelves' modals (z-index 200), so they appear under it. */
+.nav-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 250;
+  background: var(--bg-base);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+}
+
+.nav-veil-on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .content {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
   padding: 36px 40px;

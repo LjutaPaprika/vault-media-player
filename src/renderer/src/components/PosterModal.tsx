@@ -52,6 +52,11 @@ interface Props {
   bodyWidth?: number
   /** A round ✕ in the top corner, for modals without a Cancel button. */
   closeButton?: boolean
+  /**
+   * 'cover' always crops the art to the frame, as the shelf does, instead of
+   * showing art of an unusual shape whole. For covers saved as padded squares.
+   */
+  fit?: 'auto' | 'cover'
   children: ReactNode
 }
 
@@ -66,7 +71,7 @@ interface Props {
  * those. Art far from the frame's shape (square handheld covers) is shown
  * whole over a blurred copy instead.
  */
-export default function PosterModal({ posterPath, frameRatio = 0.72, closing, onClose, bodyWidth = 480, closeButton, children }: Props): JSX.Element {
+export default function PosterModal({ posterPath, frameRatio = 0.72, closing, onClose, bodyWidth = 480, closeButton, fit = 'auto', children }: Props): JSX.Element {
   useEscapeKey(onClose)
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [bodyHeight, setBodyHeight] = useState(460)
@@ -79,7 +84,7 @@ export default function PosterModal({ posterPath, frameRatio = 0.72, closing, on
     return () => ro.disconnect()
   }, [])
   const artWidth = posterPath ? Math.round(bodyHeight * frameRatio) : 0
-  const fitsFrame = Math.abs(ratio - frameRatio) <= 0.14
+  const fitsFrame = fit === 'cover' || Math.abs(ratio - frameRatio) <= 0.14
 
   return (
     <div className={`${styles.overlay} ${closing ? styles.overlayClosing : ''}`} onClick={onClose}>
@@ -185,17 +190,19 @@ interface ButtonProps {
   disabled?: boolean
   /** Primary only: the amber "go ahead anyway" look. */
   warn?: boolean
+  /** Fill the row, cutting a long label short, so it's the same size every time. */
+  wide?: boolean
   /** Ring shown while a controller has this button selected. */
   focused?: boolean
   autoFocus?: boolean
   buttonRef?: (el: HTMLButtonElement | null) => void
 }
 
-export function PrimaryButton({ onClick, children, disabled, warn, focused, autoFocus, buttonRef }: ButtonProps): JSX.Element {
+export function PrimaryButton({ onClick, children, disabled, warn, wide, focused, autoFocus, buttonRef }: ButtonProps): JSX.Element {
   return (
     <button
       ref={buttonRef}
-      className={`${warn ? styles.primaryWarn : styles.primary} ${focused ? styles.padFocus : ''}`}
+      className={`${warn ? styles.primaryWarn : styles.primary} ${wide ? styles.wide : ''} ${focused ? styles.padFocus : ''}`}
       onClick={onClick}
       disabled={disabled}
       autoFocus={autoFocus}

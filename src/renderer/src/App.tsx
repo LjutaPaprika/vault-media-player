@@ -46,7 +46,7 @@ const PAGES: Record<string, JSX.Element> = {
 }
 
 export default function App(): JSX.Element {
-  const { activePage, libraryLabel, setLibrary, popNav } = useAppStore()
+  const { activePage, libraryLabel, setLibrary, popNav, veil } = useAppStore()
   const [configLoading, setConfigLoading] = useState(true)
   useEffect(() => {
     const id = setInterval(() => useIdleGameStore.getState().tick(), 1000)
@@ -115,7 +115,12 @@ export default function App(): JSX.Element {
         <TitleBar />
         <div className="app-body">
           <Sidebar />
-          <main className="content">{PAGES[activePage] ?? <HomePage />}</main>
+          <div className="content-wrap">
+            <main className="content">{PAGES[activePage] ?? <HomePage />}</main>
+            {/* Covers the content while Home sends you to something on another
+                shelf (and on the way back), so the shelf in between never flashes. */}
+            <div className={`nav-veil ${veil ? 'nav-veil-on' : ''}`} />
+          </div>
         </div>
         <MusicPlayerBar />
         <TransferIndicator />

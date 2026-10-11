@@ -1,142 +1,293 @@
-.welcome {
+.loading {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.stack {
   display: flex;
   flex-direction: column;
-  gap: 36px;
+  gap: 34px;
 }
 
-.hero {
-  background: linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 40px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  position: relative;
-  overflow: hidden;
+.overline {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 
-.hero::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 300px;
-  height: 100%;
-  background: radial-gradient(ellipse at top right, var(--accent-glow) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.heroTitle {
-  font-size: 24px;
+.placeholder {
+  font-size: 32px;
   font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
+  color: var(--text-muted);
 }
 
-.heroSub {
-  font-size: 14px;
-  color: var(--text-secondary);
-  line-height: 1.65;
-  max-width: 520px;
-}
+/* ── Scan menu in the header ────────────────────────────────────────────── */
 
-.actions {
+.scan {
+  position: relative;
   display: flex;
-  gap: 10px;
-  margin-top: 6px;
-}
-
-.primaryBtn {
-  background: var(--accent);
-  color: #000;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 9px 22px;
-  border-radius: var(--radius-sm);
-  transition: opacity 0.15s, transform 0.15s;
-  letter-spacing: 0.01em;
-}
-
-.primaryBtn:hover:not(:disabled) {
-  opacity: 0.88;
-  transform: translateY(-1px);
-}
-
-.primaryBtn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.secondaryBtn {
-  background: var(--surface-2);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  padding: 9px 22px;
-  border-radius: var(--radius-sm);
-  transition: opacity 0.15s, transform 0.15s;
-  letter-spacing: 0.01em;
-}
-
-.secondaryBtn:hover:not(:disabled) {
-  color: var(--text);
-  transform: translateY(-1px);
-}
-
-.secondaryBtn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  align-items: center;
+  gap: 12px;
 }
 
 .scanResult {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
-  margin-top: 2px;
 }
 
-.tips {
+.scanBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.scanBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.scanBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.caret {
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.scanShield {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.scanMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 51;
+  width: 260px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(24, 24, 29, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+.scanMenu button {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 2px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.tipsTitle {
-  font-size: 11px;
+.scanMenu button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.scanMenu strong {
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
-.tipsList {
-  list-style: none;
+.scanMenu span {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+/* ── Hero card ────────────────────────────────────────────────────────────  */
+
+.heroCard {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
+  padding: 28px;
+  min-height: 300px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.heroWash {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(135deg, var(--accent-dim), transparent);
+}
+
+.heroWash img {
+  position: absolute;
+  inset: -40px;
+  width: calc(100% + 80px);
+  height: calc(100% + 80px);
+  object-fit: cover;
+  filter: blur(34px) saturate(1.4);
+  opacity: 0.6;
+}
+
+.heroWash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(20, 20, 24, 0.85) 20%, rgba(20, 20, 24, 0.35));
+}
+
+.heroPoster {
+  position: relative;
+  flex: none;
+  width: 164px;
+  aspect-ratio: 2 / 3;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-surface);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.18s ease;
+}
+
+.heroPoster:hover {
+  transform: translateY(-3px);
+}
+
+.heroPoster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.heroBody {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
-.tipsList li {
-  font-size: 13px;
+.heroTitle {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.heroDetail {
+  font-size: 14px;
   color: var(--text-secondary);
-  line-height: 1.55;
-  padding-left: 18px;
+}
+
+.heroBar {
+  width: min(380px, 100%);
+  height: 5px;
+  margin-top: 4px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.heroBar div {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.heroActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* ── Rotating hero ──────────────────────────────────────────────────────── */
+
+.carousel {
   position: relative;
 }
 
-.tipsList li::before {
-  content: '›';
-  position: absolute;
-  left: 0;
-  color: var(--accent);
-  font-weight: 700;
+/* Each title fades in as the card moves on to it. */
+.carousel .heroCard {
+  animation: heroIn 0.5s ease;
 }
 
-.tipsList code {
-  background: var(--bg-elevated);
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-family: 'Consolas', 'SF Mono', monospace;
-  font-size: 12px;
-  color: var(--accent);
+.carousel .heroBody,
+.carousel .heroPoster {
+  animation: rise 0.45s ease;
+}
+
+@keyframes heroIn {
+  from { opacity: 0.4; }
+  to   { opacity: 1; }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.dots {
+  position: absolute;
+  right: 24px;
+  bottom: 22px;
+  display: flex;
+  gap: 6px;
+}
+
+.dotBtn {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  transition: width 0.2s, background 0.2s;
+}
+
+.dotOn {
+  width: 24px;
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carousel .heroCard,
+  .carousel .heroBody,
+  .carousel .heroPoster {
+    animation: none;
+  }
 }
