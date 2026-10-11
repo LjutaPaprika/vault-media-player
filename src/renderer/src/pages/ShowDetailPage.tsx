@@ -10,6 +10,7 @@ import { useVideoProgress } from '../hooks/useVideoProgress'
 import { useAppStore } from '../store/appStore'
 import { continueTarget, startPosition, watchedFraction, watchState, type ContinueTarget } from '../utils/resume'
 import { upNextAfter } from '../utils/upNext'
+import { episodeLabel, parseEpisode, type ParsedEpisode } from '../utils/episodes'
 import { isSeriesComplete } from '../utils/seriesComplete'
 import AutoplayToggle from '../components/AutoplayToggle'
 import styles from './ShowDetailPage.module.css'
@@ -22,25 +23,9 @@ interface Props {
   onBack: () => void
 }
 
-interface ParsedEpisode {
-  id: number
-  season: number
-  episode: number
-  badge: string
-  title: string
-  filePath: string
-  subLabel?: string
-}
-
 type ExtrasSection =
   | { kind: 'single'; item: MediaItem }
   | { kind: 'group'; key: string; items: MediaItem[] }
-
-function stableSeasonHash(name: string): number {
-  let h = 5381
-  for (let i = 0; i < name.length; i++) h = ((h << 5) + h + name.charCodeAt(i)) & 0x7fffffff
-  return 100 + (h % 900)
-}
 
 function extrasGroupKey(title: string): string | null {
   const dashNum = title.match(/^(.+?)\s+-\s+(\d+)$/)
@@ -55,91 +40,8 @@ function extrasGroupKey(title: string): string | null {
   return null
 }
 
-/** An episode as the Continue button names it: "S01E03 · Title". */
-function episodeLabel(ep: ParsedEpisode): string {
-  return [ep.subLabel, ep.badge, ep.title].filter(Boolean).join(' · ')
-}
-
 function sectionLabel(seasonNum: number, subLabels: Map<number, string>): string {
   return subLabels.get(seasonNum) ?? (seasonNum === 0 ? 'Movies / Specials' : `Season ${seasonNum}`)
-}
-
-function parseEpisode(item: MediaItem): ParsedEpisode {
-  // Sub-series: "§Label§Exx", "§Label§Exx · Title", or "§Label§Plain Title" (no episode number)
-  const subMatch = item.description?.match(/^§([^§]+)§(?:(E\d+)(?:\s*·\s*(.+))?|(.+))$/i)
-  if (subMatch) {
-    const [, subLabel, eCode, rawTitle, plainTitle] = subMatch
-    if (eCode) {
-      const ep = parseInt(eCode.slice(1), 10)
-      return {
-        id: item.id,
-        season: stableSeasonHash(subLabel),
-        episode: ep,
-        badge: `E${String(ep).padStart(2, '0')}`,
-        title: rawTitle ?? `Episode ${ep}`,
-        filePath: item.filePath,
-        subLabel
-      }
-    }
-    return {
-      id: item.id,
-      season: stableSeasonHash(subLabel),
-      episode: 0,
-      badge: '',
-      title: plainTitle,
-      filePath: item.filePath,
-      subLabel
-    }
-  }
-  // Multi-episode range with title: "S01E01-02 · Title"
-  const fullRange = item.description?.match(/^(S(\d+)E(\d+)-(\d+))\s*·\s*(.+)$/)
-  if (fullRange) {
-    return {
-      id: item.id,
-      season: parseInt(fullRange[2], 10),
-      episode: parseInt(fullRange[3], 10),
-      badge: fullRange[1],
-      title: fullRange[5],
-      filePath: item.filePath
-    }
-  }
-  // Multi-episode range without title: "S01E01-02"
-  const badgeRange = item.description?.match(/^(S(\d+)E(\d+)-(\d+))$/)
-  if (badgeRange) {
-    return {
-      id: item.id,
-      season: parseInt(badgeRange[2], 10),
-      episode: parseInt(badgeRange[3], 10),
-      badge: badgeRange[1],
-      title: `Episodes ${parseInt(badgeRange[3], 10)}-${parseInt(badgeRange[4], 10)}`,
-      filePath: item.filePath
-    }
-  }
-  // Full format: "S01E01 · Title"
-  const full = item.description?.match(/^(S(\d+)E(\d+))\s*·\s*(.+)$/)
-  if (full) {
-    return {
-      id: item.id,
-      season: parseInt(full[2], 10),
-      episode: parseInt(full[3], 10),
-      badge: full[1],
-      title: full[4],
-      filePath: item.filePath
-    }
-  }
-  // Badge-only format: "S01E01" (no title in filename)
-  const badge = item.description?.match(/^(S(\d+)E(\d+))$/)
-  if (badge) {
-    return {
-      id: item.id,
-      season: parseInt(badge[2], 10),
-      episode: parseInt(badge[3], 10),
-      badge: badge[1],
-      title: `Episode ${parseInt(badge[3], 10)}`,
-      filePath: item.filePath
-    }
-  }
-  return { id: item.id, season: 0, episode: 0, badge: '', title: item.description ?? item.title, filePath: item.filePath }
 }
 
 type NavItem =

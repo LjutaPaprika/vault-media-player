@@ -4,6 +4,7 @@ import LibraryArchiveModal from './LibraryArchiveModal'
 import { useAppStore } from '../store/appStore'
 import { useController, type ControllerButton } from '../hooks/useController'
 import { deriveArchiveRelPath } from '../utils/archivePath'
+import WatchedBar from './WatchedBar'
 import styles from './MediaGrid.module.css'
 
 export interface MediaCard {
@@ -16,6 +17,8 @@ export interface MediaCard {
   complete?: boolean
   platform?: string | null
   playSeconds?: number
+  /** Share gone through, 0–1, drawn as a bar along the bottom of the poster. */
+  progress?: number | null
 }
 
 interface Props {
@@ -144,6 +147,7 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
               : <div className={styles.placeholder}>{item.title.charAt(0)}</div>
             }
             {item.complete && <span className={styles.completeDot} title="Series complete" />}
+            {item.progress != null && item.progress > 0 && <WatchedBar fraction={item.progress} />}
           </div>
           <div className={styles.info}>
             <span className={styles.cardTitle}>{item.title}</span>

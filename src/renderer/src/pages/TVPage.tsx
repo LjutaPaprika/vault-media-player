@@ -3,7 +3,7 @@ import PageShell from '../components/PageShell'
 import MediaGrid from '../components/MediaGrid'
 import ShowDetailPage from './ShowDetailPage'
 import { useLibrary } from '../hooks/useLibrary'
-import { useAppStore } from '../store/appStore'
+import { useAppStore, useOpenRequest } from '../store/appStore'
 import { isSeriesComplete } from '../utils/seriesComplete'
 
 
@@ -21,6 +21,14 @@ export default function TVPage(): JSX.Element {
 
   useEffect(() => { setSelected(null) }, [contentResetKey])
 
+  // Home asked for a series: open its page once the shelf has loaded, and
+  // Back from it goes back to Home.
+  const { backOr } = useOpenRequest('tv', !loading, (req) => {
+    const item = items.find((i) => i.title === req.series)
+    if (item) setSelected({ title: item.title, year: item.year ?? null, posterPath: item.posterPath ?? null })
+    return !!item
+  })
+
   if (selected) {
     return (
       <ShowDetailPage
@@ -28,7 +36,7 @@ export default function TVPage(): JSX.Element {
         year={selected.year ?? null}
         posterPath={selected.posterPath ?? null}
         category="tv"
-        onBack={() => setSelected(null)}
+        onBack={() => backOr(() => setSelected(null))}
       />
     )
   }

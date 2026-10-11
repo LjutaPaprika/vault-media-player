@@ -4,6 +4,7 @@ import MediaGrid from '../components/MediaGrid'
 import GameLaunchModal, { type CompareRow } from '../components/GameLaunchModal'
 import { usePosterModal } from '../components/PosterModal'
 import { useLibrary } from '../hooks/useLibrary'
+import { useOpenRequest } from '../store/appStore'
 
 const PLATFORM_LABELS: Record<string, string> = {
   pc:       'PC',
@@ -156,6 +157,14 @@ export default function GamesPage(): JSX.Element {
     return window.api.playback.onPlaytimeUpdate(() => reload())
   }, [reload])
 
+  // Home asked for a game: open its launch modal once the shelf has loaded.
+  // Closing it, or launching the game, goes back to Home.
+  const { backOr } = useOpenRequest('games', !loading, (req) => {
+    const item = items.find((i) => i.filePath === req.filePath)
+    if (item) handleSelect(item)
+    return !!item
+  })
+
   function handleSelect(item: MediaCard): void {
     // A click landing during the fade-out would be cleared by its timer.
     if (closing) return
@@ -174,7 +183,7 @@ export default function GamesPage(): JSX.Element {
     setLaunchError(null)
     try {
       await window.api.playback.launchGame(pending.filePath, pending.platform)
-      closeModal()
+      backOr(closeModal)
     } catch (e) {
       // ipcRenderer.invoke wraps the main-process error as
       // "Error invoking remote method 'playback:launchGame': Error: <real msg>".
@@ -219,7 +228,7 @@ export default function GamesPage(): JSX.Element {
           launchError={launchError}
           hasFail={hasFail}
           closing={closing}
-          onCancel={closeModal}
+          onCancel={() => backOr(closeModal)}
           onLaunch={handleLaunch}
         />
       )}

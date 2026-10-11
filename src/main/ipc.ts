@@ -43,6 +43,7 @@ import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
+import { getHomeData } from './home'
 import { clearProgress, progressFileFor, progressKey, readProgress, saveProgress, watchProgress, writeQueue, type VideoProgress } from './playbackProgress'
 import { artworkStats, episodesWithoutStill, fillEpisodeStills, moveLegacyThumbnails, pruneArtwork, warmThumbs } from './thumbnails'
 import { setCacheRootResolver } from './cacheDb'
@@ -555,6 +556,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   })
 
   ipcMain.handle('library:getStats',        () => getStats())
+  ipcMain.handle('library:getHome',         () => { ensureProgressWatch(); return getHomeData(resolveLibraryRoot()) })
   ipcMain.handle('library:getItems',        (_event, category: string) => getItems(category))
   ipcMain.handle('library:getItem',         (_event, id: number) => getItem(id))
   ipcMain.handle('library:getExtras',       (_event, seriesTitle: string, parentCategory?: string) => getExtras(seriesTitle, parentCategory))

@@ -1,16 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import PageShell from '../components/PageShell'
 import MediaGrid from '../components/MediaGrid'
 import EpubScrollReader from './EpubScrollReader'
 import PDFReaderPage from './PDFReaderPage'
-import MangaDetailPage from './MangaDetailPage'
 import MangaReaderPage from './MangaReaderPage'
+import { MangaSeriesModal } from '../components/MangaSeriesModal'
+import PosterRow from '../components/PosterRow'
+import { usePosterModal } from '../components/PosterModal'
 import { useLibrary } from '../hooks/useLibrary'
 import { useVideoProgress } from '../hooks/useVideoProgress'
-import { useAppStore } from '../store/appStore'
+import { useAppStore, useOpenRequest } from '../store/appStore'
 import { startPosition, watchState } from '../utils/resume'
 import { isExtra } from '../utils/readingEntries'
 import { isSeriesComplete } from '../utils/seriesComplete'
+import { cleanDisplayTitle, summarize } from '../utils/mangaSeries'
+
+/** Shelves with fewer series than this skip the Continue row. */
+const CONTINUE_MIN_SERIES = 8
+/** Most series the Continue row shows. */
+const CONTINUE_MAX = 8
 
 // Group key is the parent folder name — always the series name regardless of filename format
 function getSeriesName(filePath: string): string {
@@ -66,8 +74,12 @@ export default function MangaPage({
   const [progressTick,    setProgressTick]     = useState(0)
   const progress = useVideoProgress(items.map((i) => i.filePath), progressTick)
   const closeReader = (): void => {
-    setSelectedCbz(null); setSelectedPdf(null); setSelectedBook(null)
-    setProgressTick((n) => n + 1)
+    const local = (): void => {
+      setSelectedCbz(null); setSelectedPdf(null); setSelectedBook(null)
+      setProgressTick((n) => n + 1)
+    }
+    if (openedReader.current) { openedReader.current = false; backOr(local) }
+    else local()
   }
 
   /** Marks a chapter read or unread by hand; either way its saved page no longer applies. */
@@ -79,7 +91,33 @@ export default function MangaPage({
 
   useEffect(() => { setSelectedSeries(null); setSelectedBook(null); setSelectedPdf(null); setSelectedCbz(null) }, [contentResetKey])
 
+  const { closing, close: closeModal } = usePosterModal(() => setSelectedSeries(null))
+
   const ext = (path: string): string => path.slice(path.lastIndexOf('.')).toLowerCase()
+
+  /** Opens an entry in the reader its format needs, starting at `at`. */
+  function openEntry(vol: MediaItem, at: number): void {
+    setStartAt(at)
+    window.api.library.markOpened(vol.filePath)
+    setLastOpenedMap((prev) => ({ ...prev, [vol.filePath]: Math.floor(Date.now() / 1000) }))
+    if (ext(vol.filePath) === '.epub') setSelectedBook(vol)
+    else if (ext(vol.filePath) === '.pdf') setSelectedPdf(vol)
+    else setSelectedCbz(vol)
+  }
+
+  // Home asked for a chapter straight in the reader, or for a series' modal.
+  // Whichever it opened, closing it goes back to Home; a chapter opened from
+  // that modal still closes back to the modal.
+  const openedReader = useRef(false)
+  const { backOr } = useOpenRequest(category, !loading, (req) => {
+    if (!req.series || !items.some((i) => getSeriesName(i.filePath) === req.series)) return false
+    const vol = req.filePath ? items.find((i) => i.filePath === req.filePath) : undefined
+    openedReader.current = !!vol
+    // The series sits behind the reader only when the series is what was asked for.
+    if (vol) openEntry(vol, req.startAt ?? 0)
+    else setSelectedSeries(req.series)
+    return true
+  })
 
   if (selectedCbz) {
     return (
@@ -118,73 +156,96 @@ export default function MangaPage({
     vol.filePath in lastOpenedMap ? { ...vol, lastOpenedAt: lastOpenedMap[vol.filePath] } : vol
   ))
 
-  if (selectedSeries) {
-    return (
-      <MangaDetailPage
-        seriesName={selectedSeries}
-        volumes={grouped.get(selectedSeries) ?? []}
-        category={category}
-        progressTick={progressTick}
-        onBack={() => setSelectedSeries(null)}
-        onMarkRead={markRead}
-        onSelect={(vol, resumeAt) => {
-          setStartAt(resumeAt)
-          const now = Math.floor(Date.now() / 1000)
-          window.api.library.markOpened(vol.filePath)
-          setLastOpenedMap((prev) => ({ ...prev, [vol.filePath]: now }))
-          if (ext(vol.filePath) === '.epub') setSelectedBook(vol)
-          else if (ext(vol.filePath) === '.pdf') setSelectedPdf(vol)
-          else setSelectedCbz(vol)
-        }}
-      />
-    )
-  }
-
   // Build series cards for MediaGrid
   const filteredSeries = Array.from(grouped.entries())
     .filter(([name]) => name.toLowerCase().includes(query.toLowerCase()))
     .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
 
+  const summaries = new Map(filteredSeries.map(([name, vols]) => [name, summarize(vols, progress, category)]))
+
   const seriesCards: MediaCard[] = filteredSeries.map(([name, vols]) => {
     const { singular, plural } = detectUnit(vols)
+    const sum = summaries.get(name)!
     return {
       id: vols[0].id,
       title: name,
-      subtitle: `${vols.length} ${vols.length !== 1 ? plural : singular}`,
+      subtitle: sum.done > 0
+        ? `${sum.done} / ${vols.length} ${plural} read`
+        : `${vols.length} ${vols.length !== 1 ? plural : singular}`,
       posterPath: vols[0].posterPath,
       complete: isSeriesComplete(vols, { progress, category, isExtra: (v) => isExtra(v.title) }),
+      // A finished series has its "complete" dot instead of a full bar.
+      progress: sum.complete ? null : sum.done / Math.max(1, vols.length)
     }
   })
+
+  // Series started and not finished, most recently read first. Only on a
+  // shelf big enough for it to save hunting (not three comics), and capped so
+  // a lot on the go doesn't turn it into a second shelf.
+  const inProgress = !query && grouped.size >= CONTINUE_MIN_SERIES
+    ? filteredSeries
+        .map(([name, vols]) => ({ name, vols, sum: summaries.get(name)! }))
+        .filter(({ sum }) => sum.next && !sum.complete && (sum.done > 0 || sum.entries.some((e) => e.state.kind === 'partial')))
+        .sort((a, b) => (b.sum.lastRead?.lastOpenedAt ?? 0) - (a.sum.lastRead?.lastOpenedAt ?? 0))
+        .slice(0, CONTINUE_MAX)
+    : []
 
   return (
     <PageShell title={pageTitle} searchValue={query} onSearch={setQuery}>
       {loading && <p style={{ color: 'var(--text-muted)' }}>Loading...</p>}
       {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
+      {!loading && !error && inProgress.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <PosterRow
+            title="Continue reading"
+            cards={inProgress.map(({ name, vols, sum }) => ({
+              key: name,
+              posterPath: vols[0].posterPath,
+              title: name,
+              subtitle: `${sum.next!.label === 'Next' ? 'Next: ' : ''}${cleanDisplayTitle(sum.next!.video.title)}`,
+              progress: sum.done / Math.max(1, vols.length),
+              // Straight into the reader; closing it comes back to the shelf.
+              onClick: () => openEntry(sum.next!.video, sum.next!.startAt)
+            }))}
+          />
+        </div>
+      )}
       {!loading && !error && (
         <MediaGrid
           category="manga"
           items={seriesCards}
           onSelect={(card) => {
+            // A click landing during the modal's fade-out would be cleared by its timer.
+            if (closing) return
             const name = card.title
             const vols = grouped.get(name) ?? []
             if (vols.length === 1) {
               // Single volume — open directly
               const vol = vols[0]
-              window.api.library.markOpened(vol.filePath)
-              setLastOpenedMap((prev) => ({ ...prev, [vol.filePath]: Math.floor(Date.now() / 1000) }))
-              // No series page in between to have loaded the position, so ask
+              // No series view in between to have loaded the position, so ask
               // for it before opening.
               window.api.playback.getProgress([vol.filePath]).then((p) => {
-                setStartAt(startPosition(watchState(p[vol.filePath], 0, category)))
-                if (ext(vol.filePath) === '.epub') setSelectedBook(vol)
-                else if (ext(vol.filePath) === '.pdf') setSelectedPdf(vol)
-                else setSelectedCbz(vol)
+                openEntry(vol, startPosition(watchState(p[vol.filePath], 0, category)))
               })
             } else {
               setSelectedSeries(name)
             }
           }}
           emptyMessage={emptyMessage}
+          suspended={!!selectedSeries}
+        />
+      )}
+      {selectedSeries && (
+        <MangaSeriesModal
+          key={selectedSeries}
+          seriesName={selectedSeries}
+          volumes={grouped.get(selectedSeries) ?? []}
+          category={category}
+          progressTick={progressTick}
+          closing={closing}
+          onClose={() => (openedReader.current ? closeModal() : backOr(closeModal))}
+          onMarkRead={markRead}
+          onSelect={openEntry}
         />
       )}
     </PageShell>

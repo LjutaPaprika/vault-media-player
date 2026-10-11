@@ -4,7 +4,7 @@ import MediaGrid from '../components/MediaGrid'
 import MovieModal from '../components/MovieModal'
 import { usePosterModal } from '../components/PosterModal'
 import { useLibrary } from '../hooks/useLibrary'
-import { useAppStore } from '../store/appStore'
+import { useAppStore, useOpenRequest } from '../store/appStore'
 import styles from './MoviesPage.module.css'
 
 interface SelectedMovie {
@@ -38,6 +38,14 @@ export default function MoviesPage(): JSX.Element {
   }, [items, genreEdits])
 
   useEffect(() => { setSelected(null) }, [contentResetKey])
+
+  // Home asked for a film: open its modal once the shelf has loaded, and
+  // closing it goes back to Home.
+  const { backOr } = useOpenRequest('movies', !loading, (req) => {
+    const item = items.find((i) => i.filePath === req.filePath)
+    if (item) setSelected({ title: item.title, year: item.year ?? null, posterPath: item.posterPath ?? null, filePath: item.filePath, genre: item.genre ?? null })
+    return !!item
+  })
 
   const filtered = items.filter((i) => {
     if (!i.title.toLowerCase().includes(query.toLowerCase())) return false
@@ -110,7 +118,7 @@ export default function MoviesPage(): JSX.Element {
           genre={selected.filePath in genreEdits ? genreEdits[selected.filePath] : selected.genre}
           onGenreChange={(g) => setGenreEdits((prev) => ({ ...prev, [selected.filePath]: g }))}
           closing={closing}
-          onClose={close}
+          onClose={() => backOr(close)}
         />
       )}
     </PageShell>
