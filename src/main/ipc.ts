@@ -878,9 +878,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     openAudio(filePath, resolveLibraryRoot())
     win.webContents.send('music:pause')
   })
-  ipcMain.handle('playback:launchGame', (_event, filePath: string, platform: string) =>
-    launchGame(filePath, platform, resolveLibraryRoot())
-  )
+  // Recorded once the launch has gone through (it throws when the game can't
+  // run here), so Home's "Recently played" is in the order games were played.
+  // Videos and books record theirs as they open; games never did, which left
+  // that row ordered by playtime instead.
+  ipcMain.handle('playback:launchGame', async (_event, filePath: string, platform: string) => {
+    await launchGame(filePath, platform, resolveLibraryRoot())
+    setLastOpened(filePath)
+  })
 
   // Bridge playtime saves to the renderer so games views can refresh in place
   // without a manual scan: 'saved' ~10 s after the game closes (its first
