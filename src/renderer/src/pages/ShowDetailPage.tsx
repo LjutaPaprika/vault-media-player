@@ -11,6 +11,7 @@ import { useAppStore } from '../store/appStore'
 import { continueTarget, startPosition, watchedFraction, watchState, type ContinueTarget } from '../utils/resume'
 import { upNextAfter } from '../utils/upNext'
 import { episodeLabel, parseEpisode, type ParsedEpisode } from '../utils/episodes'
+import { orderSeasons, sectionLabel, subLabelsOf } from '../utils/episodeOrder'
 import { isSeriesComplete } from '../utils/seriesComplete'
 import AutoplayToggle from '../components/AutoplayToggle'
 import styles from './ShowDetailPage.module.css'
@@ -38,10 +39,6 @@ function extrasGroupKey(title: string): string | null {
   const groupNumTitle = title.match(/^(.+?)\s+-\s+\d+\s+-\s+.+$/)
   if (groupNumTitle) return groupNumTitle[1].trim()
   return null
-}
-
-function sectionLabel(seasonNum: number, subLabels: Map<number, string>): string {
-  return subLabels.get(seasonNum) ?? (seasonNum === 0 ? 'Movies / Specials' : `Season ${seasonNum}`)
 }
 
 type NavItem =
@@ -226,60 +223,9 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
 
   const seriesComplete = useMemo(() => isSeriesComplete(episodes), [episodes])
 
-  const seasons = useMemo(() => {
-    const map = new Map<number, ParsedEpisode[]>()
-    for (const ep of parsed) {
-      if (!map.has(ep.season)) map.set(ep.season, [])
-      map.get(ep.season)!.push(ep)
-    }
-    return map
-  }, [parsed])
+  const subLabelMap = useMemo(() => subLabelsOf(parsed), [parsed])
 
-  const subLabelMap = useMemo(() => {
-    const m = new Map<number, string>()
-    for (const ep of parsed) {
-      if (ep.subLabel && !m.has(ep.season)) m.set(ep.season, ep.subLabel)
-    }
-    return m
-  }, [parsed])
-
-  const orderedSeasons = useMemo(() => {
-    let entries = Array.from(seasons.entries())
-
-    // Default: sort each section by episode number, then file path as tiebreaker
-    entries = entries.map(([seasonNum, eps]) => [
-      seasonNum,
-      [...eps].sort((a, b) =>
-        a.episode !== b.episode ? a.episode - b.episode : a.filePath.localeCompare(b.filePath)
-      ),
-    ] as [number, ParsedEpisode[]])
-
-    if (watchOrder) {
-      // Order sections
-      entries = entries.sort(([a], [b]) => {
-        const ai = watchOrder.sectionOrder.findIndex((l) => l.toLowerCase() === sectionLabel(a, subLabelMap).toLowerCase())
-        const bi = watchOrder.sectionOrder.findIndex((l) => l.toLowerCase() === sectionLabel(b, subLabelMap).toLowerCase())
-        return (ai === -1 ? Infinity : ai) - (bi === -1 ? Infinity : bi)
-      })
-
-      // Order items within sections that have explicit item lists
-      entries = entries.map(([seasonNum, eps]) => {
-        const order = watchOrder.itemOrder[sectionLabel(seasonNum, subLabelMap).toLowerCase()]
-        if (!order?.length) return [seasonNum, eps] as [number, ParsedEpisode[]]
-        const sorted = [...eps].sort((a, b) => {
-          const ai = order.findIndex((t) => t.toLowerCase() === a.title.toLowerCase())
-          const bi = order.findIndex((t) => t.toLowerCase() === b.title.toLowerCase())
-          if (ai === -1 && bi === -1) return 0
-          if (ai === -1) return 1
-          if (bi === -1) return -1
-          return ai - bi
-        })
-        return [seasonNum, sorted] as [number, ParsedEpisode[]]
-      })
-    }
-
-    return entries
-  }, [seasons, watchOrder, subLabelMap])
+  const orderedSeasons = useMemo(() => orderSeasons(parsed, watchOrder), [parsed, watchOrder])
 
   // Continue follows the episodes in the order the page lists them, custom
   // watch orders included, so "next" means the row below. A series watched

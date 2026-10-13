@@ -44,6 +44,7 @@ import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
 import { getHomeData } from './home'
+import { readWatchOrder, resolveSeriesDir } from './watchOrder'
 import { clearProgress, progressFileFor, progressKey, readProgress, saveProgress, watchProgress, writeQueue, type VideoProgress } from './playbackProgress'
 import { artworkStats, episodesWithoutStill, fillEpisodeStills, moveLegacyThumbnails, pruneArtwork, warmThumbs } from './thumbnails'
 import { setCacheRootResolver } from './cacheDb'
@@ -597,57 +598,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // ─── Watch order ──────────────────────────────────────────────────────────
 
-  function resolveSeriesDir(seriesTitle: string, category: string): string | null {
-    const root = resolveLibraryRoot()
-    const categoryDir = join(root, 'media', category)
-    const direct = join(categoryDir, seriesTitle)
-    if (existsSync(direct)) return direct
-    try {
-      const match = readdirSync(categoryDir, { withFileTypes: true }).find((d) => {
-        if (!d.isDirectory()) return false
-        const processed = d.name
-          .replace(/\s*\(\d{4}\).*$/, '')
-          .replace(/\s*\[.*?\]/g, '')
-          .replace(/\./g, ' ')
-          .trim()
-        return processed === seriesTitle
-      })
-      return match ? join(categoryDir, match.name) : null
-    } catch { return null }
-  }
-
-  ipcMain.handle('library:getWatchOrder', (_event, seriesTitle: string, category: string) => {
-    const seriesDir = resolveSeriesDir(seriesTitle, category)
-    if (!seriesDir) return null
-
-    const filePath = join(seriesDir, 'watchorder.txt')
-    if (!existsSync(filePath)) return null
-
-    const sectionOrder: string[] = []
-    const itemOrder: Record<string, string[]> = {}
-    let currentSection: string | null = null
-
-    const lines = readFileSync(filePath, 'utf8').split(/\r?\n/).filter((l) => l.trim())
-
-    // Use relative indentation — whatever the minimum indent is counts as the section level
-    const minIndent = lines.reduce((min, l) => Math.min(min, l.match(/^(\s*)/)?.[1].length ?? 0), Infinity)
-
-    for (const line of lines) {
-      const indent = line.match(/^(\s*)/)?.[1].length ?? 0
-      const trimmed = line.trim()
-      if (indent === minIndent) {
-        currentSection = trimmed
-        sectionOrder.push(trimmed)
-      } else if (currentSection) {
-        ;(itemOrder[currentSection.toLowerCase()] ??= []).push(trimmed)
-      }
-    }
-
-    return { sectionOrder, itemOrder }
-  })
+  ipcMain.handle('library:getWatchOrder', (_event, seriesTitle: string, category: string) =>
+    readWatchOrder(resolveLibraryRoot(), seriesTitle, category))
 
   ipcMain.handle('library:getWatchGuide', (_event, seriesTitle: string, category: string) => {
-    const seriesDir = resolveSeriesDir(seriesTitle, category)
+    const seriesDir = resolveSeriesDir(resolveLibraryRoot(), seriesTitle, category)
     if (!seriesDir) return null
     const filePath = join(seriesDir, 'watchguide.txt')
     if (!existsSync(filePath)) return null
