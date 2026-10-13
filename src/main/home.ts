@@ -9,6 +9,11 @@ import { readProgress, type VideoProgress } from './playbackProgress'
 // The manga shelf's own test for a bonus chapter (Ch. 10.5), so Home and the
 // shelf agree on when a series is complete.
 import { isExtra } from '../renderer/src/utils/readingEntries'
+// A show's page and Home list its episodes in one order, so Home's "next" is
+// the row below on the page.
+import { parseEpisode } from '../renderer/src/utils/episodes'
+import { orderSeasons } from '../renderer/src/utils/episodeOrder'
+import { readWatchOrder } from './watchOrder'
 
 interface Item {
   id: number
@@ -75,6 +80,20 @@ function seriesOf(item: Item): string {
   return item.filePath
 }
 
+/**
+ * The entries in the order their shelf lists them: a show's episodes as its
+ * page does (seasons, then sections like "S1 Specials", or its watchorder.txt),
+ * chapters by title.
+ */
+function inOrder(root: string, items: Item[]): Item[] {
+  const first = items[0]
+  if (READING.has(first.category)) return [...items].sort((a, b) => collator.compare(a.title, b.title))
+  if (first.category !== 'tv' && first.category !== 'anime') return items
+  const byPath = new Map(items.map((i) => [i.filePath, i]))
+  return orderSeasons(items.map(parseEpisode), readWatchOrder(root, first.title, first.category))
+    .flatMap(([, eps]) => eps.map((ep) => byPath.get(ep.filePath)!))
+}
+
 /** How close to the end counts as finished, as the renderer's watchState has it: the last tenth, capped at ten minutes of credits. */
 function endMargin(duration: number): number {
   return Math.min(600, duration * 0.1)
@@ -129,10 +148,10 @@ export function getHomeData(root: string, limit = 24): HomeData {
   for (const items of groups.values()) {
     const activityOf = (i: Item): number => Math.max(i.lastOpenedAt ?? 0, progress[i.filePath]?.savedAt ?? 0)
     const first = items[0]
-    // Chapters run in title order, as their pages list them; episodes in
-    // file order (S01E01, S01E02…).
-    const byTitle = READING.has(first.category)
-    const ordered = [...items].sort((a, b) => collator.compare(byTitle ? a.title : a.filePath, byTitle ? b.title : b.filePath))
+    // Untouched series are skipped before their order is worked out, which
+    // for a show reads its watchorder.txt.
+    if (!items.some((i) => activityOf(i) > 0)) continue
+    const ordered = inOrder(root, items)
 
     // The entry touched last. Ties go to the one furthest along: marking a
     // whole series watched stamps every episode with the same time, and the
