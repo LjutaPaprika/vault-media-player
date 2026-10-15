@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import PageShell from '../components/PageShell'
 import MediaGrid from '../components/MediaGrid'
-import GameLaunchModal, { type CompareRow } from '../components/GameLaunchModal'
+import GameLaunchModal, { type CompareRow, type Status } from '../components/GameLaunchModal'
 import { usePosterModal } from '../components/PosterModal'
 import { useLibrary } from '../hooks/useLibrary'
 import { useOpenRequest } from '../store/appStore'
@@ -49,7 +49,98 @@ function formatPlaytime(seconds: number | undefined): string | null {
   return `${hours}h ${minutes}m`
 }
 
-function buildComparison(platform: string, sys: SystemInfo): CompareRow[] {
+// What each emulator asks of the CPU, from the projects' own requirement pages.
+// Below `min` threads it may not run (fail); below `rec` it may struggle (warn).
+//   Xenia Canary quickstart: x86-64 with AVX (AVX2 better), 6+ cores recommended.
+//   shadPS4 FAQ: 4 cores / 6 threads, x86-64-v3 (Intel Haswell / AMD Excavator
+//   or newer), which includes AVX2.
+//   Dolphin: dual core; xemu has no published minimum, so it gets Dolphin's.
+interface CpuNeed { min: number; rec: number; needs?: 'avx' | 'avx2'; text: string }
+const EMULATOR_CPU: Record<string, CpuNeed> = {
+  xbox360:  { min: 4, rec: 6, needs: 'avx',  text: 'AVX support, 4+ threads (6+ cores recommended)' },
+  ps4:      { min: 6, rec: 8, needs: 'avx2', text: 'AVX2 (Intel 4th gen / Ryzen or newer), 6+ threads' },
+  gamecube: { min: 2, rec: 4, text: 'Dual core (quad core recommended)' },
+  wii:      { min: 2, rec: 4, text: 'Dual core (quad core recommended)' },
+  xbox:     { min: 2, rec: 4, text: 'Dual core (quad core recommended)' }
+}
+const RETRO_CPU: CpuNeed = { min: 2, rec: 2, text: 'Any dual-core CPU' }
+
+const worst = (a: Status, b: Status): Status => {
+  const rank: Record<Status, number> = { info: 0, ok: 1, warn: 2, fail: 3 }
+  return rank[a] >= rank[b] ? a : b
+}
+
+/** A CPU row from a thread count and an optional instruction-set need. */
+function cpuRow(sys: SystemInfo, required: string, threadStatus: Status, needs: 'avx' | 'avx2' | null): CompareRow {
+  let status = threadStatus
+  let featureNote = ''
+  if (needs) {
+    const has = sys.cpuFeatures?.[needs] ?? null
+    const name = needs.toUpperCase()
+    // Unknown (macOS, or a Windows too old to say) is never shown as a pass.
+    if (has === false) { status = 'fail'; featureNote = `, no ${name}` }
+    else if (has === null) { status = worst(status, 'warn'); featureNote = `, ${name} not verified` }
+    else featureNote = `, ${name}`
+  }
+  return {
+    label:  'CPU',
+    required,
+    actual: `${sys.cpuModel} (${sys.cpuCores} threads${featureNote})`,
+    status
+  }
+}
+
+/** Rows for a PC game, judged against the minimum specs in its game.json. */
+function pcRows(sys: SystemInfo, req: GameRequirements | null, bestGpu: GpuInfo | null, vramGB: number): CompareRow[] {
+  const rows: CompareRow[] = []
+  const noSpecs = 'No specs recorded for this game'
+
+  if (req?.ramGB) {
+    // Windows reports installed RAM minus what's reserved (integrated graphics
+    // take a slice), so a 16 GB laptop can show 15 GB. Allow 10% for that.
+    rows.push({
+      label:    'RAM',
+      required: `${req.ramGB} GB+`,
+      actual:   `${sys.ramGB} GB`,
+      status:   sys.ramGB >= req.ramGB * 0.9 ? 'ok' : sys.ramGB >= req.ramGB * 0.75 ? 'warn' : 'fail'
+    })
+  }
+
+  if (!req || req.vramGB === null) {
+    rows.push({ label: 'GPU', required: req?.gpu ?? noSpecs, actual: bestGpu ? bestGpu.name : 'Not detected', status: 'info' })
+  } else {
+    const need = req.vramGB
+    const required = need === 0
+      ? `${req.gpu ?? 'Any'} (integrated is fine)`
+      : `${req.gpu ? `${req.gpu}, ` : ''}${need < 1 ? `${Math.round(need * 1024)} MB` : `${need} GB`} VRAM`
+    const dedicated = bestGpu?.dedicated ?? false
+    // An undetected GPU (macOS, or the PowerShell query failing) isn't judged.
+    const status: Status = !bestGpu ? 'info'
+      : need === 0 ? 'ok'
+      : dedicated ? (vramGB >= need ? 'ok' : 'warn')
+      : need <= 1 ? 'warn' : 'fail'
+    rows.push({
+      label: 'GPU',
+      required,
+      actual: bestGpu ? (dedicated ? `${bestGpu.name} (${vramGB} GB)` : `${bestGpu.name} (integrated)`) : 'Not detected',
+      status
+    })
+  }
+
+  if (!req || req.cpuThreads === null) {
+    rows.push({ label: 'CPU', required: req?.cpu ?? noSpecs, actual: `${sys.cpuModel} (${sys.cpuCores} threads)`, status: 'info' })
+  } else {
+    // Thread count is a rough stand-in for the listed CPU: below it the game
+    // may struggle, and well below it (under three quarters) it may not run.
+    const min = req.cpuThreads
+    const threads: Status = sys.cpuCores >= min ? 'ok' : sys.cpuCores >= min * 0.75 ? 'warn' : 'fail'
+    const parts = [`${min}+ threads`, ...(req.avx2 ? ['AVX2'] : [])].join(', ')
+    rows.push(cpuRow(sys, req.cpu ? `${req.cpu} (${parts})` : parts, threads, req.avx2 ? 'avx2' : null))
+  }
+  return rows
+}
+
+function buildComparison(platform: string, sys: SystemInfo, req: GameRequirements | null): CompareRow[] {
   const rows: CompareRow[] = []
   const dedicated = sys.gpus.find((g) => g.dedicated)
   const bestGpu   = dedicated ?? sys.gpus[0] ?? null
@@ -66,6 +157,8 @@ function buildComparison(platform: string, sys: SystemInfo): CompareRow[] {
       status:   isWindows ? 'ok' : 'fail'
     })
   }
+
+  if (platform === 'pc') return [...rows, ...pcRows(sys, req, bestGpu, vramGB)]
 
   // RAM
   const ramReqs: Record<string, number> = {
@@ -105,7 +198,7 @@ function buildComparison(platform: string, sys: SystemInfo): CompareRow[] {
       actual:   bestGpu ? gpuName : 'Not detected',
       status:   dedicated ? 'ok' : 'warn'
     })
-  } else if (['n64', 'nds', 'gba', 'snes', 'gb', 'gbc', 'mame', 'pc'].includes(platform)) {
+  } else if (['n64', 'nds', 'gba', 'snes', 'gb', 'gbc', 'mame'].includes(platform)) {
     rows.push({
       label:    'GPU',
       required: 'Any',
@@ -114,13 +207,10 @@ function buildComparison(platform: string, sys: SystemInfo): CompareRow[] {
     })
   }
 
-  // CPU — always show for context, no pass/fail (AVX2 detection isn't reliable)
-  rows.push({
-    label:    'CPU',
-    required: platform === 'xbox360' ? 'AVX2 support (Intel 4th gen+ / Ryzen)' : 'Any modern CPU',
-    actual:   `${sys.cpuModel} (${sys.cpuCores} threads)`,
-    status:   'info'
-  })
+  // CPU
+  const cpu = EMULATOR_CPU[platform] ?? RETRO_CPU
+  const threads: Status = sys.cpuCores >= cpu.rec ? 'ok' : sys.cpuCores >= cpu.min ? 'warn' : 'fail'
+  rows.push(cpuRow(sys, cpu.text, threads, cpu.needs ?? null))
 
   return rows
 }
@@ -149,6 +239,20 @@ export default function GamesPage(): JSX.Element {
   useEffect(() => {
     window.api.system.getInfo().then(setSysInfo)
   }, [])
+
+  // A PC game's minimum specs live in its game.json; read them each time its
+  // modal opens, so an edit there shows without a rescan. Tagged with the
+  // game's path so a quick switch can't show the previous game's specs.
+  const [requirements, setRequirements] = useState<{ filePath: string; req: GameRequirements | null } | null>(null)
+  useEffect(() => {
+    if (pending?.platform !== 'pc') return
+    const filePath = pending.filePath
+    let live = true
+    window.api.system.getGameRequirements(filePath)
+      .catch(() => null)
+      .then((req) => { if (live) setRequirements({ filePath, req }) })
+    return () => { live = false }
+  }, [pending?.filePath, pending?.platform])
 
   // Re-fetch the games list when playtime is saved so the card / launch
   // modal show the new playtime without needing a manual scan. The event
@@ -195,7 +299,11 @@ export default function GamesPage(): JSX.Element {
   }
 
   const filtered    = items.filter((i) => i.title.toLowerCase().includes(query.toLowerCase()))
-  const comparison  = pending && sysInfo ? buildComparison(pending.platform, sysInfo) : null
+  // A PC game waits for its specs ("Detecting system specs…" meanwhile).
+  const req         = pending && requirements?.filePath === pending.filePath ? requirements.req : undefined
+  const comparison  = pending && sysInfo && (pending.platform !== 'pc' || req !== undefined)
+    ? buildComparison(pending.platform, sysInfo, req ?? null)
+    : null
   const warning     = pending ? PLATFORM_WARNINGS[pending.platform] : null
   const hasFail     = comparison?.some((r) => r.status === 'fail') ?? false
 

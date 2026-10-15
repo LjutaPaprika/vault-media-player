@@ -156,7 +156,22 @@ interface SystemInfo {
   ramGB: number
   cpuModel: string
   cpuCores: number
+  /** null = unknown (macOS, or a Windows build too old to report the flag). */
+  cpuFeatures: { avx: boolean | null; avx2: boolean | null }
   gpus: GpuInfo[]
+}
+
+/** A PC game's minimum specs from the "requirements" block of its game.json. */
+interface GameRequirements {
+  source: string | null
+  checked: string | null
+  cpu: string | null
+  cpuThreads: number | null
+  avx2: boolean
+  ramGB: number | null
+  gpu: string | null
+  /** 0 = integrated graphics are enough. */
+  vramGB: number | null
 }
 
 interface StorageStats {
@@ -360,6 +375,8 @@ interface Window {
     system: {
       getInfo:    () => Promise<SystemInfo>
       getAppInfo: () => Promise<AppInfo>
+      /** null when the game has no requirements block (or isn't a PC game). */
+      getGameRequirements: (exePath: string) => Promise<GameRequirements | null>
     }
     platform: NodeJS.Platform
   }

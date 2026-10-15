@@ -155,7 +155,8 @@ contextBridge.exposeInMainWorld('api', {
   // System info
   system: {
     getInfo:    () => ipcRenderer.invoke('system:getInfo'),
-    getAppInfo: () => ipcRenderer.invoke('system:getAppInfo')
+    getAppInfo: () => ipcRenderer.invoke('system:getAppInfo'),
+    getGameRequirements: (exePath: string) => ipcRenderer.invoke('system:getGameRequirements', exePath)
   },
 
   // Platform info

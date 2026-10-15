@@ -43,6 +43,7 @@ import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
 import { playtimeEvents } from './playtime'
+import { readGameRequirements } from './gameRequirements'
 import { getHomeData } from './home'
 import { readWatchOrder, resolveSeriesDir } from './watchOrder'
 import { clearProgress, progressFileFor, progressKey, readProgress, saveProgress, watchProgress, writeQueue, type VideoProgress } from './playbackProgress'
@@ -1090,7 +1091,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   // ─── System info ─────────────────────────────────────────────────────────
   // Cached after first call — hardware doesn't change during a session
-  let cachedSystemInfo: { platform: string; ramGB: number; cpuModel: string; cpuCores: number; gpus: { name: string; vramMB: number; dedicated: boolean }[] } | null = null
+  let cachedSystemInfo: {
+    platform: string; ramGB: number; cpuModel: string; cpuCores: number
+    cpuFeatures: { avx: boolean | null; avx2: boolean | null }
+    gpus: { name: string; vramMB: number; dedicated: boolean }[]
+  } | null = null
 
   ipcMain.handle('system:getInfo', async () => {
     if (cachedSystemInfo) return cachedSystemInfo
@@ -1101,39 +1106,57 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const cpuCores = cpuList.length
 
     let gpus: { name: string; vramMB: number; dedicated: boolean }[] = []
+    // null = unknown. macOS stays unknown: PC games there run under Rosetta,
+    // which supplies AVX/AVX2 itself on recent macOS.
+    let cpuFeatures: { avx: boolean | null; avx2: boolean | null } = { avx: null, avx2: null }
 
     if (process.platform === 'win32') {
       try {
-        // Win32_VideoController.AdapterRAM is a UINT32 — caps at 4 GB regardless
-        // of actual VRAM. Read the 64-bit qwMemorySize from the display class
-        // registry instead so 8/12/16/24 GB cards report correctly.
+        // One PowerShell run for both, since each spawn stalls the main process.
+        // GPUs: Win32_VideoController.AdapterRAM is a UINT32 — caps at 4 GB
+        // regardless of actual VRAM. Read the 64-bit qwMemorySize from the
+        // display class registry instead so 8/12/16/24 GB cards report correctly.
+        // CPU: kernel32's IsProcessorFeaturePresent with PF_SSE4_1 (37),
+        // PF_AVX (39) and PF_AVX2 (40). Windows builds that predate the newer
+        // flags answer false for all of them, so a false SSE4.1 — which every
+        // x64 CPU since 2008 has — means the answer is unknown, not "no AVX".
         const stdout = await new Promise<string>((resolve) => {
           let out = ''
           const ps = spawn('powershell', [
             '-NoProfile', '-Command',
-            "Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\*' -ErrorAction SilentlyContinue | Where-Object { $_.DriverDesc -and $_.PSChildName -match '^\\d{4}$' } | Select-Object @{n='Name';e={$_.DriverDesc}}, @{n='AdapterRAM';e={[int64]$_.'HardwareInformation.qwMemorySize'}} | ConvertTo-Json -Compress"
+            [
+              "$g = Get-ItemProperty 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}\\*' -ErrorAction SilentlyContinue | Where-Object { $_.DriverDesc -and $_.PSChildName -match '^\\d{4}$' } | Select-Object @{n='Name';e={$_.DriverDesc}}, @{n='AdapterRAM';e={[int64]$_.'HardwareInformation.qwMemorySize'}}",
+              '$f = $null',
+              "try { Add-Type -Namespace VaultCpu -Name Features -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern bool IsProcessorFeaturePresent(uint feature);' -ErrorAction Stop; $f = @{ sse41 = [VaultCpu.Features]::IsProcessorFeaturePresent(37); avx = [VaultCpu.Features]::IsProcessorFeaturePresent(39); avx2 = [VaultCpu.Features]::IsProcessorFeaturePresent(40) } } catch {}",
+              '@{ gpus = @($g | Where-Object { $_ }); cpu = $f } | ConvertTo-Json -Compress -Depth 4'
+            ].join('; ')
           ])
           ps.stdout.on('data', (d: Buffer) => { out += d.toString() })
           ps.on('close', () => resolve(out.trim()))
           ps.on('error', () => resolve(''))
-          setTimeout(() => { ps.kill(); resolve('') }, 6000)
+          setTimeout(() => { ps.kill(); resolve('') }, 8000)
         })
         if (stdout) {
-          const raw = JSON.parse(stdout)
-          const arr: { Name: string; AdapterRAM: number }[] = Array.isArray(raw) ? raw : [raw]
-          gpus = arr.map((g) => {
+          const raw = JSON.parse(stdout) as { gpus?: unknown; cpu?: { sse41?: boolean; avx?: boolean; avx2?: boolean } | null }
+          const arr = (Array.isArray(raw.gpus) ? raw.gpus : raw.gpus ? [raw.gpus] : []) as { Name?: string; AdapterRAM?: number }[]
+          gpus = arr.filter(Boolean).map((g) => {
             const name    = g.Name ?? ''
             const vramMB  = Math.round((g.AdapterRAM ?? 0) / (1024 ** 2))
             const dedicated = vramMB > 1024 && /nvidia|geforce|quadro|radeon\s+rx|radeon\s+pro|radeon\s+vega|intel\s+arc/i.test(name)
             return { name, vramMB, dedicated }
           })
+          if (raw.cpu?.sse41 === true) {
+            cpuFeatures = { avx: raw.cpu.avx === true, avx2: raw.cpu.avx2 === true }
+          }
         }
       } catch { /* non-fatal */ }
     }
 
-    cachedSystemInfo = { platform: process.platform as string, ramGB, cpuModel, cpuCores, gpus }
+    cachedSystemInfo = { platform: process.platform as string, ramGB, cpuModel, cpuCores, cpuFeatures, gpus }
     return cachedSystemInfo
   })
+
+  ipcMain.handle('system:getGameRequirements', (_event, exePath: string) => readGameRequirements(exePath))
 
   ipcMain.handle('system:getAppInfo', async () => {
     const root = resolveLibraryRoot()
