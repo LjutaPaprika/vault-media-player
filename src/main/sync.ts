@@ -1,4 +1,4 @@
-import { execFile, execFileSync, execSync, spawn, spawnSync } from 'child_process'
+import { execFile, execFileSync, spawn, spawnSync } from 'child_process'
 import { BrowserWindow } from 'electron'
 import { existsSync, readdirSync, statSync, statfsSync, promises as fsp } from 'fs'
 import { join } from 'path'
@@ -196,6 +196,11 @@ const SYSTEM_FILE_GLOBS = ['.DS_Store', '._*', 'Thumbs.db', 'desktop.ini']
  * Mark the drive's plumbing — app folders and loose helper files — as hidden so
  * browsing the drive shows media, not machinery. Windows-only; the attribute
  * doesn't travel with the files, so this re-applies on whichever PC runs it.
+ *
+ * One cmd.exe runs every attrib, in the background. It used to be one blocking
+ * execSync per path, ten of them at startup and again on every scan, and each
+ * process start stalls the main process (see the drive-label lookup). Hiding is cosmetic,
+ * so nothing waits for it and a failure is ignored.
  */
 export function hideSystemPaths(driveRoot: string): void {
   if (process.platform !== 'win32') return
@@ -209,14 +214,14 @@ export function hideSystemPaths(driveRoot: string): void {
     )
   } catch { /* root unreadable - nothing to hide */ }
 
-  for (const name of [...named, ...prefixed]) {
-    const fullPath = join(driveRoot, name)
-    if (existsSync(fullPath)) {
-      try {
-        execSync(`attrib +h "${fullPath}"`, { stdio: 'ignore' })
-      } catch { /* may already be hidden, or locked by another process */ }
-    }
-  }
+  const paths = [...named, ...prefixed].map((name) => join(driveRoot, name)).filter((p) => existsSync(p))
+  if (paths.length === 0) return
+  // `&` runs each attrib whatever the last one returned: a path that is
+  // locked, or already hidden, doesn't stop the rest.
+  const script = paths.map((p) => `attrib +h "${p}"`).join(' & ')
+  execFile('cmd.exe', ['/d', '/s', '/c', `"${script}"`], { windowsHide: true, windowsVerbatimArguments: true }, () => {
+    /* may already be hidden, or locked by another process */
+  })
 }
 
 /**
