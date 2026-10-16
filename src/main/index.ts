@@ -217,10 +217,11 @@ app.whenReady().then(() => {
   })
 })
 
+// Quit on every platform when the last window closes. Letting Mac live on in
+// the dock without a window reopens the renderer via `activate` → createWindow,
+// which re-ran registerIpcHandlers and crashed on the duplicate ipcMain.handle.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  app.quit()
 })
 
 app.on('will-quit', () => {
