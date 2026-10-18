@@ -21,6 +21,18 @@ export const MAC_WINE_BIN = join(
 )
 
 /**
+ * Mach-O library search path for GPTK's D3DMetal + d3d12.so. Wine's d3d12.so
+ * links to `@loader_path/libd3dshared.dylib`, but libd3dshared.dylib ships in
+ * `wine/lib/external/` while d3d12.so sits in `wine/lib/wine/x86_64-unix/`.
+ * Without this on `DYLD_FALLBACK_LIBRARY_PATH`, the dylib resolver can't find
+ * it when a game first calls `D3D12CreateDevice`, and the game reports no GPU.
+ */
+export const MAC_GPTK_DYLD_PATHS = [
+  join(HOME, 'Library/Application Support/heroic/tools/game-porting-toolkit/Game-Porting-Toolkit-latest/Contents/Resources/wine/lib/external'),
+  join(HOME, 'Library/Application Support/heroic/tools/game-porting-toolkit/Game-Porting-Toolkit-latest/Contents/Resources/wine/lib/external/D3DMetal.framework/Versions/A/Resources')
+].join(':')
+
+/**
  * Apple's GPTK uses this fixed Wine user name. All of a game's host-side writes
  * under %USERPROFILE% land in `<prefix>/drive_c/users/crossover/`. If a future
  * GPTK release changes this, the save-link resolver and manual symlinks both

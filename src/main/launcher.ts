@@ -8,7 +8,7 @@ import { buildProgressLua } from './playbackProgress'
 import { startPlaytimeSession } from './playtime'
 import { ensureSaveLinks } from './saveLinks'
 import { restoreRegistrySettings, saveRegistrySettingsAfterSession } from './registrySettings'
-import { MAC_WINE_PREFIX, MAC_WINE_BIN } from './winePrefix'
+import { MAC_WINE_PREFIX, MAC_WINE_BIN, MAC_GPTK_DYLD_PATHS } from './winePrefix'
 
 // ─── Emulator map ─────────────────────────────────────────────────────────────
 
@@ -427,22 +427,35 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
           `before launching PC games on Mac.`
         )
       }
+      // cwd=game folder matches what Windows does (spawnDetached above) and
+      // what Explorer does on a double-click. Decima and other engines read
+      // their localization archives from the current directory, so without it
+      // every UI string shows as the raw id ("?launcher_play").
+      //
       // WINEDLLOVERRIDES skips the Mono/Gecko install dialogs that would block
       // headless launches. WINEDEBUG=-all silences Wine's noisy stderr so Vault's
       // own logs stay useful. ROSETTA_ADVERTISE_AVX=1 asks Rosetta 2 to tell the
       // translated x86 code that the CPU supports AVX, AVX2, F16C and BMI1/2,
       // which several Windows games (Ghost of Tsushima, Horizon Forbidden West,
       // The Last of Us Part I) check for at startup and refuse without.
-      // Verified on this Mac: default CPUID leaf1.ecx = 0x0298220f,
-      // with the var = 0x7ed8320f (AVX bit 28, F16C bit 29, XSAVE bit 26 flipped
-      // on), leaf7.ebx = 0x00000128 (BMI1 bit 3, AVX2 bit 5, BMI2 bit 8).
+      // Verified on this Mac with an x86 CPUID probe: default leaf1.ecx was
+      // 0x0298220f, with the var = 0x7ed8320f (AVX, F16C, XSAVE on) and
+      // leaf7.ebx = 0x00000128 (BMI1, AVX2, BMI2 on).
+      //
+      // DYLD_FALLBACK_LIBRARY_PATH adds GPTK's external library folder, where
+      // libd3dshared.dylib and D3DMetal.framework live. Wine's d3d12.so uses
+      // `@loader_path` to find libd3dshared, which does not resolve by default.
       const child = spawn(MAC_WINE_BIN, [filePath], {
+        cwd: dirname(filePath),
         env: {
           ...process.env,
           WINEPREFIX: MAC_WINE_PREFIX,
           WINEDLLOVERRIDES: 'mscoree=;mshtml=',
           WINEDEBUG: '-all',
-          ROSETTA_ADVERTISE_AVX: '1'
+          ROSETTA_ADVERTISE_AVX: '1',
+          DYLD_FALLBACK_LIBRARY_PATH: process.env['DYLD_FALLBACK_LIBRARY_PATH']
+            ? `${MAC_GPTK_DYLD_PATHS}:${process.env['DYLD_FALLBACK_LIBRARY_PATH']}`
+            : MAC_GPTK_DYLD_PATHS
         },
         detached: true,
         stdio: 'ignore'
