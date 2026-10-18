@@ -429,9 +429,19 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
       }
       // WINEDLLOVERRIDES skips the Mono/Gecko install dialogs that would block
       // headless launches. WINEDEBUG=-all silences Wine's noisy stderr so Vault's
-      // own logs stay useful.
+      // own logs stay useful. ROSETTA_ADVANCED_INSTRUCTIONS=1 asks Rosetta 2 to
+      // expose F16C, AVX, AVX2 and BMI1/2 to the translated x86 code, which
+      // several Windows games (Ghost of Tsushima, Horizon Forbidden West, TLOU)
+      // check for at startup and refuse without. macOS 15+ supports it; older
+      // macOS ignores the variable.
       const child = spawn(MAC_WINE_BIN, [filePath], {
-        env: { ...process.env, WINEPREFIX: MAC_WINE_PREFIX, WINEDLLOVERRIDES: 'mscoree=;mshtml=', WINEDEBUG: '-all' },
+        env: {
+          ...process.env,
+          WINEPREFIX: MAC_WINE_PREFIX,
+          WINEDLLOVERRIDES: 'mscoree=;mshtml=',
+          WINEDEBUG: '-all',
+          ROSETTA_ADVANCED_INSTRUCTIONS: '1'
+        },
         detached: true,
         stdio: 'ignore'
       })
