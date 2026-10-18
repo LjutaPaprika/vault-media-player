@@ -429,18 +429,20 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
       }
       // WINEDLLOVERRIDES skips the Mono/Gecko install dialogs that would block
       // headless launches. WINEDEBUG=-all silences Wine's noisy stderr so Vault's
-      // own logs stay useful. ROSETTA_ADVANCED_INSTRUCTIONS=1 asks Rosetta 2 to
-      // expose F16C, AVX, AVX2 and BMI1/2 to the translated x86 code, which
-      // several Windows games (Ghost of Tsushima, Horizon Forbidden West, TLOU)
-      // check for at startup and refuse without. macOS 15+ supports it; older
-      // macOS ignores the variable.
+      // own logs stay useful. ROSETTA_ADVERTISE_AVX=1 asks Rosetta 2 to tell the
+      // translated x86 code that the CPU supports AVX, AVX2, F16C and BMI1/2,
+      // which several Windows games (Ghost of Tsushima, Horizon Forbidden West,
+      // The Last of Us Part I) check for at startup and refuse without.
+      // Verified on this Mac: default CPUID leaf1.ecx = 0x0298220f,
+      // with the var = 0x7ed8320f (AVX bit 28, F16C bit 29, XSAVE bit 26 flipped
+      // on), leaf7.ebx = 0x00000128 (BMI1 bit 3, AVX2 bit 5, BMI2 bit 8).
       const child = spawn(MAC_WINE_BIN, [filePath], {
         env: {
           ...process.env,
           WINEPREFIX: MAC_WINE_PREFIX,
           WINEDLLOVERRIDES: 'mscoree=;mshtml=',
           WINEDEBUG: '-all',
-          ROSETTA_ADVANCED_INSTRUCTIONS: '1'
+          ROSETTA_ADVERTISE_AVX: '1'
         },
         detached: true,
         stdio: 'ignore'
