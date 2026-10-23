@@ -9,16 +9,19 @@ export type FocusZone = 'sidebar' | 'content'
 
 /**
  * Something another page (Home) asked a shelf to open once it shows: a film's
- * modal, a series' page, or a chapter straight in the reader.
+ * modal, a series' page (playing an episode from it, if asked), or a chapter
+ * straight in the reader.
  */
 export interface OpenRequest {
   page: Page
-  /** Film file, or the chapter to open in the reader. */
+  /** Film file, the chapter to open in the reader, or the episode to play. */
   filePath?: string
   /** Series title (TV, anime) or folder name (manga, comics). */
   series?: string
   /** Where to resume a chapter: a page, or a chapter position for a book. */
   startAt?: number
+  /** Play the episode `filePath` from its series' page, as the page's Continue would. */
+  play?: boolean
   /** The page that asked; filled in by requestOpen. */
   from?: Page
 }
