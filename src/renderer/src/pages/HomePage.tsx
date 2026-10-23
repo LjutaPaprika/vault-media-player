@@ -85,14 +85,17 @@ function useOpeners(): { play: (s: Shown) => void; open: (s: Shown) => void } {
       goTo({ page, series: entry.series })
     }
   }, [goTo])
-  // Films play straight from Home. A series opens on its page, whose Continue
-  // button also queues the episodes after it, and a chapter opens in the reader.
+  // Films play straight from Home. An episode plays from its series' page,
+  // which queues the episodes after it as its own Continue does, and a chapter
+  // opens in the reader.
   const play = useCallback((s: Shown): void => {
     if (s.entry.category === 'movies') {
       const start = startPosition(s.state)
       window.api.playback.openVideo(s.target.filePath, s.entry.category, start > 0 ? start : undefined)
+    } else if (WATCHING.has(s.entry.category)) {
+      goTo({ page: s.entry.category as Page, series: s.entry.series, filePath: s.target.filePath, play: true })
     } else open(s)
-  }, [open])
+  }, [open, goTo])
   return { play, open }
 }
 

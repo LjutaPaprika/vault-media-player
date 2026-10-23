@@ -10,6 +10,8 @@ interface SelectedShow {
   title: string
   year: number | null
   posterPath: string | null
+  /** Episode to play once the page has loaded (Home's Play). */
+  playPath?: string
 }
 
 export default function AnimePage(): JSX.Element {
@@ -20,11 +22,11 @@ export default function AnimePage(): JSX.Element {
 
   useEffect(() => { setSelected(null) }, [contentResetKey])
 
-  // Home asked for a series: open its page once the shelf has loaded, and
-  // Back from it goes back to Home.
+  // Home asked for a series: open its page once the shelf has loaded (playing
+  // an episode from it, if asked), and Back from it goes back to Home.
   const { backOr } = useOpenRequest('anime', !loading, (req) => {
     const item = items.find((i) => i.title === req.series)
-    if (item) setSelected({ title: item.title, year: item.year ?? null, posterPath: item.posterPath ?? null })
+    if (item) setSelected({ title: item.title, year: item.year ?? null, posterPath: item.posterPath ?? null, playPath: req.play ? req.filePath : undefined })
     return !!item
   })
 
@@ -35,6 +37,7 @@ export default function AnimePage(): JSX.Element {
         year={selected.year ?? null}
         posterPath={selected.posterPath ?? null}
         category="anime"
+        playOnOpen={selected.playPath}
         onBack={() => backOr(() => setSelected(null))}
       />
     )

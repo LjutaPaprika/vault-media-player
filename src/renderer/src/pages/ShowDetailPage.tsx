@@ -21,6 +21,8 @@ interface Props {
   year: number | null
   posterPath: string | null
   category: string
+  /** Episode to play once the episodes and their order have loaded (Home's Play). */
+  playOnOpen?: string
   onBack: () => void
 }
 
@@ -101,7 +103,7 @@ function PartwayBar({ progress, category, onThumb }: { progress: VideoProgress |
   return <WatchedBar fraction={watchedFraction(state) ?? 0} className={onThumb ? undefined : styles.rowBar} />
 }
 
-export default function ShowDetailPage({ seriesTitle, year, posterPath, category, onBack }: Props): JSX.Element {
+export default function ShowDetailPage({ seriesTitle, year, posterPath, category, playOnOpen, onBack }: Props): JSX.Element {
   const { setFocusZone } = useAppStore()
   useEscapeKey(onBack)
   const [episodes, setEpisodes] = useState<MediaItem[]>([])
@@ -119,9 +121,12 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   const navItemsRef = useRef<NavItem[]>([])
   // When a season is toggled, store it here so the effect can re-focus the header
   const pendingFocusSeasonRef = useRef<number | null>(null)
+  // The episodes and their watch order are in, so the page's order is final.
+  const [listed, setListed] = useState(false)
 
   useEffect(() => {
-    window.api.library.getItems(category).then((all) => {
+    setListed(false)
+    const items = window.api.library.getItems(category).then((all) => {
       const eps = all.filter((i) => i.title === seriesTitle)
       setEpisodes(eps)
       if (eps.length > 0 && eps[0].filePath) {
@@ -131,8 +136,9 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     // Scoped to this show's category so a same-titled movie doesn't pull in its
     // extras (e.g. "The Gentlemen" exists as both a film and a series).
     window.api.library.getExtras(seriesTitle, category).then(setExtras)
-    window.api.library.getWatchOrder(seriesTitle, category).then(setWatchOrder)
+    const order = window.api.library.getWatchOrder(seriesTitle, category).then(setWatchOrder)
     window.api.library.getWatchGuide(seriesTitle, category).then(setWatchGuide)
+    Promise.all([items, order]).then(() => setListed(true))
   }, [seriesTitle])
 
   const progress = useVideoProgress([...episodes, ...extras].map((e) => e.filePath))
@@ -155,16 +161,19 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
     })
   }, [progress])
 
-  /** Opens a video, resuming where it was left off unless told where to start. */
-  function playFile(filePath: string, startAt?: number): void {
+  /**
+   * Opens a video, resuming where it was left off unless told where to start.
+   * `saved` stands in for the page's positions before they have loaded.
+   */
+  function playFile(filePath: string, startAt?: number, saved = progress): void {
     flushSync(() => setLaunchingPath(filePath))
     setTimeout(() => setLaunchingPath(null), 1500)
-    const start = startAt ?? startPosition(watchState(progress[filePath], 0, category))
+    const start = startAt ?? startPosition(watchState(saved[filePath], 0, category))
     // The episodes after this one, in the order the page lists them, play on
     // in the same window; an extra is not in that list, so it plays alone.
     const ordered = orderedSeasons.flatMap(([, eps]) => eps)
     const current = ordered.find((ep) => ep.filePath === filePath)
-    const upNext = upNextAfter(ordered, filePath, episodeLabel, progress, {}, category)
+    const upNext = upNextAfter(ordered, filePath, episodeLabel, saved, {}, category)
     window.api.playback.openVideo(filePath, category, start > 0 ? start : undefined, upNext, current ? episodeLabel(current) : undefined)
     const now = Math.floor(Date.now() / 1000)
     setEpisodes((prev) => prev.map((ep) => ep.filePath === filePath ? { ...ep, lastOpenedAt: now } : ep))
@@ -242,6 +251,16 @@ export default function ShowDetailPage({ seriesTitle, year, posterPath, category
   }, [orderedSeasons, episodes, progress, category, seriesComplete])
   const nextRef = useRef(next)
   nextRef.current = next
+
+  // Home's Play: once the list is in, play the episode it showed, queue and
+  // all. Its positions are read here, as the page's may not have arrived yet.
+  const playedOnOpen = useRef(false)
+  useEffect(() => {
+    if (!playOnOpen || !listed || playedOnOpen.current) return
+    playedOnOpen.current = true
+    window.api.playback.getProgress(episodes.map((e) => e.filePath))
+      .then((saved) => playFile(playOnOpen, undefined, saved))
+  }, [playOnOpen, listed])
 
   const sortedExtras = useMemo(() => {
     const order = watchOrder?.itemOrder['extras']
