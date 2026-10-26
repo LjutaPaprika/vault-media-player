@@ -182,7 +182,7 @@ The app expects a specific folder structure on the external drive. Run the inclu
     │   ├── windows/
     │   │   └── dolphin.exe
     │   └── ...
-    ├── simple64/      ← N64
+    ├── gopher64/      ← N64
     ├── xenia/         ← Xbox 360
     ├── mgba/          ← GBA / GB / GBC
     ├── melonds/       ← NDS

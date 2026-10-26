@@ -24,7 +24,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 const PLATFORM_EMULATOR: Record<string, string> = {
   pc:       'Native (no emulator)',
-  n64:      'Simple64',
+  n64:      'Gopher64',
   gamecube: 'Dolphin',
   wii:      'Dolphin',
   xbox:     'xemu',
