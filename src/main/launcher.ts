@@ -13,7 +13,7 @@ import { MAC_WINE_PREFIX, MAC_WINE_BIN, MAC_GPTK_DYLD_PATHS } from './winePrefix
 // ─── Emulator map ─────────────────────────────────────────────────────────────
 
 const PLATFORM_EMULATOR: Record<string, string> = {
-  n64:      'simple64',
+  n64:      'gopher64',
   gamecube: 'dolphin',
   wii:      'dolphin',
   xbox:     'xemu',
@@ -46,7 +46,7 @@ const MAC_EMULATOR_BUNDLE: Partial<Record<string, string>> = {
   dolphin:  'Dolphin.app/Contents/MacOS/Dolphin',
   melonds:  'melonDS.app/Contents/MacOS/melonDS',
   snes9x:   'Snes9x.app/Contents/MacOS/Snes9x',
-  simple64: 'simple64.app/Contents/MacOS/simple64',
+  gopher64: 'Gopher64.app/Contents/MacOS/gopher64',
   shadps4:  'shadps4.app/Contents/MacOS/shadps4',
   xemu:     'xemu.app/Contents/MacOS/xemu',
   // MAME is a true CLI on macOS (Homebrew or self-build) — falls through to raw binary.
