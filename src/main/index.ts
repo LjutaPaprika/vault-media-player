@@ -19,6 +19,8 @@ import { closeDb, probeDrive } from './database'
 import { flushPlaytimeSessions } from './playtime'
 import { closeCache } from './cacheDb'
 import { ensureSaveLinks } from './saveLinks'
+import { recoverParked, releaseParkedOnQuit } from './gameSessions'
+import { setRegistryStateDir } from './registrySettings'
 import { hideSystemPaths } from './sync'
 import { getOrCreateThumb } from './thumbnails'
 
@@ -104,6 +106,12 @@ app.whenReady().then(() => {
   try {
     const probe = probeDrive()
     if (probe.ok && probe.root) {
+      // Which registry keys Vault itself created on this PC: kept in Vault's
+      // own per-PC data folder, because the question is about this PC.
+      setRegistryStateDir(app.getPath('userData'))
+      // First anything a crashed or interrupted session left set aside, so the
+      // PC's own saves come back as soon as their game is no longer running.
+      try { recoverParked(probe.root) } catch (e) { console.error('[vault] set-aside recovery failed:', e) }
       ensureSaveLinks(probe.root)
       // Also here, not just on scan: the hidden attribute doesn't travel with
       // the files, so a drive opened on a new PC shows its plumbing at the root
@@ -227,6 +235,9 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   // Before the database closes: play sessions live in memory until saved.
   flushPlaytimeSessions()
+  // Then give back any PC's own saves set aside for a session whose game has
+  // closed; anything still in use is put back at the next start.
+  try { releaseParkedOnQuit() } catch (e) { console.error('[vault] could not put back set-aside saves:', e) }
   closeDb()
   closeCache()
 })

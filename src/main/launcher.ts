@@ -7,7 +7,8 @@ import { buildSkipSegmentLua } from './skipSegmentLua'
 import { buildProgressLua } from './playbackProgress'
 import { startPlaytimeSession } from './playtime'
 import { ensureSaveLinks } from './saveLinks'
-import { restoreRegistrySettings, saveRegistrySettingsAfterSession } from './registrySettings'
+import { restoreRegistrySettings } from './registrySettings'
+import { prepareGameSession, watchGameSession, abandonGameSession } from './gameSessions'
 import { MAC_WINE_PREFIX, MAC_WINE_BIN, MAC_GPTK_DYLD_PATHS } from './winePrefix'
 
 // ─── Emulator map ─────────────────────────────────────────────────────────────
@@ -401,12 +402,22 @@ export function launchGame(filePath: string, platform: string, driveRoot: string
 
   if (platform === 'pc') {
     if (process.platform === 'win32') {
-      // Settings the game keeps in the registry travel as .reg files on the
-      // drive: brought in before it starts, saved back once the session ends.
-      try { restoreRegistrySettings(driveRoot, filePath) } catch { /* never block a launch */ }
-      spawnDetached(filePath, [])
+      // If this PC has the game itself (Steam), its own saves and settings are
+      // set aside for the session so this copy uses the drive's. Throws, with
+      // a message for the user, if they are in use: starting the game anyway
+      // would write its progress into the PC's own saves.
+      prepareGameSession(driveRoot, filePath)
+      try {
+        // Settings the game keeps in the registry travel as .reg files on the
+        // drive: brought in before it starts, saved back once the session ends.
+        try { restoreRegistrySettings(driveRoot, filePath) } catch { /* never block a launch */ }
+        spawnDetached(filePath, [])
+      } catch (err) {
+        abandonGameSession(filePath)
+        throw err
+      }
       startPlaytimeSession(filePath, basename(filePath))
-      saveRegistrySettingsAfterSession(driveRoot, filePath)
+      watchGameSession(driveRoot, filePath)
       return
     }
     if (process.platform === 'darwin') {
