@@ -1,6 +1,6 @@
 {
   "name": "Vault",
-  "version": "1.34.7",
+  "version": "1.35.0",
   "description": "Personal media vault",
   "main": "out/main/index.js",
   "scripts": {
@@ -11,6 +11,7 @@
     "build:mac": "node scripts/fetch-mac-ffmpeg.js && npm run build && electron-builder --mac",
     "deploy:mac": "node scripts/fetch-mac-ffmpeg.js && npm run build && electron-builder --mac --config.mac.target=dir --config.directories.output=/Volumes/VAULT/app",
     "build:linux": "npm run build && electron-builder --linux",
+    "test": "node scripts/run-tests.mjs",
     "rebuild-native": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {

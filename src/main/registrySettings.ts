@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync, rmSync, mkdirSync 
 import { join, dirname, sep } from 'path'
 import { hostname } from 'os'
 import { execFileSync } from 'child_process'
-import { playtimeEvents } from './playtime'
+import type { Parkable } from './sessionParking'
 
 /**
  * Some games keep settings in the Windows registry rather than in files: Unity
@@ -27,9 +27,79 @@ import { playtimeEvents } from './playtime'
  * `game` is the game's folder on the drive; a session of any executable inside
  * it triggers the export. Only keys under HKCU\Software are accepted.
  *
+ * A PC that has the game itself (Steam) already has the key with its owner's
+ * settings. Importing over it would replace them for good, so that key is set
+ * aside for the session instead (registryParkablesForLaunch, see
+ * sessionParking.ts): copied to `<key>.vault-host`, the drive's settings
+ * imported, and afterwards the session's settings saved to the drive and the
+ * owner's key put back. A key counts as the PC's own unless this PC exported
+ * the drive copy (the stamp) or Vault created it here by importing into a PC
+ * that had none (recorded in Vault's per-PC data folder).
+ *
  * Windows only for now. The Mac runs these games under Wine, which has its own
  * registry; the same .reg files can be imported there with `wine reg import`.
  */
+
+/** reg.exe behind an interface, so the rules above can be tested without touching the registry. */
+export interface RegOps {
+  exists(key: string): boolean
+  copy(from: string, to: string): void
+  remove(key: string): void
+  importFile(file: string): void
+  exportKey(key: string, file: string): void
+}
+
+const run = (args: string[]): void => { execFileSync('reg', args, { stdio: 'ignore', windowsHide: true }) }
+
+export const realRegOps: RegOps = {
+  exists: (key) => { try { run(['query', `HKCU\\${key}`]); return true } catch { return false } },
+  copy: (from, to) => run(['copy', `HKCU\\${from}`, `HKCU\\${to}`, '/s', '/f']),
+  remove: (key) => run(['delete', `HKCU\\${key}`, '/f']),
+  importFile: (file) => run(['import', file]),
+  exportKey: (key, file) => run(['export', `HKCU\\${key}`, file, '/y'])
+}
+
+export const PARKED_KEY_SUFFIX = '.vault-host'
+const parkedKey = (key: string): string => key + PARKED_KEY_SUFFIX
+
+/**
+ * Keys Vault created on this PC by importing the drive's settings where there
+ * were none. Kept in Vault's own per-PC folder, because the question is about
+ * this PC. Losing the file only means a key is treated as the PC's own: parked
+ * for the session rather than replaced, the safe direction.
+ */
+let stateDir: string | null = null
+export function setRegistryStateDir(dir: string): void { stateDir = dir }
+
+const CREATED = 'registry-keys-from-vault.json'
+/**
+ * Keys set aside right now. Recorded before the copy is made, so a crash at any
+ * point leaves a trace, and startup finds leftovers by reading this file rather
+ * than querying the registry for every entry (each query is a process spawn,
+ * and spawns stall Vault).
+ */
+const SET_ASIDE = 'registry-keys-set-aside.json'
+
+function readList(name: string): Set<string> {
+  if (!stateDir) return new Set()
+  try { return new Set((JSON.parse(readFileSync(join(stateDir, name), 'utf-8')) as string[]).map((k) => k.toLowerCase())) } catch { return new Set() }
+}
+
+function updateList(name: string, key: string, present: boolean): void {
+  if (!stateDir) return
+  const set = readList(name)
+  if (present) set.add(key.toLowerCase())
+  else set.delete(key.toLowerCase())
+  try {
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(join(stateDir, name), JSON.stringify([...set].sort(), null, 2))
+  } catch (err) {
+    console.warn(`[registry] could not update ${name} —`, err)
+  }
+}
+
+const readManaged = (): Set<string> => readList(CREATED)
+const addManaged = (key: string): void => updateList(CREATED, key, true)
 
 interface RegistryEntry {
   name: string
@@ -109,25 +179,101 @@ function regStaysInKey(reg: string, key: string): boolean {
  * Synchronous on purpose, so the game reads them on its first start. Never
  * throws; a failure leaves the PC's own settings as they were.
  */
-export function restoreRegistrySettings(driveRoot: string, filePath: string): void {
-  if (process.platform !== 'win32') return
+export function restoreRegistrySettings(driveRoot: string, filePath: string, ops: RegOps = realRegOps): void {
+  if (process.platform !== 'win32' && ops === realRegOps) return
   for (const e of entriesFor(driveRoot, filePath)) {
     const reg = regFile(driveRoot, e)
     if (!existsSync(reg)) continue
     const stamp = readStamp(reg)
-    const me = thisHost()
-    if (stamp && stamp.host === me.host && stamp.platform === me.platform) continue  // this PC wrote it
+    if (writtenHere(stamp)) continue  // this PC wrote it
     try {
       if (!regStaysInKey(reg, e.key)) {
         console.warn(`[registry] ${e.name}: ${reg} writes outside HKCU\\${e.key} — not imported`)
         continue
       }
-      execFileSync('reg', ['import', reg], { stdio: 'ignore', windowsHide: true })
+      // A key that did not exist, with nothing of the PC's own set aside, is
+      // Vault's creation: remember that, so a later visit doesn't mistake it
+      // for the PC's own settings.
+      const created = !readList(SET_ASIDE).has(e.key.toLowerCase()) && !ops.exists(e.key)
+      ops.importFile(reg)
+      if (created) addManaged(e.key)
       console.log(`[registry] ${e.name}: imported settings saved by ${stamp?.host ?? 'an unknown computer'}`)
     } catch (err) {
       console.warn(`[registry] ${e.name}: could not import ${reg} —`, err)
     }
   }
+}
+
+function writtenHere(stamp: Stamp | null): boolean {
+  const me = thisHost()
+  return !!stamp && stamp.host === me.host && stamp.platform === me.platform
+}
+
+/** The PC's own settings: a key that exists, that Vault neither exported from here nor created here. */
+function isPcOwn(driveRoot: string, e: RegistryEntry, ops: RegOps): boolean {
+  if (!ops.exists(e.key)) return false
+  if (writtenHere(readStamp(regFile(driveRoot, e)))) return false
+  return !readManaged().has(e.key.toLowerCase())
+}
+
+function regParkable(driveRoot: string, e: RegistryEntry, ops: RegOps): Parkable {
+  const aside = parkedKey(e.key)
+  return {
+    id: `reg:${e.key.toLowerCase()}`,
+    name: e.name,
+    scope: join(driveRoot, ...insideDrive(e.game)!),
+    park: () => {
+      updateList(SET_ASIDE, e.key, true)
+      try {
+        ops.copy(e.key, aside)
+        if (!ops.exists(aside)) throw new Error('the copy did not appear')
+        ops.remove(e.key)
+      } catch (err) {
+        // The owner's key is still in place; only a partial copy may exist.
+        if (ops.exists(e.key) && ops.exists(aside)) ops.remove(aside)
+        if (!ops.exists(aside)) updateList(SET_ASIDE, e.key, false)
+        throw new Error(`Could not set this PC's own ${e.name} settings aside for the session: ${err instanceof Error ? err.message : err}`)
+      }
+    },
+    unpark: () => {
+      if (!ops.exists(aside)) {
+        updateList(SET_ASIDE, e.key, false)
+        return 'nothing-parked'
+      }
+      // The session's settings belong to the drive: save them before the PC's own come back.
+      exportEntry(driveRoot, e, ops)
+      if (ops.exists(e.key)) ops.remove(e.key)
+      ops.copy(aside, e.key)
+      ops.remove(aside)
+      updateList(SET_ASIDE, e.key, false)
+      return 'restored'
+    }
+  }
+}
+
+/**
+ * Before a PC game starts from the drive: the registry keys it uses that this
+ * PC already has as its own. Each is set aside for the session.
+ */
+export function registryParkablesForLaunch(driveRoot: string, filePath: string, ops: RegOps = realRegOps): Parkable[] {
+  if (process.platform !== 'win32' && ops === realRegOps) return []
+  const setAside = readList(SET_ASIDE)
+  return entriesFor(driveRoot, filePath)
+    .filter((e) => setAside.has(e.key.toLowerCase()) || isPcOwn(driveRoot, e, ops))
+    .map((e) => regParkable(driveRoot, e, ops))
+}
+
+/**
+ * At startup: keys still set aside from a session Vault never saw end. Only
+ * keys recorded as set aside are checked in the registry; normally none are.
+ */
+export function registryParkedLeftovers(driveRoot: string, ops: RegOps = realRegOps): Parkable[] {
+  if (process.platform !== 'win32' && ops === realRegOps) return []
+  const setAside = readList(SET_ASIDE)
+  if (setAside.size === 0) return []
+  return readEntries(driveRoot)
+    .filter((e) => setAside.has(e.key.toLowerCase()))
+    .map((e) => regParkable(driveRoot, e, ops))
 }
 
 /**
@@ -136,38 +282,22 @@ export function restoreRegistrySettings(driveRoot: string, filePath: string): vo
  * Synchronous because a session can end as Vault quits, and an export left
  * running then would be lost.
  */
-export function saveRegistrySettings(driveRoot: string, filePath: string): void {
-  if (process.platform !== 'win32') return
-  for (const e of entriesFor(driveRoot, filePath)) {
-    const reg = regFile(driveRoot, e)
-    const tmp = reg + '.tmp'
-    try {
-      mkdirSync(dirname(reg), { recursive: true })
-      execFileSync('reg', ['export', `HKCU\\${e.key}`, tmp, '/y'], { stdio: 'ignore', windowsHide: true })
-      renameSync(tmp, reg)
-      writeFileSync(stampFile(reg), JSON.stringify(thisHost(), null, 2))
-      console.log(`[registry] ${e.name}: settings saved to the drive`)
-    } catch {
-      // Most often the key does not exist yet: the game has not saved any settings.
-      rmSync(tmp, { force: true })
-    }
-  }
+export function saveRegistrySettings(driveRoot: string, filePath: string, ops: RegOps = realRegOps): void {
+  if (process.platform !== 'win32' && ops === realRegOps) return
+  for (const e of entriesFor(driveRoot, filePath)) exportEntry(driveRoot, e, ops)
 }
 
-const watching = new Set<string>()
-
-/** Save the game's settings to the drive once the session started for it ends. */
-export function saveRegistrySettingsAfterSession(driveRoot: string, filePath: string): void {
-  if (process.platform !== 'win32' || watching.has(filePath)) return
-  if (entriesFor(driveRoot, filePath).length === 0) return
-  watching.add(filePath)
-  const onEnd = (payload: { filePath: string }): void => {
-    if (payload.filePath !== filePath) return
-    playtimeEvents.off('session-ended', onEnd)
-    watching.delete(filePath)
-    try { saveRegistrySettings(driveRoot, filePath) } catch (err) {
-      console.warn('[registry] could not save settings —', err)
-    }
+function exportEntry(driveRoot: string, e: RegistryEntry, ops: RegOps): void {
+  const reg = regFile(driveRoot, e)
+  const tmp = reg + '.tmp'
+  try {
+    mkdirSync(dirname(reg), { recursive: true })
+    ops.exportKey(e.key, tmp)
+    renameSync(tmp, reg)
+    writeFileSync(stampFile(reg), JSON.stringify(thisHost(), null, 2))
+    console.log(`[registry] ${e.name}: settings saved to the drive`)
+  } catch {
+    // Most often the key does not exist yet: the game has not saved any settings.
+    rmSync(tmp, { force: true })
   }
-  playtimeEvents.on('session-ended', onEnd)
 }

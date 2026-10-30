@@ -1,8 +1,10 @@
-import { existsSync, readFileSync, lstatSync, readlinkSync, mkdirSync, symlinkSync } from 'fs'
-import { join, dirname } from 'path'
+import { existsSync, readFileSync, cpSync, readdirSync, rmSync } from 'fs'
+import { join, dirname, sep } from 'path'
 import { execFileSync } from 'child_process'
 import { app } from 'electron'
 import { MAC_WINE_PREFIX, MAC_WINE_USER } from './winePrefix'
+import { applyLasting, plan, park, unpark, inspect, parkedPath } from './saveLinkCore'
+import type { Parkable } from './sessionParking'
 
 /**
  * Some games hardcode their save location to the host machine rather than the
@@ -13,7 +15,7 @@ import { MAC_WINE_PREFIX, MAC_WINE_USER } from './winePrefix'
  *
  * This recreates those host paths as directory junctions pointing at the drive,
  * so the game writes where it always did and the bytes land on the Vault.
- * Junctions (mklink /J) are used rather than symlinks because they need no
+ * Junctions are used rather than symlinks because they need no
  * administrator rights.
  *
  * The link set lives in <driveRoot>/data/save-links.json rather than in code, so
@@ -27,9 +29,19 @@ import { MAC_WINE_PREFIX, MAC_WINE_USER } from './winePrefix'
  * under Wine maps them into its prefix. An entry naming anything else is
  * rejected rather than guessed at.
  *
- * On Windows these are directory junctions via `mklink /J` (no admin needed).
- * On macOS the game runs under Wine and the locations are mapped into the
- * prefix; links there are POSIX symlinks via `symlinkSync`.
+ * On Windows these are directory junctions (no admin needed). On macOS the game
+ * runs under Wine and the locations are mapped into the prefix; links there are
+ * POSIX symlinks. saveLinkCore.ts does the file-system work.
+ *
+ * A link made while the drive had another letter is re-pointed at the drive as
+ * mounted now. A real folder at the host path is this PC's own (it has the game
+ * itself, e.g. through Steam): it is never replaced for good, only set aside
+ * for the length of a session started from the drive (parkablesForLaunch,
+ * sessionParking.ts), so the PC's own copy keeps its own saves.
+ *
+ * An entry may name its `game` folder (relative to the drive root, like the
+ * registry entries); only launches from that folder set its PC copy aside.
+ * Entries without one (a crack's player-id folder) serve every game.
  */
 
 /** Where Windows games put saves. The manifest may name only these. */
@@ -41,6 +53,7 @@ interface SaveLink {
   location: Location   // one of LOCATIONS
   path: string         // folder inside it, e.g. "My Games/LIVEALIVE"
   drive: string        // relative to the drive root
+  game?: string        // the game's folder relative to the drive root; absent = shared by every game
 }
 
 /** A Windows location's folder on this PC, as the system reports it. */
@@ -64,7 +77,16 @@ function windowsLocation(location: Location): string | undefined {
  * getPath name for it, so read what Explorer reads: a moved folder is recorded
  * under User Shell Folders by its known-folder ID; an unmoved one is not.
  */
+let savedGamesCache: { value: string | undefined } | null = null
 function savedGamesFolder(): string | undefined {
+  // Asked for every SavedGames entry at startup and at each launch; each ask is
+  // a process spawn, and spawns stall Vault's main process. The folder doesn't
+  // move while Vault runs.
+  if (!savedGamesCache) savedGamesCache = { value: lookUpSavedGames() }
+  return savedGamesCache.value
+}
+
+function lookUpSavedGames(): string | undefined {
   try {
     const out = execFileSync('reg', [
       'query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders',
@@ -114,12 +136,8 @@ export function hostPathFor(link: SaveLink): { path: string } | { error: string 
   return { path: join(base, ...parts) }
 }
 
-/** Junction targets come back in assorted shapes; compare them insensitively. */
-function samePath(a: string, b: string): boolean {
-  const norm = (s: string): string =>
-    s.replace(/^\\\\\?\\/, '').replace(/[\\/]+$/, '').toLowerCase()
-  return norm(a) === norm(b)
-}
+const driveFolder = (driveRoot: string, link: SaveLink): string =>
+  join(driveRoot, ...link.drive.split(/[\\/]+/).filter(Boolean))
 
 function ensureOne(driveRoot: string, link: SaveLink): void {
   const resolved = hostPathFor(link)
@@ -128,44 +146,131 @@ function ensureOne(driveRoot: string, link: SaveLink): void {
     return
   }
   const hostPath = resolved.path
-  const target = join(driveRoot, ...link.drive.split(/[\\/]+/))
-
-  // Nothing on the drive to point at — a manifest entry for a game whose data
-  // was never migrated. Silently skip; creating a link to a missing folder would
-  // make the game fail to save rather than fall back to the host.
-  if (!existsSync(target)) return
-
-  // lstat, not existsSync: a junction whose drive is unplugged still exists as a
-  // link but fails an exists() check, and mklink would then refuse the path.
-  let stat: ReturnType<typeof lstatSync> | null = null
-  try { stat = lstatSync(hostPath) } catch { /* nothing at this path */ }
-
-  if (stat) {
-    if (stat.isSymbolicLink()) {
-      let current = ''
-      try { current = readlinkSync(hostPath) } catch { /* unreadable link */ }
-      if (samePath(current, target)) return  // already correct — nothing to do
-      console.warn(`[savelinks] ${link.name}: already linked elsewhere (${current}) — leaving it alone`)
-      return
-    }
-    // A real directory. Never replace it: on someone else's PC that folder holds
-    // their save data, and junctioning over it would hide it without warning.
-    console.warn(`[savelinks] ${link.name}: a real folder exists at ${hostPath} — not touching it`)
-    return
-  }
-
+  const target = driveFolder(driveRoot, link)
   try {
-    mkdirSync(dirname(hostPath), { recursive: true })
-    if (process.platform === 'darwin') {
-      // POSIX symlink; the game writes to this path and the bytes land on the drive.
-      symlinkSync(target, hostPath)
-    } else {
-      execFileSync('cmd', ['/c', 'mklink', '/J', hostPath, target], { stdio: 'ignore', windowsHide: true })
+    const r = applyLasting(hostPath, target, link.drive)
+    if (r === 'created') console.log(`[savelinks] linked ${hostPath} -> ${target}`)
+    else if (r === 'repointed') console.log(`[savelinks] ${link.name}: re-pointed at the drive as mounted now (${target})`)
+    else if (r === 'left') {
+      // A real folder (this PC's own copy of the game: it is only swapped out
+      // for the length of a session started from the drive, see
+      // parkablesForLaunch) or a link the user made to somewhere else.
+      console.log(`[savelinks] ${link.name}: ${hostPath} belongs to this PC — left as it is`)
     }
-    console.log(`[savelinks] linked ${hostPath} -> ${target}`)
   } catch (err) {
     console.warn(`[savelinks] ${link.name}: could not create link —`, err)
   }
+}
+
+function readLinks(driveRoot: string): SaveLink[] {
+  const manifestPath = join(driveRoot, 'data', 'save-links.json')
+  if (!existsSync(manifestPath)) return []
+  try {
+    const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { links?: SaveLink[] }
+    const links = Array.isArray(parsed.links) ? parsed.links : []
+    return links.filter((link) => {
+      if (link?.location && link?.path && link?.drive) return true
+      // The old raw-path form ("host": "%LOCALAPPDATA%\\..."), or a broken entry.
+      console.warn(`[savelinks] ${link?.name ?? '(unnamed)'}: not in the location/path form — skipped`)
+      return false
+    })
+  } catch (err) {
+    console.warn('[savelinks] manifest unreadable —', err)
+    return []
+  }
+}
+
+/** The game folder an entry belongs to, or null for one every game shares (a crack's player id). */
+function scopeOf(driveRoot: string, link: SaveLink): string | null {
+  if (typeof link.game !== 'string') return null
+  const parts = link.game.split(/[\\/]+/).filter(Boolean)
+  return parts.length > 0 && !parts.includes('..') ? join(driveRoot, ...parts) : null
+}
+
+function inScope(scope: string | null, filePath: string): boolean {
+  return scope === null || filePath.toLowerCase().startsWith(scope.toLowerCase() + sep)
+}
+
+/**
+ * Copies the drive's save folder aside before a session that swaps out a PC's
+ * own folder. If the PC's own copy of the game is started (Steam) while the
+ * swap is in place, Steam Cloud can download the PC owner's saves over the
+ * drive's; this keeps the drive's last state recoverable. Saves are small, and
+ * this only happens on a PC that has the game itself. The last five are kept.
+ */
+function snapshotDriveFolder(driveRoot: string, link: SaveLink, target: string): void {
+  const safe = link.name.replace(/[<>:"/\\|?*]+/g, '_')
+  const dir = join(driveRoot, 'saves', '_session-backups', safe)
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  cpSync(target, join(dir, stamp), { recursive: true })
+  const old = readdirSync(dir).sort()
+  for (const name of old.slice(0, Math.max(0, old.length - 5))) {
+    rmSync(join(dir, name), { recursive: true, force: true })
+  }
+}
+
+function parkable(driveRoot: string, link: SaveLink, hostPath: string, target: string): Parkable {
+  return {
+    id: `folder:${hostPath.toLowerCase()}`,
+    name: link.name,
+    scope: scopeOf(driveRoot, link),
+    park: () => {
+      try { snapshotDriveFolder(driveRoot, link, target) } catch (err) {
+        console.warn(`[savelinks] ${link.name}: could not back up the drive's saves first —`, err)
+      }
+      try {
+        park(hostPath, target)
+      } catch (err) {
+        const why = err instanceof Error ? err.message : String(err)
+        throw new Error(/in use/.test(why)
+          ? `This PC has its own ${link.name} saves, and they are in use (${hostPath}). ` +
+            `Close the copy of the game installed on this PC (for example in Steam) and try again.`
+          : `Could not set this PC's own ${link.name} saves aside for the session: ${why}`)
+      }
+    },
+    unpark: () => unpark(hostPath)
+  }
+}
+
+/**
+ * Before a PC game starts from the drive: the save folders it uses that this
+ * PC already has as real folders (its own copy of the game). Each is swapped
+ * for a link to the drive for the length of the session (sessionParking.ts).
+ * Windows only: on the Mac the Wine prefix belongs to Vault alone.
+ */
+export function parkablesForLaunch(driveRoot: string, filePath: string): Parkable[] {
+  if (process.platform !== 'win32') return []
+  const out: Parkable[] = []
+  for (const link of readLinks(driveRoot)) {
+    if (!inScope(scopeOf(driveRoot, link), filePath)) continue
+    const resolved = hostPathFor(link)
+    if ('error' in resolved) continue
+    const target = driveFolder(driveRoot, link)
+    // Still set aside from an earlier session that has not been put back yet
+    // (its game was running at startup): this launch joins it rather than
+    // parking twice.
+    if (inspect(parkedPath(resolved.path)).kind === 'folder') {
+      out.push(parkable(driveRoot, link, resolved.path, target))
+      continue
+    }
+    if (!existsSync(target)) continue
+    if (plan(resolved.path, target, link.drive) === 'host-folder') out.push(parkable(driveRoot, link, resolved.path, target))
+  }
+  return out
+}
+
+/** At startup: folders still set aside from a session Vault never saw end (a crash, a power cut). */
+export function parkedLeftovers(driveRoot: string): Parkable[] {
+  if (process.platform !== 'win32') return []
+  const out: Parkable[] = []
+  for (const link of readLinks(driveRoot)) {
+    const resolved = hostPathFor(link)
+    if ('error' in resolved) continue
+    if (inspect(parkedPath(resolved.path)).kind === 'folder') {
+      out.push(parkable(driveRoot, link, resolved.path, driveFolder(driveRoot, link)))
+    }
+  }
+  return out
 }
 
 /**
@@ -182,24 +287,11 @@ export function ensureSaveLinks(driveRoot: string): void {
     return
   }
 
-  const manifestPath = join(driveRoot, 'data', 'save-links.json')
-  if (!existsSync(manifestPath)) return
-
-  let links: SaveLink[]
-  try {
-    const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8')) as { links?: SaveLink[] }
-    links = Array.isArray(parsed.links) ? parsed.links : []
-  } catch (err) {
-    console.warn('[savelinks] manifest unreadable —', err)
-    return
-  }
-
-  for (const link of links) {
-    if (!link?.location || !link?.path || !link?.drive) {
-      // The old raw-path form ("host": "%LOCALAPPDATA%\\..."), or a broken entry.
-      console.warn(`[savelinks] ${link?.name ?? '(unnamed)'}: not in the location/path form — skipped`)
-      continue
-    }
+  for (const link of readLinks(driveRoot)) {
+    // Still swapped out from a session Vault never saw end: leave it for the
+    // startup recovery (parkedLeftovers), which puts the PC's folder back.
+    const resolved = hostPathFor(link)
+    if (!('error' in resolved) && inspect(parkedPath(resolved.path)).kind === 'folder') continue
     try { ensureOne(driveRoot, link) } catch (err) {
       console.warn(`[savelinks] ${link.name}: skipped —`, err)
     }
