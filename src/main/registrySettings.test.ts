@@ -56,6 +56,7 @@ function driveCopy(settings: string, by: string): void {
   writeFileSync(driveReg(), regText(settings))
   writeFileSync(driveReg() + '.json', JSON.stringify({ host: by, platform: process.platform, at: 'x' }))
 }
+const owners = (): Record<string, string> => JSON.parse(readFileSync(join(state, 'registry-key-owners.json'), 'utf8'))
 const live = (): string | undefined => reg.get(KEY.toLowerCase())
 const parked = (): string | undefined => reg.get((KEY + PARKED_KEY_SUFFIX).toLowerCase())
 
@@ -64,7 +65,7 @@ test('a PC without the game gets the drive settings, and Vault remembers it crea
   assert.deepEqual(registryParkablesForLaunch(drive, game, ops), [])
   restoreRegistrySettings(drive, game, ops)
   assert.equal(live(), 'drive settings')
-  assert.deepEqual(JSON.parse(readFileSync(join(state, 'registry-keys-from-vault.json'), 'utf8')), [KEY.toLowerCase()])
+  assert.deepEqual(owners(), { [KEY.toLowerCase()]: 'vault' })
 })
 
 test('on a later visit that key is Vault-made, not the PC owner\'s, so nothing is set aside', () => {
@@ -96,14 +97,44 @@ test("a PC with its own copy of the game: the owner's key is set aside, the driv
 
   restoreRegistrySettings(drive, game, ops)
   assert.equal(live(), 'drive settings')
-  // The import into a set-aside key is not recorded as Vault-made.
-  assert.equal(existsSync(join(state, 'registry-keys-from-vault.json')), false)
+  // Recorded as the PC's own, and the import into the emptied key doesn't change that.
+  assert.deepEqual(owners(), { [KEY.toLowerCase()]: 'pc' })
 
   reg.set(KEY.toLowerCase(), 'changed while playing from the drive')
   assert.equal(res[0].unpark(), 'restored')
   assert.equal(live(), 'steam owner settings')
   assert.equal(parked(), undefined)
   assert.equal(settingsIn(readFileSync(driveReg(), 'utf8')), 'changed while playing from the drive')
+})
+
+// Found by the live rehearsal on 2026-10-30: after one session on a Steam
+// owner's PC the drive copy is stamped with that PC, and the second session
+// treated the owner's key as Vault's: not set aside, and overwritten.
+test("a second session on a Steam owner's PC sets the owner's key aside again and gets the drive's settings", () => {
+  reg.set(KEY.toLowerCase(), 'steam owner settings')
+  const session = (writes: string): string | undefined => {
+    const res = registryParkablesForLaunch(drive, game, ops)
+    assert.equal(res.length, 1, 'the owner key must be set aside')
+    res[0].park()
+    restoreRegistrySettings(drive, game, ops)
+    const seen = live()
+    reg.set(KEY.toLowerCase(), writes)          // the game saves settings
+    saveRegistrySettings(drive, game, ops)        // the after-session save
+    assert.equal(res[0].unpark(), 'restored')
+    assert.equal(live(), 'steam owner settings')
+    return seen
+  }
+  assert.equal(session('first drive session'), undefined)              // the drive had none yet
+  assert.equal(session('second drive session'), 'first drive session') // the drive's, not the owner's
+  assert.equal(session('third drive session'), 'second drive session')
+  assert.equal(settingsIn(readFileSync(driveReg(), 'utf8')), 'third drive session')
+})
+
+test('a PC that played from the drive before this rule (it exported the drive copy) keeps its key as Vault\'s', () => {
+  reg.set(KEY.toLowerCase(), 'home settings')
+  driveCopy('home settings', hostname())
+  assert.deepEqual(registryParkablesForLaunch(drive, game, ops), [])
+  assert.deepEqual(owners(), { [KEY.toLowerCase()]: 'vault' })
 })
 
 test('a drive game that never had settings still leaves the owner\'s settings untouched', () => {
