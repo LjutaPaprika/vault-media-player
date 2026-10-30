@@ -116,6 +116,8 @@ test("the in-use error is written for the user and names the PC's own copy", () 
     fs.closeSync(fd)
   }
   assert.equal(inspect(host('BPM')).kind, 'folder')
+  // A refused launch makes no backup (found in the rehearsal: it used to).
+  assert.equal(existsSync(join(drive, 'saves', '_session-backups', 'BPM')), false)
 })
 
 test('after a crash the set-aside folder is found, startup leaves it alone, and recovery puts it back', () => {
