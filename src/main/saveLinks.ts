@@ -215,9 +215,6 @@ function parkable(driveRoot: string, link: SaveLink, hostPath: string, target: s
     name: link.name,
     scope: scopeOf(driveRoot, link),
     park: () => {
-      try { snapshotDriveFolder(driveRoot, link, target) } catch (err) {
-        console.warn(`[savelinks] ${link.name}: could not back up the drive's saves first —`, err)
-      }
       try {
         park(hostPath, target)
       } catch (err) {
@@ -226,6 +223,12 @@ function parkable(driveRoot: string, link: SaveLink, hostPath: string, target: s
           ? `This PC has its own ${link.name} saves, and they are in use (${hostPath}). ` +
             `Close the copy of the game installed on this PC (for example in Steam) and try again.`
           : `Could not set this PC's own ${link.name} saves aside for the session: ${why}`)
+      }
+      // After the swap (so a refused launch makes no backup) and before the
+      // game starts (the launch spawns it only once every resource is parked),
+      // so this is still the drive's state from before the session.
+      try { snapshotDriveFolder(driveRoot, link, target) } catch (err) {
+        console.warn(`[savelinks] ${link.name}: could not back up the drive's saves —`, err)
       }
     },
     unpark: () => unpark(hostPath)
