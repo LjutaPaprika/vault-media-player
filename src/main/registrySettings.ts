@@ -32,9 +32,17 @@ import type { Parkable } from './sessionParking'
  * aside for the session instead (registryParkablesForLaunch, see
  * sessionParking.ts): copied to `<key>.vault-host`, the drive's settings
  * imported, and afterwards the session's settings saved to the drive and the
- * owner's key put back. A key counts as the PC's own unless this PC exported
- * the drive copy (the stamp) or Vault created it here by importing into a PC
- * that had none (recorded in Vault's per-PC data folder).
+ * owner's key put back.
+ *
+ * Whose a key is gets decided once per PC, the first time Vault meets it, and
+ * is recorded in Vault's per-PC data folder (registry-key-owners.json):
+ *   - no key yet: Vault's (the drive's settings or the drive game create it);
+ *   - a key, and the drive copy was last exported from this PC: Vault's (a PC
+ *     that played from the drive before this rule existed);
+ *   - a key, exported elsewhere or never: the PC's own.
+ * It must not be re-derived each launch: after one session on a Steam owner's
+ * PC, the drive copy *was* exported from that PC, and the owner's key would
+ * then pass for Vault's.
  *
  * Windows only for now. The Mac runs these games under Wine, which has its own
  * registry; the same .reg files can be imported there with `wine reg import`.
@@ -63,15 +71,47 @@ export const PARKED_KEY_SUFFIX = '.vault-host'
 const parkedKey = (key: string): string => key + PARKED_KEY_SUFFIX
 
 /**
- * Keys Vault created on this PC by importing the drive's settings where there
- * were none. Kept in Vault's own per-PC folder, because the question is about
- * this PC. Losing the file only means a key is treated as the PC's own: parked
- * for the session rather than replaced, the safe direction.
+ * Per-PC records, in Vault's own data folder on this PC, because the questions
+ * are about this PC.
  */
 let stateDir: string | null = null
 export function setRegistryStateDir(dir: string): void { stateDir = dir }
 
-const CREATED = 'registry-keys-from-vault.json'
+/** Whose each key is on this PC: "vault" or "pc". See the header for the rule. */
+const OWNERS = 'registry-key-owners.json'
+type Owner = 'vault' | 'pc'
+
+function readOwners(): Record<string, Owner> {
+  if (!stateDir) return {}
+  try { return JSON.parse(readFileSync(join(stateDir, OWNERS), 'utf-8')) as Record<string, Owner> } catch { return {} }
+}
+
+function recordOwner(key: string, owner: Owner): void {
+  if (!stateDir) return
+  const all = readOwners()
+  all[key.toLowerCase()] = owner
+  try {
+    mkdirSync(stateDir, { recursive: true })
+    writeFileSync(join(stateDir, OWNERS), JSON.stringify(all, null, 2))
+  } catch (err) {
+    console.warn(`[registry] could not record whose ${key} is —`, err)
+  }
+}
+
+/**
+ * Whose a key is on this PC, deciding and recording it the first time. If the
+ * record cannot be written, the answer is worked out again next time, which
+ * only matters on a Steam owner's PC after its first session; the failure is
+ * logged.
+ */
+function ownerOf(driveRoot: string, e: RegistryEntry, ops: RegOps): Owner {
+  const known = readOwners()[e.key.toLowerCase()]
+  if (known) return known
+  const owner: Owner = !ops.exists(e.key) || writtenHere(readStamp(regFile(driveRoot, e))) ? 'vault' : 'pc'
+  recordOwner(e.key, owner)
+  return owner
+}
+
 /**
  * Keys set aside right now. Recorded before the copy is made, so a crash at any
  * point leaves a trace, and startup finds leftovers by reading this file rather
@@ -98,8 +138,6 @@ function updateList(name: string, key: string, present: boolean): void {
   }
 }
 
-const readManaged = (): Set<string> => readList(CREATED)
-const addManaged = (key: string): void => updateList(CREATED, key, true)
 
 interface RegistryEntry {
   name: string
@@ -185,18 +223,19 @@ export function restoreRegistrySettings(driveRoot: string, filePath: string, ops
     const reg = regFile(driveRoot, e)
     if (!existsSync(reg)) continue
     const stamp = readStamp(reg)
-    if (writtenHere(stamp)) continue  // this PC wrote it
+    // With the PC's own key set aside, the key is empty for the session: the
+    // drive's settings are always wanted, even if this PC exported them.
+    const setAside = readList(SET_ASIDE).has(e.key.toLowerCase())
+    if (!setAside && writtenHere(stamp)) continue  // this PC wrote it, and its key is at least as new
     try {
       if (!regStaysInKey(reg, e.key)) {
         console.warn(`[registry] ${e.name}: ${reg} writes outside HKCU\\${e.key} — not imported`)
         continue
       }
-      // A key that did not exist, with nothing of the PC's own set aside, is
-      // Vault's creation: remember that, so a later visit doesn't mistake it
-      // for the PC's own settings.
-      const created = !readList(SET_ASIDE).has(e.key.toLowerCase()) && !ops.exists(e.key)
+      // Decide whose the key is before importing creates it, so a key that
+      // did not exist is recorded as Vault's.
+      if (!setAside) ownerOf(driveRoot, e, ops)
       ops.importFile(reg)
-      if (created) addManaged(e.key)
       console.log(`[registry] ${e.name}: imported settings saved by ${stamp?.host ?? 'an unknown computer'}`)
     } catch (err) {
       console.warn(`[registry] ${e.name}: could not import ${reg} —`, err)
@@ -209,11 +248,9 @@ function writtenHere(stamp: Stamp | null): boolean {
   return !!stamp && stamp.host === me.host && stamp.platform === me.platform
 }
 
-/** The PC's own settings: a key that exists, that Vault neither exported from here nor created here. */
+/** The PC's own settings, there right now. */
 function isPcOwn(driveRoot: string, e: RegistryEntry, ops: RegOps): boolean {
-  if (!ops.exists(e.key)) return false
-  if (writtenHere(readStamp(regFile(driveRoot, e)))) return false
-  return !readManaged().has(e.key.toLowerCase())
+  return ownerOf(driveRoot, e, ops) === 'pc' && ops.exists(e.key)
 }
 
 function regParkable(driveRoot: string, e: RegistryEntry, ops: RegOps): Parkable {
