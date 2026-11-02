@@ -270,3 +270,30 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* "Add tracks": opens the download modal set to this playlist. Same pill as
+   Shuffle so the row reads as one set of actions. */
+.addBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 12px 20px;
+  border-radius: 50px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.addBtn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.addBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}

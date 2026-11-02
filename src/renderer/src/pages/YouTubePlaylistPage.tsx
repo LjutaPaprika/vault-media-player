@@ -21,14 +21,18 @@ interface Props {
    * wherever the video was left off.
    */
   onPlay: (filePath: string, startAt?: number) => void
+  /** Opens the download modal set to this playlist. */
+  onAddVideos: () => void
+  /** A modal is open over the page: leave Escape to it. */
+  suspended?: boolean
 }
 
 // Video-list scroll offset per playlist, kept for the life of the app, so
 // going Back to the shelf and into the same playlist again lands where it was.
 const listScrollByPlaylist = new Map<string, number>()
 
-export default function YouTubePlaylistPage({ playlist, durations, progress, onBack, onPlay }: Props): JSX.Element {
-  useEscapeKey(onBack)
+export default function YouTubePlaylistPage({ playlist, durations, progress, onBack, onPlay, onAddVideos, suspended = false }: Props): JSX.Element {
+  useEscapeKey(onBack, !suspended)
   const { name, videos, cover, totalSeconds, lastOpened } = playlist
   const [launchingPath, setLaunchingPath] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -78,6 +82,10 @@ export default function YouTubePlaylistPage({ playlist, durations, progress, onB
         {videos.length > 1 && (
           <AutoplayToggle noun="video" />
         )}
+        <button className={styles.addBtn} onClick={onAddVideos}>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+          Add videos
+        </button>
       </div>
 
       {/* Right panel — video list */}

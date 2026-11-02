@@ -17,6 +17,7 @@
     "src/preload/**/*",
     "src/renderer/src/utils/readingEntries.ts",
     "src/renderer/src/utils/episodes.ts",
-    "src/renderer/src/utils/episodeOrder.ts"
+    "src/renderer/src/utils/episodeOrder.ts",
+    "src/renderer/src/utils/playlistTarget.ts"
   ]
 }

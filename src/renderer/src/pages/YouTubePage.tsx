@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import PageShell from '../components/PageShell'
 import PosterImage from '../components/PosterImage'
+import VideoDownloadModal from '../components/VideoDownloadModal'
 import WatchedBar from '../components/WatchedBar'
 import { useLibrary } from '../hooks/useLibrary'
 import { useVideoProgress } from '../hooks/useVideoProgress'
@@ -12,236 +13,15 @@ import { buildPlaylists, openedAgo, sortByTitle, VIDEO_THUMB_WIDTH, type YouTube
 import YouTubePlaylistPage from './YouTubePlaylistPage'
 import styles from './YouTubePage.module.css'
 
-// ─── Download modal ───────────────────────────────────────────────────────────
-
-interface DownloadModalProps {
-  onClose: (downloaded: boolean) => void
-}
-
-function DownloadModal({ onClose }: DownloadModalProps): JSX.Element {
-  const [playlists, setPlaylists] = useState<string[]>([])
-  const [urlInput, setUrlInput] = useState('')
-  const [urls, setUrls] = useState<string[]>([])
-  const [playlistMode, setPlaylistMode] = useState<'none' | 'existing' | 'new'>('none')
-  const [selectedPlaylist, setSelectedPlaylist] = useState('')
-  const [newPlaylistName, setNewPlaylistName] = useState('')
-  const [downloading, setDownloading] = useState(false)
-  const [progress, setProgress] = useState<{ index: number; total: number; status: string; percent: number } | null>(null)
-  const [errors, setErrors] = useState<{ url: string; kind: DownloadProgress['errorKind'] }[]>([])
-  const [succeeded, setSucceeded] = useState<number | null>(null)
-  const unsubRef = useRef<(() => void) | null>(null)
-
-  useEffect(() => {
-    window.api.youtube.getPlaylists().then(setPlaylists)
-    return () => { unsubRef.current?.() }
-  }, [])
-
-  function addUrl(): void {
-    const trimmed = urlInput.trim()
-    if (!trimmed) return
-    setUrls((prev) => [...prev, trimmed])
-    setUrlInput('')
-  }
-
-  function removeUrl(i: number): void {
-    setUrls((prev) => prev.filter((_, idx) => idx !== i))
-  }
-
-  async function download(): Promise<void> {
-    const finalUrls = urlInput.trim() ? [...urls, urlInput.trim()] : urls
-    if (finalUrls.length === 0) return
-    setUrlInput('')
-    const playlistName =
-      playlistMode === 'existing' ? selectedPlaylist || null
-      : playlistMode === 'new'    ? newPlaylistName.trim() || null
-      : null
-
-    setDownloading(true)
-    setErrors([])
-    const newErrors: { url: string; kind: DownloadProgress['errorKind'] }[] = []
-
-    unsubRef.current = window.api.library.onDownloadProgress((p) => {
-      setProgress({ index: p.index, total: p.total, status: p.status, percent: p.percent })
-      if (p.status === 'error') newErrors.push({ url: p.url, kind: p.errorKind })
-    })
-
-    await window.api.youtube.downloadVideo({
-      urls: finalUrls.map((url) => ({ url, title: '' })),
-      playlistName
-    })
-
-    unsubRef.current?.()
-    unsubRef.current = null
-    setErrors(newErrors)
-    setDownloading(false)
-    setProgress(null)
-    // Auto-close only when every URL succeeded. If anything failed, keep the
-    // modal open so the user can read the error explanation and act on it.
-    if (newErrors.length === 0) {
-      setSucceeded(finalUrls.length)
-      // Brief confirmation before auto-close, otherwise fast downloads look
-      // like the modal flashed and disappeared.
-      window.setTimeout(() => onClose(true), 1500)
-    }
-  }
-
-  const resolvedPlaylist =
-    playlistMode === 'existing' ? selectedPlaylist
-    : playlistMode === 'new'    ? newPlaylistName
-    : null
-
-  return (
-    <div className={styles.modalBackdrop} onClick={() => { if (!downloading) onClose(false) }}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.modalHeader}>
-          <span className={styles.modalTitle}>Download YouTube Video</span>
-          {!downloading && (
-            <button className={styles.modalClose} onClick={() => onClose(false)}>✕</button>
-          )}
-        </div>
-
-        {succeeded !== null ? (
-          <div className={styles.progressArea} style={{ alignItems: 'center', textAlign: 'center', gap: 8 }}>
-            <div style={{ fontSize: 48, color: 'var(--accent)' }}>✓</div>
-            <p className={styles.progressLabel}>
-              Downloaded {succeeded} video{succeeded === 1 ? '' : 's'}
-            </p>
-          </div>
-        ) : !downloading ? (
-          <>
-            {/* URL input */}
-            <div className={styles.field}>
-              <label className={styles.label}>Video URLs</label>
-              {urls.length > 0 && (
-                <ul className={styles.urlList}>
-                  {urls.map((u, i) => (
-                    <li key={i} className={styles.urlItem}>
-                      <span className={styles.urlText}>{u}</span>
-                      <button className={styles.removeBtn} onClick={() => removeUrl(i)}>✕</button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className={styles.urlRow}>
-                <input
-                  className={styles.input}
-                  placeholder="https://youtube.com/watch?v=..."
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') addUrl() }}
-                  autoFocus
-                />
-                <button className={styles.addBtn} onClick={addUrl}>Add</button>
-              </div>
-            </div>
-
-            {/* Playlist */}
-            <div className={styles.field}>
-              <label className={styles.label}>Playlist</label>
-              <div className={styles.playlistRow}>
-                <button
-                  className={`${styles.playlistBtn} ${playlistMode === 'none' ? styles.playlistBtnActive : ''}`}
-                  onClick={() => setPlaylistMode('none')}
-                >
-                  None
-                </button>
-                {playlists.length > 0 && (
-                  <button
-                    className={`${styles.playlistBtn} ${playlistMode === 'existing' ? styles.playlistBtnActive : ''}`}
-                    onClick={() => { setPlaylistMode('existing'); if (!selectedPlaylist) setSelectedPlaylist(playlists[0]) }}
-                  >
-                    Existing
-                  </button>
-                )}
-                <button
-                  className={`${styles.playlistBtn} ${playlistMode === 'new' ? styles.playlistBtnActive : ''}`}
-                  onClick={() => setPlaylistMode('new')}
-                >
-                  New
-                </button>
-              </div>
-              {playlistMode === 'existing' && (
-                <select
-                  className={styles.select}
-                  value={selectedPlaylist}
-                  onChange={(e) => setSelectedPlaylist(e.target.value)}
-                >
-                  {playlists.map((p) => <option key={p} value={p}>{p}</option>)}
-                </select>
-              )}
-              {playlistMode === 'new' && (
-                <input
-                  className={styles.input}
-                  placeholder="Playlist name"
-                  value={newPlaylistName}
-                  onChange={(e) => setNewPlaylistName(e.target.value)}
-                />
-              )}
-            </div>
-
-            {resolvedPlaylist && (
-              <p className={styles.destHint}>Saving to: youtube/{resolvedPlaylist}/</p>
-            )}
-
-            {errors.length > 0 && (
-              <div className={styles.errorMsg}>
-                <p style={{ margin: 0, fontWeight: 600 }}>{errors.length} download(s) failed:</p>
-                <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 12, lineHeight: 1.5 }}>
-                  {errors.map((e, i) => (
-                    <li key={i}>
-                      <span style={{ wordBreak: 'break-all' }}>{e.url}</span>
-                      {' — '}
-                      {e.kind === 'age-restricted'
-                        ? <>age-restricted. Refresh YouTube cookies in <strong>Settings → YouTube Cookies</strong>.</>
-                       : e.kind === 'bot-check'
-                        ? <>YouTube bot check. Refresh YouTube cookies in <strong>Settings → YouTube Cookies</strong>.</>
-                       : e.kind === 'unavailable'
-                        ? <>video unavailable (private, removed, or region-blocked).</>
-                        : <>download failed — see <code>app/logs/yt-dlp.log</code> on the drive.</>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className={styles.modalFooter}>
-              <button className={styles.cancelBtn} onClick={() => onClose(false)}>Cancel</button>
-              <button
-                className={styles.downloadBtn}
-                onClick={() => void download()}
-                disabled={urls.length === 0 && !urlInput.trim()}
-              >
-                {(() => { const n = urls.length + (urlInput.trim() ? 1 : 0); return n > 1 ? `Download ${n} videos` : 'Download video' })()}
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className={styles.progressArea}>
-            {progress && (
-              <>
-                <p className={styles.progressLabel}>
-                  {progress.status === 'converting' ? 'Processing…' : `Downloading ${progress.index + 1} of ${progress.total}…`}
-                </p>
-                <div className={styles.progressBar}>
-                  <div className={styles.progressFill} style={{ width: `${progress.percent}%` }} />
-                </div>
-                <p className={styles.progressPct}>{Math.round(progress.percent)}%</p>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function YouTubePage(): JSX.Element {
   const { items, loading, error, reload } = useLibrary('youtube')
   const { contentResetKey } = useAppStore()
   const [query, setQuery] = useState('')
-  const [showDownload, setShowDownload] = useState(false)
+  // The download modal: closed (null), open from the page (''), or open from
+  // inside a playlist, named so the modal starts there.
+  const [downloadInto, setDownloadInto] = useState<string | null>(null)
   const [durations, setDurations] = useState<Record<string, number>>({})
   const [covers, setCovers] = useState<Record<string, string | null>>({})
   const [selectedName, setSelectedName] = useState<string | null>(null)
@@ -291,16 +71,32 @@ export default function YouTubePage(): JSX.Element {
     setOpenedAt((prev) => ({ ...prev, [filePath]: Math.floor(Date.now() / 1000) }))
   }
 
+  const downloadModal = downloadInto !== null && (
+    <VideoDownloadModal
+      playlists={playlists}
+      initialPlaylist={downloadInto || null}
+      onClose={(downloaded) => {
+        setDownloadInto(null)
+        if (downloaded) reload()
+      }}
+    />
+  )
+
   const selected = selectedName ? playlists.find((p) => p.name === selectedName) : undefined
   if (selected) {
     return (
-      <YouTubePlaylistPage
-        playlist={selected}
-        durations={durations}
-        progress={progress}
-        onBack={() => setSelectedName(null)}
-        onPlay={playVideo}
-      />
+      <>
+        <YouTubePlaylistPage
+          playlist={selected}
+          durations={durations}
+          progress={progress}
+          onBack={() => setSelectedName(null)}
+          onPlay={playVideo}
+          onAddVideos={() => setDownloadInto(selected.name)}
+          suspended={downloadInto !== null}
+        />
+        {downloadModal}
+      </>
     )
   }
 
@@ -322,11 +118,11 @@ export default function YouTubePage(): JSX.Element {
     <>
     <PageShell title="YouTube" searchValue={query} onSearch={setQuery}>
       <div className={styles.actionBar}>
-        <button className={styles.actionBtn} onClick={() => setShowDownload(true)}>
+        <button className={styles.actionBtn} onClick={() => setDownloadInto('')}>
           <svg viewBox="0 0 24 24" fill="currentColor" className={styles.btnIcon}>
             <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
           </svg>
-          Download Video
+          Download Videos
         </button>
       </div>
 
@@ -334,7 +130,7 @@ export default function YouTubePage(): JSX.Element {
       {error   && <p style={{ color: 'var(--danger)',     padding: '24px' }}>{error}</p>}
       {noVideos && (
         <p style={{ color: 'var(--text-muted)', padding: '24px' }}>
-          No saved videos yet. Use Download Video to save YouTube videos for offline viewing.
+          No saved videos yet. Use Download Videos to save YouTube videos for offline viewing.
         </p>
       )}
       {noMatches && (
@@ -372,12 +168,7 @@ export default function YouTubePage(): JSX.Element {
       )}
     </PageShell>
 
-    {showDownload && (
-      <DownloadModal onClose={(downloaded) => {
-        setShowDownload(false)
-        if (downloaded) reload()
-      }} />
-    )}
+    {downloadModal}
     </>
   )
 }

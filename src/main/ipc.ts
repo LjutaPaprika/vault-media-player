@@ -46,6 +46,7 @@ import { playtimeEvents } from './playtime'
 import { readGameRequirements } from './gameRequirements'
 import { getHomeData } from './home'
 import { readWatchOrder, resolveSeriesDir } from './watchOrder'
+import { checkPlaylistName, nextTrackNumber, playlistIndexField } from '../renderer/src/utils/playlistTarget'
 import { clearProgress, progressFileFor, progressKey, readProgress, saveProgress, watchProgress, writeQueue, type VideoProgress } from './playbackProgress'
 import { artworkStats, episodesWithoutStill, fillEpisodeStills, moveLegacyThumbnails, pruneArtwork, warmThumbs } from './thumbnails'
 import { setCacheRootResolver } from './cacheDb'
@@ -855,36 +856,54 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   playtimeEvents.on('session-ended', sendPlaytime)
 
   // ─── YouTube import ───────────────────────────────────────────────────────
-  ipcMain.handle('library:getMusicAlbums', () => {
-    const root = resolveLibraryRoot()
-    const musicDir = join(root, 'media', 'music')
-    const albums = existsSync(musicDir)
-      ? readdirSync(musicDir, { withFileTypes: true })
-          .filter((d) => d.isDirectory())
-          .map((d) => ({ name: d.name, path: join(musicDir, d.name) }))
-          .sort((a, b) => a.name.localeCompare(b.name))
-      : []
-    return { musicDir, albums }
+  // Music playlists (folders under media/music) for the download picker: each
+  // with its track count and the number the next added track will get.
+  ipcMain.handle('library:getMusicPlaylists', () => {
+    const musicDir = join(resolveLibraryRoot(), 'media', 'music')
+    if (!existsSync(musicDir)) return []
+    return readdirSync(musicDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => {
+        let tracks: string[] = []
+        try { tracks = readdirSync(join(musicDir, d.name)).filter((f) => AUDIO_EXTS.has(extname(f).toLowerCase())) } catch { /* unreadable: shown as empty */ }
+        return { name: d.name, trackCount: tracks.length, nextNumber: nextTrackNumber(tracks) }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
   })
+
+  // Resolve a music playlist by name to its folder, refusing anything that is
+  // not a plain folder name (the renderer checks too; this is the backstop),
+  // and record the artist on a playlist that is given one.
+  function musicPlaylistDir(playlist: string, artist?: string): string {
+    const musicDir = join(resolveLibraryRoot(), 'media', 'music')
+    const existing = existsSync(musicDir)
+      ? readdirSync(musicDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
+      : []
+    if (!existing.includes(playlist)) {
+      const check = checkPlaylistName(playlist, existing)
+      if (!check.ok) throw new Error('error' in check ? check.error : `A playlist called “${check.existing}” already exists.`)
+    }
+    const dir = join(musicDir, playlist)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    if (artist) {
+      const albumJsonPath = join(dir, 'album.json')
+      let meta: Record<string, unknown> = {}
+      try { meta = JSON.parse(readFileSync(albumJsonPath, 'utf8')) } catch { /* new file */ }
+      writeFileSync(albumJsonPath, JSON.stringify({ ...meta, artist }))
+    }
+    return dir
+  }
+
+  function nextTrackIn(dir: string): number {
+    return nextTrackNumber(readdirSync(dir).filter((f) => AUDIO_EXTS.has(extname(f).toLowerCase())))
+  }
 
   ipcMain.handle('library:downloadYouTube', async (
     _event,
-    { urls, albumPath, artist }: { urls: { url: string; title: string; artist?: string }[]; albumPath: string; artist?: string }
+    { urls, playlist, artist }: { urls: { url: string; title: string; artist?: string }[]; playlist: string; artist?: string }
   ) => {
-    if (!existsSync(albumPath)) mkdirSync(albumPath, { recursive: true })
-    if (artist) {
-      const albumJsonPath = join(albumPath, 'album.json')
-      let existing: Record<string, unknown> = {}
-      try { existing = JSON.parse(readFileSync(albumJsonPath, 'utf8')) } catch { /* new file */ }
-      writeFileSync(albumJsonPath, JSON.stringify({ ...existing, artist }))
-    }
-
-    const existing = readdirSync(albumPath).filter((f) => AUDIO_EXTS.has(extname(f).toLowerCase()))
-    let nextTrack = 1
-    for (const f of existing) {
-      const m = basename(f, extname(f)).match(/^(\d+)/)
-      if (m) nextTrack = Math.max(nextTrack, parseInt(m[1], 10) + 1)
-    }
+    const albumPath = musicPlaylistDir(playlist, artist)
+    const nextTrack = nextTrackIn(albumPath)
 
     const root = resolveLibraryRoot()
     const ytdlpPath = getToolPath(root, 'yt-dlp')
@@ -983,19 +1002,15 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('library:downloadYouTubePlaylist', async (
     _event,
-    { url, albumPath, artist }: { url: string; albumPath: string; artist?: string }
+    { url, playlist, artist }: { url: string; playlist: string; artist?: string }
   ) => {
-    if (!existsSync(albumPath)) mkdirSync(albumPath, { recursive: true })
-    if (artist) {
-      const albumJsonPath = join(albumPath, 'album.json')
-      let existing: Record<string, unknown> = {}
-      try { existing = JSON.parse(readFileSync(albumJsonPath, 'utf8')) } catch { /* new file */ }
-      writeFileSync(albumJsonPath, JSON.stringify({ ...existing, artist }))
-    }
+    const albumPath = musicPlaylistDir(playlist, artist)
 
     const root = resolveLibraryRoot()
     const ytdlpPath = getToolPath(root, 'yt-dlp')
-    const outTemplate = join(albumPath, '%(playlist_index)02d - %(title)s.%(ext)s')
+    // Added to a playlist that already has tracks, the YouTube playlist's
+    // numbers continue after them; they used to restart at 01 and collide.
+    const outTemplate = join(albumPath, `${playlistIndexField(nextTrackIn(albumPath))} - %(title)s.%(ext)s`)
     logYtDlp(root, 'playlist', `start: ${url}, tool=${ytdlpPath}${ytdlpPath === 'yt-dlp' ? ' (PATH lookup — bundled yt-dlp.exe missing on drive!)' : ''}`)
 
     let currentItem = -1  // -1 = no track started yet
@@ -1425,6 +1440,17 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ) => {
     const root = resolveLibraryRoot()
     const youtubeDir = join(root, 'media', 'youtube')
+    if (playlistName) {
+      // Backstop for the renderer's own check: a new playlist must be a plain
+      // folder name (a "/" would make a subfolder; ":" or "?" fail on exFAT).
+      const existing = existsSync(youtubeDir)
+        ? readdirSync(youtubeDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
+        : []
+      if (!existing.includes(playlistName)) {
+        const check = checkPlaylistName(playlistName, existing)
+        if (!check.ok) throw new Error('error' in check ? check.error : `A playlist called “${check.existing}” already exists.`)
+      }
+    }
     const targetDir = playlistName ? join(youtubeDir, playlistName) : youtubeDir
     if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true })
 
