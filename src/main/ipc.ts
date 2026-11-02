@@ -1456,9 +1456,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
           '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
           '--merge-output-format', 'mp4',
           '--write-thumbnail', '--convert-thumbnails', 'jpg',
-          // Cookie-free age-gate workaround: impersonate tv/web_safari clients
-          // and accept any age rating. (mweb removed — it demands a GVS PO Token.)
-          '--extractor-args', 'youtube:player_client=tv,web_safari',
+          // No --extractor-args player_client: yt-dlp's own default clients are
+          // the ones its maintainers keep working as YouTube changes. Pinning
+          // tv,web_safari (1.20.0's cookie-free age-gate workaround) broke every
+          // video download by 2026-11: tv answered "The page needs to be
+          // reloaded" and web_safari offered no usable formats, while the
+          // defaults, as music downloads use, still worked with the same
+          // yt-dlp. Age-gated videos are covered by the cookies retry below.
           '--age-limit', '99',
           ...cookiesArgs,
           ...denoArgs,
@@ -1519,7 +1523,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
         const proc = spawn(ytdlpPath, [
           '--skip-download',
           '--write-subs', '--write-auto-subs', '--sub-langs', 'en,en-US,en-GB,en-orig', '--convert-subs', 'srt',
-          '--extractor-args', 'youtube:player_client=tv,web_safari',
           ...cookiesArgs,
           ...denoArgs,
           '--newline', '--no-playlist', '--no-update',
