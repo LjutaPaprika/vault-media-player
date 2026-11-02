@@ -66,14 +66,12 @@ interface WatchOrderData {
   itemOrder: Record<string, string[]>
 }
 
-interface MusicAlbum {
+/** A music playlist (a folder under media/music), as the download picker lists it. */
+interface MusicPlaylistInfo {
   name: string
-  path: string
-}
-
-interface MusicAlbumsResult {
-  musicDir: string
-  albums: MusicAlbum[]
+  trackCount: number
+  /** The number the next track added to it gets. */
+  nextNumber: number
 }
 
 interface KeyboardBinding {
@@ -276,9 +274,9 @@ interface Window {
       markOpened: (filePath: string) => Promise<void>
       setWatched: (filePath: string, watched: boolean) => Promise<void>
       setGenre: (filePath: string, genre: string | null) => Promise<void>
-      getMusicAlbums: () => Promise<MusicAlbumsResult>
-      downloadYouTube: (args: { urls: { url: string; title: string; artist?: string }[]; albumPath: string; artist?: string }) => Promise<{ success: boolean }>
-      downloadYouTubePlaylist: (args: { url: string; albumPath: string; artist?: string }) => Promise<{ success: boolean }>
+      getMusicPlaylists: () => Promise<MusicPlaylistInfo[]>
+      downloadYouTube: (args: { urls: { url: string; title: string; artist?: string }[]; playlist: string; artist?: string }) => Promise<{ success: boolean }>
+      downloadYouTubePlaylist: (args: { url: string; playlist: string; artist?: string }) => Promise<{ success: boolean }>
       onDownloadProgress: (cb: (progress: DownloadProgress) => void) => () => void
     }
     playlist: {

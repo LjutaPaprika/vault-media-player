@@ -12,6 +12,10 @@ interface Props {
   artPath: string | null
   firstTrackPath: string
   onBack: () => void
+  /** Opens the download modal set to this playlist. */
+  onAddTracks: () => void
+  /** A modal is open over the page: leave Escape and the controller to it. */
+  suspended?: boolean
 }
 
 function formatTime(s: number): string {
@@ -23,9 +27,9 @@ function formatTime(s: number): string {
   return `${m}:${sec.toString().padStart(2, '0')}`
 }
 
-export default function AlbumDetailPage({ albumTitle, artist, year, artPath, firstTrackPath, onBack }: Props): JSX.Element {
+export default function AlbumDetailPage({ albumTitle, artist, year, artPath, firstTrackPath, onBack, onAddTracks, suspended = false }: Props): JSX.Element {
   const { setFocusZone } = useAppStore()
-  useEscapeKey(onBack)
+  useEscapeKey(onBack, !suspended)
   const { play, playTrack, togglePlay, playing, currentIndex, albumMeta, queue, seek, currentTime, shuffleEnabled, setShuffle, toggleShuffle } = useMusicPlayer()
   const currentTimeRef = useRef(0)
   useEffect(() => { currentTimeRef.current = currentTime }, [currentTime])
@@ -87,7 +91,7 @@ export default function AlbumDetailPage({ albumTitle, artist, year, artPath, fir
 
   useEffect(() => { tracksRef.current = tracks }, [tracks])
 
-  const { resetState } = useController({ onButton: (btn) => {
+  const { resetState } = useController({ enabled: !suspended, onButton: (btn) => {
     if (btn === 'back') { setFocusZone('content'); onBack(); return }
     if (btn === 'up') {
       const next = Math.max(0, focusedIdxRef.current - 1)
@@ -128,7 +132,7 @@ export default function AlbumDetailPage({ albumTitle, artist, year, artPath, fir
             }
           </div>
           <div className={styles.heroMeta}>
-            <p className={styles.heroType}>Album</p>
+            <p className={styles.heroType}>Playlist</p>
             <h1 className={styles.heroTitle}>{albumTitle}</h1>
             <p className={styles.heroSub}>
               {[artist, year ? String(year) : null].filter(Boolean).join(' · ')}
@@ -143,6 +147,10 @@ export default function AlbumDetailPage({ albumTitle, artist, year, artPath, fir
               <button className={`${styles.shuffleBtn} ${isThisAlbum && shuffleEnabled ? styles.shuffleBtnActive : ''}`} onClick={handleShuffle}>
                 <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
                 Shuffle
+              </button>
+              <button className={styles.addBtn} onClick={onAddTracks}>
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                Add tracks
               </button>
             </div>
           </div>

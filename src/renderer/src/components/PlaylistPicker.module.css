@@ -1,0 +1,218 @@
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.search:focus { border-color: var(--accent); }
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 292px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+/* ── Rows ─────────────────────────────────────────────────────────────────── */
+
+.row {
+  flex-shrink: 0;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.row:hover { background: var(--bg-surface); }
+
+.rowSelected,
+.rowSelected:hover {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.rowBtn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.rowBtn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+/* A row that is itself the button (every row but "New playlist") carries both
+   classes; keep the border on it. */
+.row.rowBtn { border: 1px solid var(--border); }
+.row.rowBtn.rowSelected { border-color: var(--accent); }
+
+.cover {
+  flex-shrink: 0;
+  height: 36px;
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.wide   { width: 64px; }
+.square { width: 36px; }
+
+.iconCover {
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px dashed var(--text-muted);
+}
+
+.iconCover svg { width: 18px; height: 18px; }
+
+.rowSelected .iconCover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.coverLetter {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Radio dot on the right: a ring, filled when chosen. */
+.radio {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--text-muted);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.rowSelected .radio {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--bg-elevated), inset 0 0 0 8px var(--accent);
+}
+
+/* ── New playlist ─────────────────────────────────────────────────────────── */
+
+.newBody {
+  padding: 0 10px 10px 86px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Lines the field up under the name: row padding + cover width + gap. */
+.newBodySquare { padding-left: 58px; }
+
+.nameInput {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.nameInput:focus { border-color: var(--accent); }
+
+.problem {
+  font-size: 12px;
+  color: var(--danger);
+  line-height: 1.45;
+}
+
+.linkBtn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.empty {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 4px;
+}
+
+/* ── Collapsed ("Adding to Meme · Change") ───────────────────────────────── */
+
+.collapsed {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+
+.changeBtn {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.changeBtn:hover { color: var(--text-primary); }

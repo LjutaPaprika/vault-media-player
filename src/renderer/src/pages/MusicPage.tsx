@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import PageShell from '../components/PageShell'
 import PosterImage from '../components/PosterImage'
 import AlbumDetailPage from './AlbumDetailPage'
-import ImportModal from '../components/ImportModal'
+import MusicDownloadModal from '../components/MusicDownloadModal'
 import { useLibrary } from '../hooks/useLibrary'
 import { useAppStore } from '../store/appStore'
 import { useController } from '../hooks/useController'
@@ -23,7 +23,9 @@ export default function MusicPage(): JSX.Element {
   const { play } = useMusicPlayer()
   const [query, setQuery] = useState('')
   const [openedAlbum, setOpenedAlbum] = useState<SelectedAlbum | null>(null)
-  const [showImport, setShowImport] = useState(false)
+  // The download modal: closed (null), open from the page (''), or open from
+  // inside a playlist, named by its folder so the modal starts there.
+  const [downloadInto, setDownloadInto] = useState<string | null>(null)
   const [shuffleMode, setShuffleMode] = useState(false)
   const [checkedIndices, setCheckedIndices] = useState<Set<number>>(new Set())
   const [focusedIdx, setFocusedIdx] = useState(0)
@@ -117,7 +119,7 @@ export default function MusicPage(): JSX.Element {
     setFocusedIdx(0)
   }
 
-  const { resetState } = useController({ onButton: (btn) => {
+  const { resetState } = useController({ enabled: downloadInto === null && !openedAlbum, onButton: (btn) => {
     if (btn === 'back') {
       if (shuffleMode) { cancelShuffleMode(); return }
       setFocusZone('sidebar')
@@ -151,16 +153,36 @@ export default function MusicPage(): JSX.Element {
 
   useEffect(() => { resetState() }, [])
 
+  // Cover art by playlist folder, for the download modal's picker.
+  const covers: Record<string, string | null> = {}
+  for (const i of items) if (i.filePath) covers[folderOf(i.filePath)] = i.posterPath ?? null
+
+  const downloadModal = downloadInto !== null && (
+    <MusicDownloadModal
+      covers={covers}
+      initialPlaylist={downloadInto || null}
+      onClose={(downloaded) => {
+        setDownloadInto(null)
+        if (downloaded) reload()
+      }}
+    />
+  )
+
   if (openedAlbum) {
     return (
-      <AlbumDetailPage
-        albumTitle={openedAlbum.title}
-        artist={openedAlbum.artist}
-        year={openedAlbum.year}
-        artPath={openedAlbum.artPath}
-        firstTrackPath={openedAlbum.firstTrackPath}
-        onBack={() => setOpenedAlbum(null)}
-      />
+      <>
+        <AlbumDetailPage
+          albumTitle={openedAlbum.title}
+          artist={openedAlbum.artist}
+          year={openedAlbum.year}
+          artPath={openedAlbum.artPath}
+          firstTrackPath={openedAlbum.firstTrackPath}
+          onBack={() => setOpenedAlbum(null)}
+          onAddTracks={() => setDownloadInto(folderOf(openedAlbum.firstTrackPath))}
+          suspended={downloadInto !== null}
+        />
+        {downloadModal}
+      </>
     )
   }
 
@@ -268,9 +290,9 @@ export default function MusicPage(): JSX.Element {
                 <svg viewBox="0 0 24 24" fill="currentColor" className={styles.btnIcon}><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
                 Shuffle Selected...
               </button>
-              <button className={styles.actionBtn} onClick={() => setShowImport(true)}>
+              <button className={styles.actionBtn} onClick={() => setDownloadInto('')}>
                 <svg viewBox="0 0 24 24" fill="currentColor" className={styles.btnIcon}><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                Import
+                Download Music
               </button>
             </>
           )}
@@ -305,14 +327,13 @@ export default function MusicPage(): JSX.Element {
         </>
       )}
     </PageShell>
-    {showImport && (
-      <ImportModal
-        onClose={(imported) => {
-          setShowImport(false)
-          if (imported) reload()
-        }}
-      />
-    )}
+    {downloadModal}
     </>
   )
+}
+
+/** A music playlist's folder name, from the path of one of its tracks. */
+function folderOf(trackPath: string): string {
+  const parts = trackPath.split(/[\\/]/)
+  return parts[parts.length - 2] ?? ''
 }
