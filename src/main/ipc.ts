@@ -423,9 +423,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
       if (list) list.push(i.path)
       else byWidth.set(w, [i.path])
     }
-    // Covers show at 720 on both the playlist card and the detail hero. One
-    // width deliberately: the cache holds a single width per source, so asking
-    // for two would evict one with the other on every page change.
+    // Covers show at 720 on both the playlist card and the detail hero, so
+    // that one width is the one worth warming.
     if (coverPaths.length) {
       const list = byWidth.get(720)
       if (list) list.push(...coverPaths)

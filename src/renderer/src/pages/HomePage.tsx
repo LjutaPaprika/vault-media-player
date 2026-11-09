@@ -4,6 +4,7 @@ import PosterImage from '../components/PosterImage'
 import PosterRow, { type RowCard } from '../components/PosterRow'
 import { PlayIcon, PrimaryButton, SecondaryButton } from '../components/PosterModal'
 import { useAppStore, type OpenRequest, type Page } from '../store/appStore'
+import { bumpArtworkVersion } from '../utils/artworkVersion'
 import { formatClock, formatRuntime } from '../utils/duration'
 import { episodeCode, parseEpisode } from '../utils/episodes'
 import { cleanDisplayTitle } from '../utils/mangaSeries'
@@ -170,6 +171,9 @@ function ScanMenu(): JSX.Element {
     setResult(null)
     try {
       const r = force ? await window.api.library.forceScan() : await window.api.library.scan()
+      // Even "no changes" can mean a cover replaced under the same name: the
+      // scan only counts media rows. Every artwork URL changes, so it shows.
+      bumpArtworkVersion()
       setResult(force ? `Full rescan complete — ${r.count} items indexed.`
         : r.count === 0 ? 'Scan complete — no changes detected.'
         : `Scan complete — ${r.count} new or updated item${r.count === 1 ? '' : 's'} indexed.`)

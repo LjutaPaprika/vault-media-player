@@ -33,9 +33,8 @@ export function sortByTitle(items: MediaItem[]): MediaItem[] {
 /**
  * A playlist's own cover (poster.jpg in its folder) is 16:9 art shown larger
  * than a video card, so it is requested at 720. Without one, the first video's
- * thumbnail stands in, requested at the same 520 its video card uses: the
- * thumbnail cache keeps one width per source file, so asking for a second
- * width would regenerate it back and forth between the two.
+ * thumbnail stands in, requested at the same 520 its video card uses, so one
+ * cached image serves both rather than making a second width of it.
  */
 export const COVER_WIDTH = 720
 export const VIDEO_THUMB_WIDTH = 520

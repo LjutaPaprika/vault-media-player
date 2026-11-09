@@ -1,5 +1,6 @@
 import { memo, useState } from 'react'
 import { protocolUrl } from '../utils/mediaUrl'
+import { useArtworkVersion } from '../hooks/useArtworkVersion'
 import styles from './EpisodeStill.module.css'
 
 /**
@@ -13,12 +14,14 @@ import styles from './EpisodeStill.module.css'
 const EpisodeStill = memo(function EpisodeStill({ filePath }: { filePath: string }): JSX.Element {
   const [failed, setFailed] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  // A re-downloaded episode keeps its name; the version gets its new still after a scan.
+  const version = useArtworkVersion()
   if (failed) return <div className={styles.placeholder} />
   return (
     <img
       className={`${styles.still} ${loaded ? styles.loaded : ''}`}
       // 310 is the smallest cached width, and double the 128px row thumb.
-      src={protocolUrl('thumb', filePath, 310)}
+      src={protocolUrl('thumb', filePath, 310, version)}
       alt=""
       loading="lazy"
       decoding="async"
