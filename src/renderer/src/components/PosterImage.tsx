@@ -1,5 +1,6 @@
 import { memo, useState } from 'react'
 import { protocolUrl } from '../utils/mediaUrl'
+import { useArtworkVersion } from '../hooks/useArtworkVersion'
 import styles from './MediaGrid.module.css'
 
 interface Props {
@@ -49,6 +50,8 @@ const PosterImage = memo(function PosterImage({ filePath, title, width = 310 }: 
   // Tracked per path, like failedPath above, so a rescan that swaps artwork
   // gets a fresh thumbnail attempt instead of inheriting the fallback.
   const [fullPath, setFullPath] = useState<string | null>(null)
+  // Changes after each scan, so a cover replaced under the same name is fetched again.
+  const version = useArtworkVersion()
 
   if (failedPath === filePath) {
     return <div className={styles.placeholder}>{title.charAt(0)}</div>
@@ -57,7 +60,7 @@ const PosterImage = memo(function PosterImage({ filePath, title, width = 310 }: 
 
   return (
     <img
-      src={protocolUrl(useFull ? 'media' : 'thumb', filePath, width)}
+      src={protocolUrl(useFull ? 'media' : 'thumb', filePath, width, version)}
       alt={title}
       draggable={false}
       decoding="async"

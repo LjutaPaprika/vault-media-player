@@ -9,11 +9,14 @@
  * the fullwidth characters (：｜) this library uses in place of the ones
  * Windows forbids in filenames.
  */
-export function protocolUrl(scheme: 'media' | 'thumb', filePath: string, width?: number): string {
+export function protocolUrl(scheme: 'media' | 'thumb', filePath: string, width?: number, version?: number): string {
   // thumb:// carries the requested width in the host position; media:// has no
   // host. Both then take the file path, encoded segment by segment.
   const host = scheme === 'thumb' && width ? String(width) : ''
-  return `${scheme}://${host}/` + filePath.split(/[/\\]/).map(encodeURIComponent).join('/')
+  // `version` (see artworkVersion.ts) only makes the URL new for Chromium's
+  // cache; the main process reads the path and ignores the query.
+  const query = version !== undefined ? `?v=${version}` : ''
+  return `${scheme}://${host}/` + filePath.split(/[/\\]/).map(encodeURIComponent).join('/') + query
 }
 
 /** A local file, streamed whole (with seeking) over media://. */

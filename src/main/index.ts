@@ -23,6 +23,7 @@ import { recoverParked, releaseParkedOnQuit } from './gameSessions'
 import { setRegistryStateDir } from './registrySettings'
 import { hideSystemPaths } from './sync'
 import { getOrCreateThumb } from './thumbnails'
+import { filePathFromProtocolUrl, parseThumbUrl } from './protocolPaths'
 
 if (app.isPackaged && process.platform === 'win32') {
   spawnSync('attrib', ['-h', '-s', dirname(app.getPath('exe'))], { shell: true })
@@ -133,10 +134,7 @@ app.whenReady().then(() => {
       // actually displays. Shelf cards are 155px, the music grid 360px, and one
       // size cannot serve both without either blurring music or wasting bytes
       // on every shelf.
-      const url = new URL(request.url)
-      const width = parseInt(url.hostname, 10)
-      const pathname = decodeURIComponent(url.pathname)
-      const filePath = process.platform === 'win32' ? pathname.slice(1) : pathname
+      const { width, filePath } = parseThumbUrl(request.url)
 
       const thumb = await getOrCreateThumb(filePath, width)
       // 404 rather than an error page: the renderer's onError swaps in the
@@ -148,8 +146,10 @@ app.whenReady().then(() => {
         headers: {
           'Content-Type': thumb.mime,
           'Content-Length': String(thumb.data.length),
-          // Keyed on source mtime in the DB, so a stale entry cannot outlive
-          // its poster; this only tells Chromium it need not re-ask each paint.
+          // Tells Chromium it need not re-ask each paint. Chromium keys this on
+          // the URL alone, so a cover replaced under the same name would stay
+          // stale for the session; the renderer's ?v= (artworkVersion.ts),
+          // changed by every scan, is what lets a replaced cover through.
           'Cache-Control': 'private, max-age=86400'
         }
       })
@@ -161,9 +161,7 @@ app.whenReady().then(() => {
   // Serve local media files via media:// with proper Range/206 support so seeking works.
   protocol.handle('media', (request) => {
     try {
-      const pathname = decodeURIComponent(new URL(request.url).pathname)
-      // On Windows, pathname starts with /E:/... — strip the leading slash
-      const filePath = process.platform === 'win32' ? pathname.slice(1) : pathname
+      const filePath = filePathFromProtocolUrl(request.url)
 
       if (!existsSync(filePath)) return new Response(null, { status: 404 })
 

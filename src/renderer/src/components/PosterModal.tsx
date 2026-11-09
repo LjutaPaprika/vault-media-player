@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { protocolUrl } from '../utils/mediaUrl'
+import { useArtworkVersion } from '../hooks/useArtworkVersion'
 import styles from './PosterModal.module.css'
 
 /** Matches the fade-out length in PosterModal.module.css. */
@@ -28,11 +29,12 @@ export function usePosterModal(onClosed: () => void): { closing: boolean; close:
 /** Thumbnail first, the full file if the thumbnail fails, nothing if both do. */
 function Art({ path, width, className, onRatio }: { path: string; width: number; className: string; onRatio?: (r: number) => void }): JSX.Element | null {
   const [stage, setStage] = useState<'thumb' | 'media' | 'gone'>('thumb')
+  const version = useArtworkVersion()
   if (stage === 'gone') return null
   return (
     <img
       className={className}
-      src={protocolUrl(stage, path, width)}
+      src={protocolUrl(stage, path, width, version)}
       alt=""
       draggable={false}
       decoding="async"

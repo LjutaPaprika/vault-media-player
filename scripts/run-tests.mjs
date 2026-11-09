@@ -1,10 +1,12 @@
-// Runs the *.test.ts files under src with Node's built-in test runner.
+// Runs the *.test.ts files under src with Node's built-in test runner, inside
+// Electron's Node (see the spawn below).
 // esbuild (already installed for the build) compiles each one to out/tests
 // first, so testing needs no extra dependencies.
 import { build } from 'esbuild'
 import { readdirSync, rmSync } from 'fs'
 import { join, relative } from 'path'
 import { spawnSync } from 'child_process'
+import { createRequire } from 'module'
 
 const root = new URL('..', import.meta.url).pathname.replace(/^\/([a-z]:)/i, '$1')
 const outdir = join(root, 'out', 'tests')
@@ -40,5 +42,22 @@ await build({
 })
 
 const compiled = entries.map((f) => join(outdir, relative(join(root, 'src'), f)).replace(/\.ts$/, '.cjs'))
-const r = spawnSync(process.execPath, ['--test', ...compiled], { stdio: 'inherit' })
+// Run under Electron's own Node (ELECTRON_RUN_AS_NODE), not the system one:
+// better-sqlite3 is rebuilt for Electron's ABI and will not load anywhere
+// else, and the cache tests open real databases with it. This is also the
+// runtime the main process actually ships on.
+// Output is piped and relayed: electron.exe is a Windows GUI-subsystem binary
+// and does not reliably write to an inherited console.
+const electronBin = createRequire(import.meta.url)('electron')
+const r = spawnSync(electronBin, ['--test', ...compiled], {
+  stdio: ['ignore', 'pipe', 'pipe'],
+  env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  maxBuffer: 64 * 1024 * 1024
+})
+if (r.error) {
+  console.error('could not start Electron to run the tests:', r.error.message)
+  process.exit(1)
+}
+process.stdout.write(r.stdout)
+process.stderr.write(r.stderr)
 process.exit(r.status ?? 1)
