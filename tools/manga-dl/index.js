@@ -25,6 +25,7 @@ import { join, resolve, extname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { parse as parseHtml } from 'node-html-parser'
 import AdmZip from 'adm-zip'
+import { isNonPageImage } from './filter.js'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -42,8 +43,7 @@ const CONTENT_SELECTORS = [
   'article',
 ]
 
-// Image URL patterns that are clearly not manga pages
-const SKIP_IMAGE_RE = /logo|icon|banner|avatar|button|spinner|placeholder|blank|spacer|\/ads?\/|pixel/i
+// Images that are clearly not manga pages (logos, icons, ads…): see filter.js
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -103,13 +103,15 @@ function extractChapters(html, baseUrl, urlMatchRe = null) {
 
     // Check the URL PATH against the matcher — not the full URL, which may
     // include the matched word in the domain name (e.g. chainsawmanchapter.com).
+    // A custom --url-match also sees the query string, for readers that pick the
+    // chapter by query (e.g. mangaviewer.php?m=3&c=1).
     // Skip taxonomy/category/tag archive pages.
-    const pathname = new URL(absUrl).pathname
-    if (!matcher.test(pathname)) continue
+    const { pathname, search } = new URL(absUrl)
+    if (!matcher.test(urlMatchRe ? pathname + search : pathname)) continue
     if (/\/(category|tag|archive|feed)\//i.test(pathname)) continue
 
-    // Strip anchors/query strings for dedup
-    const key = absUrl.split('?')[0].split('#')[0].replace(/\/$/, '')
+    // Strip anchors (and query strings, unless the query picks the chapter) for dedup
+    const key = (urlMatchRe ? absUrl : absUrl.split('?')[0]).split('#')[0].replace(/\/$/, '')
     if (seen.has(key)) continue
     seen.add(key)
 
@@ -173,7 +175,7 @@ function filterImages(imgEls, chapterUrl) {
       img.getAttribute('src') ||
       ''
     if (!src.startsWith('http')) continue
-    if (SKIP_IMAGE_RE.test(src)) continue
+    if (isNonPageImage(src)) continue
 
     // Skip images explicitly declared as tiny
     const w = parseInt(img.getAttribute('width') || '0')
