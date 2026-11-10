@@ -265,6 +265,10 @@ interface Window {
       readImage: (filePath: string) => Promise<string | null>
       getExtras: (seriesTitle: string, parentCategory?: string) => Promise<MediaItem[]>
       getAlbumTracks: (firstTrackPath: string) => Promise<{ path: string; title: string; artist?: string; trackNumber: number; duration: number; artPath: string | null }[]>
+      /** Whether the playlist has a saved drag order that differs from file-name order. */
+      hasCustomTrackOrder: (firstTrackPath: string) => Promise<boolean>
+      /** Saves a playlist's track order (file names), or clears it with null. Returns the order now in effect. */
+      setTrackOrder: (firstTrackPath: string, names: string[] | null) => Promise<{ order: string[]; custom: boolean }>
       getTechInfo:     (filePath: string) => Promise<MediaTechInfo | null>
       getDurations:    (category: string) => Promise<Record<string, number>>
       getEpubInfo:     (filePath: string) => Promise<{ title: string; author: string; chapters: { id: string; title: string; href: string }[]; coverDataUrl: string | null }>

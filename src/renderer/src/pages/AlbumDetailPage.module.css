@@ -183,6 +183,7 @@
 }
 
 .trackRow {
+  position: relative;
   display: grid;
   grid-template-columns: 48px 1fr 64px;
   align-items: center;
@@ -190,7 +191,84 @@
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.12s;
+  /* A drag starts on a press anywhere in the row; don't select text instead. */
+  user-select: none;
+  touch-action: none;
 }
+
+/* Drag hint: a grip in the gutter left of the row, shown on hover. */
+.grip {
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.12s;
+  cursor: grab;
+  pointer-events: none;
+}
+
+.trackRow:hover .grip,
+.trackRow.dragging .grip { opacity: 1; }
+
+/* The row being dragged (mouse) or carried (controller Y). */
+.trackRow.dragging {
+  z-index: 2;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);
+  cursor: grabbing;
+}
+
+/* While dragging, the other rows don't light up as the pointer passes over them. */
+.listDragging { cursor: grabbing; }
+.listDragging .trackRow:not(.dragging):hover { background: transparent; }
+.listDragging .trackRow:not(.dragging):hover .trackNum { display: inline; }
+.listDragging .trackRow:not(.dragging):hover .hoverPlay { display: none !important; }
+.listDragging .trackRow:not(.dragging):hover .grip { opacity: 0; }
+
+/* "Moved · Undo", above the player bar. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--player-bar-height) + 16px);
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 12px 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.toast > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toastError { box-shadow: var(--shadow-lg), 0 0 0 1px var(--danger); }
+
+.toastUndo {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.toastUndo:hover { background: rgba(255,255,255,0.06); }
 
 .trackRow:hover,
 .trackRow.controllerFocus {
