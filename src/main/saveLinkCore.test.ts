@@ -90,10 +90,46 @@ test("the PC's own folder is never replaced by a lasting link", () => {
   assert.equal(save(host), 'steam save')
 })
 
-test('no link is made to a drive folder that does not exist', () => {
+test('a new entry whose drive folder was never made gets the folder and the link, so the first run saves to the drive', () => {
+  // Dead Space, 2026-11-10: the entry was added before the game's first run and
+  // saves/Dead Space did not exist yet. The old rule skipped the link silently,
+  // and the game wrote 132 MB of saves and cache onto C:.
   rmSync(target(driveA), { recursive: true })
+  assert.equal(applyLasting(host, target(driveA), REL), 'created-folder')
+  assert.equal(inspect(host).kind, 'link')
+  writeFileSync(join(host, 'first.sav'), 'first save')
+  assert.equal(save(target(driveA), 'first.sav'), 'first save')
+})
+
+test('also when the drive has no saves folder at all yet', () => {
+  rmSync(join(driveA, 'saves'), { recursive: true })
+  assert.equal(applyLasting(host, target(driveA), REL), 'created-folder')
+  assert.ok(existsSync(target(driveA)))
+})
+
+test('no folder or link is made when the drive itself is not there', () => {
+  rmSync(driveA, { recursive: true })
   assert.equal(applyLasting(host, target(driveA), REL), 'skipped-no-target')
   assert.equal(inspect(host).kind, 'missing')
+  assert.equal(existsSync(driveA), false, 'nothing created where the drive should be')
+})
+
+test("the PC's own folder is still left alone, and no empty drive folder is made for it", () => {
+  rmSync(target(driveA), { recursive: true })
+  mkdirSync(host, { recursive: true })
+  writeFileSync(join(host, 'save.dat'), 'steam save')
+  assert.equal(applyLasting(host, target(driveA), REL), 'skipped-no-target')
+  assert.equal(save(host), 'steam save')
+  assert.equal(existsSync(target(driveA)), false)
+})
+
+test('a link from an old drive letter is not re-pointed at a new, empty folder', () => {
+  // Its saves live under the old letter; an empty folder here would hide them.
+  makeLink(target(driveA), host)
+  rmSync(target(driveB), { recursive: true })
+  assert.equal(applyLasting(host, target(driveB), REL), 'skipped-no-target')
+  assert.equal(save(host), 'drive A save')
+  assert.equal(existsSync(target(driveB)), false)
 })
 
 test('removing a link never deletes what it points at', () => {
