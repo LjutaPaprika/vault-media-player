@@ -150,6 +150,8 @@ function ensureOne(driveRoot: string, link: SaveLink): void {
   try {
     const r = applyLasting(hostPath, target, link.drive)
     if (r === 'created') console.log(`[savelinks] linked ${hostPath} -> ${target}`)
+    else if (r === 'created-folder') console.log(`[savelinks] linked ${hostPath} -> ${target} (made the drive folder; nothing saved yet)`)
+    else if (r === 'skipped-no-target') console.warn(`[savelinks] ${link.name}: ${target} does not exist and was not made — not linked`)
     else if (r === 'repointed') console.log(`[savelinks] ${link.name}: re-pointed at the drive as mounted now (${target})`)
     else if (r === 'left') {
       // A real folder (this PC's own copy of the game: it is only swapped out

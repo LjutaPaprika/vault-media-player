@@ -103,17 +103,34 @@ export function removeLink(hostPath: string): void {
   try { rmdirSync(hostPath) } catch { unlinkSync(hostPath) }
 }
 
-export type Applied = 'linked' | 'created' | 'repointed' | 'left' | 'skipped-no-target'
+export type Applied = 'linked' | 'created' | 'created-folder' | 'repointed' | 'left' | 'skipped-no-target'
+
+/** The drive root a drive folder hangs off: `target` with `driveRel`'s parts taken off the end. */
+export function driveRootOf(target: string, driveRel: string): string {
+  let root = target
+  for (let i = driveRel.split(/[\\/]+/).filter(Boolean).length; i > 0; i--) root = dirname(root)
+  return root
+}
 
 /**
  * Lasting links: create one where the host path is free and re-point one left
  * from an old drive letter. Real folders and other links are left alone.
  */
 export function applyLasting(hostPath: string, target: string, driveRel: string): Applied {
-  // Nothing on the drive to point at (an entry whose data was never moved
-  // there): a link to a missing folder would make the game fail to save.
-  if (!existsSync(target)) return 'skipped-no-target'
-  switch (plan(hostPath, target, driveRel)) {
+  const p = plan(hostPath, target, driveRel)
+  if (!existsSync(target)) {
+    // An entry added before the game ever ran (its drive folder not made yet):
+    // make the folder, or the game creates a real one on the PC and saves
+    // there. Only when the host path is free and the drive itself is mounted.
+    // Anything else keeps the old rule, no link to a folder that isn't there:
+    // a real folder is the PC's own data, and a link from an old drive letter
+    // has its saves under that letter, which an empty new folder would hide.
+    if (p !== 'create' || !existsSync(driveRootOf(target, driveRel))) return 'skipped-no-target'
+    mkdirSync(target, { recursive: true })
+    makeLink(target, hostPath)
+    return 'created-folder'
+  }
+  switch (p) {
     case 'linked': return 'linked'
     case 'create':
       makeLink(target, hostPath)
