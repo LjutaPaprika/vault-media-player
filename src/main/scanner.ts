@@ -1,8 +1,9 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync, statSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { join, extname, basename, dirname, sep } from 'path'
 import { execSync } from 'child_process'
 import { upsertItem, getStoredFileTimes, deleteOrphanedEntries, migrateRenamedPaths, updateTechInfo, needsTechInfo, setConfig, getStoredDirTimes, setStoredDirTimes, retireOtherGameExes } from './database'
 import { probeFile, probeAudioFileSync } from './mediaInfo'
+import { updateAlbumJson } from './albumJson'
 
 // macOS Finder drops these into any directory it touches — `.DS_Store` for
 // folder metadata, `._<name>` AppleDouble sidecars carrying resource forks and
@@ -837,7 +838,13 @@ function scanMusic(rootDir: string, ffprobePath = ''): number {
         updated = true
       }
       if (updated) {
-        try { writeFileSync(albumJsonPath, JSON.stringify({ ...albumData, durations: cache })) } catch { /* non-fatal */ }
+        // Merged into a fresh read so a track order (or artist) saved meanwhile is kept.
+        try {
+          updateAlbumJson(albumDir, (d) => ({
+            ...d,
+            durations: { ...((d.durations ?? {}) as Record<string, unknown>), ...cache }
+          }))
+        } catch { /* non-fatal */ }
       }
     }
 

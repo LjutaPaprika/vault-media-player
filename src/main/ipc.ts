@@ -2,13 +2,21 @@ import { app, ipcMain, BrowserWindow, shell, protocol, session } from 'electron'
 import { readFileSync, existsSync, statSync, readdirSync, writeFileSync, mkdirSync, appendFileSync, unlinkSync } from 'fs'
 import { promises as fsp } from 'fs'
 import type { Cookie } from 'electron'
-import { extname, dirname, join, basename } from 'path'
+import { extname, dirname, join, basename, resolve, relative, isAbsolute } from 'path'
 import { spawn, spawnSync } from 'child_process'
 import { cpus, totalmem, tmpdir } from 'os'
 import { createHash } from 'crypto'
 import AdmZip from 'adm-zip'
 
 const AUDIO_EXTS = new Set(['.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav', '.opus', '.wma'])
+
+/**
+ * The audio files in a music playlist folder, unordered. Skips the `._name.mp3`
+ * stubs macOS leaves beside each file on a drive that has been to a Mac.
+ */
+function listAudioFiles(dir: string): string[] {
+  return readdirSync(dir).filter((f) => !f.startsWith('._') && AUDIO_EXTS.has(extname(f).toLowerCase()))
+}
 
 // In-memory CBZ state — populated by manga:openCbz, served by the cbz:// protocol.
 //
@@ -47,6 +55,8 @@ import { readGameRequirements } from './gameRequirements'
 import { getHomeData } from './home'
 import { readWatchOrder, resolveSeriesDir } from './watchOrder'
 import { checkPlaylistName, nextTrackNumber, playlistIndexField } from '../renderer/src/utils/playlistTarget'
+import { applyTrackOrder, checkTrackOrder, isCustomOrder } from '../renderer/src/utils/trackOrder'
+import { readAlbumJson, updateAlbumJson } from './albumJson'
 import { clearProgress, progressFileFor, progressKey, readProgress, saveProgress, watchProgress, writeQueue, type VideoProgress } from './playbackProgress'
 import { artworkStats, episodesWithoutStill, fillEpisodeStills, moveLegacyThumbnails, pruneArtwork, warmThumbs } from './thumbnails'
 import { setCacheRootResolver } from './cacheDb'
@@ -479,17 +489,16 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const dir = dirname(firstTrackPath)
     if (!existsSync(dir)) return []
 
-    const allFiles = readdirSync(dir)
-    const audioFiles = allFiles.filter((f) => AUDIO_EXTS.has(extname(f).toLowerCase())).sort()
+    // Metadata cache — stored inside album.json under a "durations" key
+    // Format evolved from Record<string, number> → Record<string, { duration, title?, artist?, probed? }>
+    const albumData = readAlbumJson(dir)
+
+    // Play order: a saved drag order if there is one, else file-name order.
+    const audioFiles = applyTrackOrder(listAudioFiles(dir), albumData.order)
 
     // Find album art to attach to each track (enables per-track cover in multi-album shuffle)
     const artPath = findPoster(dir)
 
-    // Metadata cache — stored inside album.json under a "durations" key
-    // Format evolved from Record<string, number> → Record<string, { duration, title?, artist?, probed? }>
-    const albumJsonPath = join(dir, 'album.json')
-    let albumData: Record<string, unknown> = {}
-    try { albumData = JSON.parse(readFileSync(albumJsonPath, 'utf8')) } catch { /* no file yet */ }
     const rawCache = (albumData.durations ?? {}) as Record<string, number | { duration: number; title?: string; artist?: string; probed?: boolean }>
     type TrackMeta = { duration: number; title?: string; artist?: string; probed?: boolean }
     const cache: Record<string, TrackMeta> = {}
@@ -551,10 +560,58 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     })
 
     if (cacheUpdated) {
-      try { writeFileSync(albumJsonPath, JSON.stringify({ ...albumData, durations: cache })) } catch { /* non-fatal */ }
+      // Merged into a fresh read: the probes above were awaited, and a drag may
+      // have saved a new order (or the scan new metadata) in the meantime.
+      try {
+        updateAlbumJson(dir, (d) => ({
+          ...d,
+          durations: { ...((d.durations ?? {}) as Record<string, unknown>), ...cache }
+        }))
+      } catch { /* non-fatal: the cache is rebuilt next time */ }
     }
 
     return tracks
+  })
+
+  // ─── Playlist track order ─────────────────────────────────────────────────
+  // A playlist's folder from its first track's path, refusing anything that is
+  // not a folder directly inside media/music (the renderer only ever sends a
+  // path it was given, but this is what decides where album.json is written).
+  function musicPlaylistFolder(firstTrackPath: string): string {
+    const musicDir = resolve(resolveLibraryRoot(), 'media', 'music')
+    const dir = resolve(dirname(String(firstTrackPath)))
+    const rel = relative(musicDir, dir)
+    if (!rel || rel === '..' || isAbsolute(rel) || /[\\/]/.test(rel) || !existsSync(dir)) {
+      throw new Error('Not a music playlist folder.')
+    }
+    return dir
+  }
+
+  /** Whether the playlist has a saved order that differs from file-name order. */
+  ipcMain.handle('library:hasCustomTrackOrder', (_event, firstTrackPath: string): boolean => {
+    const dir = musicPlaylistFolder(firstTrackPath)
+    return isCustomOrder(listAudioFiles(dir), readAlbumJson(dir).order)
+  })
+
+  /**
+   * Saves a playlist's track order (file names, first to last), or with null
+   * clears it so the playlist goes back to file-name order. Returns the order
+   * now in effect, which also places any track added since the page loaded.
+   */
+  ipcMain.handle('library:setTrackOrder', (_event, firstTrackPath: string, names: string[] | null): { order: string[]; custom: boolean } => {
+    const dir = musicPlaylistFolder(firstTrackPath)
+    const files = listAudioFiles(dir)
+    let saved: string[] | undefined
+    if (names !== null) {
+      const check = checkTrackOrder(names, files)
+      if (!check.ok) throw new Error(check.error)
+      saved = check.order
+    }
+    const data = updateAlbumJson(dir, (d) => {
+      const { order: _old, ...rest } = d
+      return saved && isCustomOrder(files, saved) ? { ...rest, order: saved } : rest
+    })
+    return { order: applyTrackOrder(files, data.order), custom: isCustomOrder(files, data.order) }
   })
 
   ipcMain.handle('library:getStats',        () => getStats())
@@ -885,10 +942,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const dir = join(musicDir, playlist)
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     if (artist) {
-      const albumJsonPath = join(dir, 'album.json')
-      let meta: Record<string, unknown> = {}
-      try { meta = JSON.parse(readFileSync(albumJsonPath, 'utf8')) } catch { /* new file */ }
-      writeFileSync(albumJsonPath, JSON.stringify({ ...meta, artist }))
+      // Not worth failing the download over; an unreadable album.json is left as it is.
+      try { updateAlbumJson(dir, (d) => ({ ...d, artist })) } catch (err) { console.warn('[music import] artist not saved:', err) }
     }
     return dir
   }

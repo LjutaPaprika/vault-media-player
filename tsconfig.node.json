@@ -19,6 +19,7 @@
     "src/renderer/src/utils/episodes.ts",
     "src/renderer/src/utils/episodeOrder.ts",
     "src/renderer/src/utils/playlistTarget.ts",
+    "src/renderer/src/utils/trackOrder.ts",
     "src/renderer/src/utils/mediaUrl.ts",
     "src/renderer/src/utils/artworkVersion.ts"
   ]

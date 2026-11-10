@@ -1,5 +1,6 @@
 import { createContext, useContext, useRef, useState, useCallback, useEffect, ReactNode } from 'react'
 import { mediaUrl } from '../utils/mediaUrl'
+import { reorderQueue } from '../utils/trackOrder'
 
 export interface Track {
   path: string
@@ -36,6 +37,12 @@ interface PlayerContextValue {
   toggleShuffle: () => void
   setShuffle: (enabled: boolean) => void
   toggleLoop: () => void
+  /**
+   * The playlist on screen was reordered from `before` to `after`. If that is
+   * what's playing, the queue (or, while shuffled, the order shuffle-off goes
+   * back to) follows; the current song keeps playing either way.
+   */
+  reorderPlaylist: (before: Track[], after: Track[]) => void
 }
 
 function shuffleRest(tracks: Track[], firstIndex: number): Track[] {
@@ -185,6 +192,19 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): JSX.
     setShuffleEnabled(enabled)
   }, [])
 
+  const reorderPlaylist = useCallback((before: Track[], after: Track[]) => {
+    const r = reorderQueue({
+      queue: queueRef.current,
+      currentIndex: currentIndexRef.current,
+      original: originalQueueRef.current,
+      shuffled: shuffleRef.current
+    }, before, after)
+    if (!r) return
+    originalQueueRef.current = r.original
+    // No loadTrack: the same song is still current, only its position moved.
+    commitQueue(r.queue, r.currentIndex)
+  }, [])
+
   const toggleLoop = useCallback(() => {
     loopRef.current = !loopRef.current
     setLoopEnabled(loopRef.current)
@@ -222,7 +242,7 @@ export function MusicPlayerProvider({ children }: { children: ReactNode }): JSX.
   return (
     <MusicPlayerContext.Provider value={{
       queue, currentIndex, albumMeta, playing, currentTime, duration, volume, shuffleEnabled, loopEnabled,
-      play, playTrack, togglePlay, next, prev, seek, setVolume, toggleShuffle, setShuffle, toggleLoop
+      play, playTrack, togglePlay, next, prev, seek, setVolume, toggleShuffle, setShuffle, toggleLoop, reorderPlaylist
     }}>
       <audio
         ref={audioRef}

@@ -1,6 +1,6 @@
 {
   "name": "Vault",
-  "version": "1.36.1",
+  "version": "1.37.0",
   "description": "Personal media vault",
   "main": "out/main/index.js",
   "scripts": {
@@ -21,6 +21,9 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
     "@types/adm-zip": "^0.5.8",
     "@types/better-sqlite3": "^7.6.8",
     "@types/node": "^20.11.5",

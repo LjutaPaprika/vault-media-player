@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('api', {
     scan: () => ipcRenderer.invoke('library:scan'),
     forceScan: () => ipcRenderer.invoke('library:forceScan'),
     getAlbumTracks: (firstTrackPath: string) => ipcRenderer.invoke('library:getAlbumTracks', firstTrackPath),
+    hasCustomTrackOrder: (firstTrackPath: string) => ipcRenderer.invoke('library:hasCustomTrackOrder', firstTrackPath),
+    setTrackOrder: (firstTrackPath: string, names: string[] | null) => ipcRenderer.invoke('library:setTrackOrder', firstTrackPath, names),
     getStats: () => ipcRenderer.invoke('library:getStats'),
     getHome: () => ipcRenderer.invoke('library:getHome'),
     getItems: (category: string) => ipcRenderer.invoke('library:getItems', category),
