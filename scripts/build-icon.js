@@ -1,20 +1,37 @@
 #!/usr/bin/env node
-// Converts build/icon.svg → build/icon.png + build/icon.ico
-// ICO uses traditional BMP (DIB) image data for maximum rcedit/Windows compatibility
+// Converts build/icon.svg → build/icon.png + build/icon.ico + build/icon-mac.png
+// ICO uses traditional BMP (DIB) image data for maximum rcedit/Windows compatibility.
+// Sizes up to SMALL_MAX come from build/icon-small.svg, a simplified drawing:
+// the full one's detail (the door's bolts) turns to mush at 16px.
 
 const sharp = require('sharp')
 const fs = require('fs')
 const path = require('path')
 
 const buildDir = path.join(__dirname, '..', 'build')
-const svgPath  = path.join(buildDir, 'icon.svg')
-const pngPath  = path.join(buildDir, 'icon.png')
-const icoPath  = path.join(buildDir, 'icon.ico')
+const svgPath      = path.join(buildDir, 'icon.svg')
+const smallSvgPath = path.join(buildDir, 'icon-small.svg')
+const pngPath      = path.join(buildDir, 'icon.png')
+const icoPath      = path.join(buildDir, 'icon.ico')
+const macPngPath   = path.join(buildDir, 'icon-mac.png')
 
 const SIZES = [16, 24, 32, 48, 64, 128, 256]
+const SMALL_MAX = 24
+
+// macOS draws app icons on a 1024 canvas with the tile inset 100px each side
+// (Apple's icon grid); a full-bleed tile looks oversized in the Dock.
+const MAC_CANVAS = 1024
+const MAC_INSET = 100
+
+// Render from the SVG at the target size (density scales the vector up front),
+// rather than rasterising at 256 and shrinking, so small sizes stay crisp.
+function render(svg, size) {
+  return sharp(svg, { density: Math.max(72, Math.ceil((72 * size) / 256) * 2) }).resize(size, size)
+}
 
 async function renderRgba(size) {
-  return sharp(svgPath).resize(size, size).ensureAlpha().raw().toBuffer()
+  const svg = size <= SMALL_MAX && fs.existsSync(smallSvgPath) ? smallSvgPath : svgPath
+  return render(svg, size).ensureAlpha().raw().toBuffer()
 }
 
 function makeDib(rawRgba, size) {
@@ -50,8 +67,16 @@ function makeDib(rawRgba, size) {
 
 async function run() {
   // 1. SVG → PNG at 256×256 (reference copy)
-  await sharp(svgPath).resize(256, 256).png().toFile(pngPath)
+  await render(svgPath, 256).png().toFile(pngPath)
   console.log('✓ icon.png written')
+
+  // 1b. macOS: 1024 canvas, tile inset per Apple's grid
+  const tile = MAC_CANVAS - 2 * MAC_INSET
+  await sharp({ create: { width: MAC_CANVAS, height: MAC_CANVAS, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite([{ input: await render(svgPath, tile).png().toBuffer(), left: MAC_INSET, top: MAC_INSET }])
+    .png()
+    .toFile(macPngPath)
+  console.log(`✓ icon-mac.png written (${MAC_CANVAS}px, ${MAC_INSET}px inset)`)
 
   // 2. Build multi-size ICO with BMP image data
   const dibs = []
