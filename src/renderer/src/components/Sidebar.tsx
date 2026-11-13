@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useAppStore, type Page } from '../store/appStore'
 import { useStorageStatsStore } from '../store/storageStatsStore'
 import { useController, type ControllerButton } from '../hooks/useController'
+import VaultMark from './VaultMark'
 import styles from './Sidebar.module.css'
 
 function pctOf(used: number, total: number): number {
@@ -82,7 +83,7 @@ export default function Sidebar(): JSX.Element {
       onClick={() => setFocusZone('sidebar')}
     >
       <div className={styles.logo}>
-        <div className={styles.logoIcon}>V</div>
+        <VaultMark size={30} className={styles.logoIcon} />
         <span className={styles.logoText}>VAULT</span>
       </div>
       <ul className={styles.nav}>

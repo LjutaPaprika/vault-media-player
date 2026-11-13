@@ -27,6 +27,7 @@ import ArcadePage from './pages/ArcadePage'
 import StatsPage from './pages/StatsPage'
 import StoragePage from './pages/StoragePage'
 import SettingsPage from './pages/SettingsPage'
+import VaultMark from './components/VaultMark'
 
 const PAGES: Record<string, JSX.Element> = {
   home:     <HomePage />,
@@ -87,11 +88,7 @@ export default function App(): JSX.Element {
         height: '100%', background: 'var(--bg-base)', gap: 20,
         animation: 'fadeIn 0.3s ease'
       }}>
-        <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
-          <rect width="52" height="52" rx="12" fill="#1c1c21"/>
-          <path d="M14 26 L26 14 L38 26 L26 38 Z" fill="#e8b44b" opacity="0.9"/>
-          <path d="M26 14 L38 26 L26 38" fill="#e8b44b" opacity="0.4"/>
-        </svg>
+        <VaultMark size={64} />
         <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
           Vault
         </span>
