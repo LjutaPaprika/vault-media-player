@@ -102,9 +102,20 @@ test('"Scene 1 | Recap | Scene 3 | Intro" layouts find the Intro (Undead Unluck)
   assert.equal(s.op, '158.0-248.0')
 })
 
-test('an "Intro" that is the first chapter stays a cold open, whatever its length', { skip }, () => {
+test('in fansub layouts a first-chapter "Intro" stays a cold open, whatever its length', { skip }, () => {
   assert.equal(segmentsFor('coldopen-long', [[0, 'Intro'], [298, 'Part A'], [803, 'Part B'], [1330, 'ED']]).op, '-')
   assert.equal(segmentsFor('coldopen-90', [[0, 'Intro'], [90, 'Part A'], [700, 'Part B'], [1330, 'ED']]).op, '-')
+  // Tomo-chan: "Episode" alone does not make it a marker layout; the "ED" is fansub naming.
+  assert.equal(segmentsFor('coldopen-mixed', [[0, 'Intro'], [80, 'Episode'], [1331, 'ED']]).op, '-')
+})
+
+test('in marker-only layouts a first-chapter "Intro" is the OP (Smoking E03, Lazarus, Spy x Family S3)', { skip }, () => {
+  const smoking = segmentsFor('marker-first', [[0, 'Intro'], [90, 'Episode'], [1334, 'Credits']])
+  assert.equal(smoking.op, '0.0-90.0')
+  assert.equal(smoking.ed, '1334.0-1440.0')
+  assert.equal(segmentsFor('marker-scenes', [[0, 'Intro'], [90, 'Scene 2'], [1339, 'Credits'], [1430, 'Scene 4']]).op, '0.0-90.0')
+  // Still has to run like an OP.
+  assert.equal(segmentsFor('marker-short', [[0, 'Intro'], [23, 'Episode'], [1425, 'Preview']]).op, '-')
 })
 
 test('an "Intro" too short or too long for an OP is left alone', { skip }, () => {
