@@ -51,10 +51,14 @@ local OP_PATTERNS = { '^opening', '^op$', '^op%W' }
 -- Credits, Scene 1 | Intro | Scene 3 ...) call the OP "Intro", and some files
 -- carry those as the default edition while the "Opening" names sit in another
 -- one mpv does not play. When no chapter matches OP_PATTERNS, an "Intro" that
--- is not the first chapter and runs like an OP (60-120 s) is the OP. A first-
--- chapter "Intro" stays a cold open: on this drive those run 5 s to 6 min.
+-- runs like an OP (60-120 s) is the OP if it is not the first chapter, or if
+-- every chapter uses the streaming skip-marker words below (those mark the
+-- service's own "skip intro" range, which is the OP wherever it falls).
+-- Otherwise a first-chapter "Intro" stays a cold open: in fansub layouts
+-- (Intro | Part A | Part B | ED) on this drive about half of them are.
 local INTRO_OP_PATTERNS = { '^intro$' }
 local INTRO_OP_MIN, INTRO_OP_MAX = 60, 120
+local MARKER_PATTERNS = { '^intro$', '^episode$', '^credits$', '^recap$', '^preview$', '^scene %d+$' }
 -- The credits themselves. The first chapter matching is the ED.
 local CREDIT_PATTERNS = { '^ending', '^ed$', '^ed%W', '^outro', '^credits' }
 -- Only when there is no credits chapter: older releases mark the tail with
@@ -149,7 +153,11 @@ local function classify_chapters()
     if not ed_i and match_any(name, CREDIT_PATTERNS) then ed_i = i; ed_is_credits = true end
   end
   if not op then
-    for i = 2, #chapters do
+    local markers_only = true
+    for _, ch in ipairs(chapters) do
+      if not match_any(ch.title or '', MARKER_PATTERNS) then markers_only = false; break end
+    end
+    for i = markers_only and 1 or 2, #chapters do
       if match_any(chapters[i].title or '', INTRO_OP_PATTERNS) then
         local r = range(i)
         local len = r[2] - r[1]
