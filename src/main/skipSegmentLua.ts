@@ -47,6 +47,14 @@ local SKIP_KEY = '${skipKey}'
 -- almost always label the cold open, not the OP, and offering to skip them
 -- jumps past actual story content.
 local OP_PATTERNS = { '^opening', '^op$', '^op%W' }
+-- Except one shape: streaming-style markers (Episode | Intro | Episode |
+-- Credits, Scene 1 | Intro | Scene 3 ...) call the OP "Intro", and some files
+-- carry those as the default edition while the "Opening" names sit in another
+-- one mpv does not play. When no chapter matches OP_PATTERNS, an "Intro" that
+-- is not the first chapter and runs like an OP (60-120 s) is the OP. A first-
+-- chapter "Intro" stays a cold open: on this drive those run 5 s to 6 min.
+local INTRO_OP_PATTERNS = { '^intro$' }
+local INTRO_OP_MIN, INTRO_OP_MAX = 60, 120
 -- The credits themselves. The first chapter matching is the ED.
 local CREDIT_PATTERNS = { '^ending', '^ed$', '^ed%W', '^outro', '^credits' }
 -- Only when there is no credits chapter: older releases mark the tail with
@@ -139,6 +147,16 @@ local function classify_chapters()
     local name = ch.title or ''
     if not op and match_any(name, OP_PATTERNS) then op = range(i) end
     if not ed_i and match_any(name, CREDIT_PATTERNS) then ed_i = i; ed_is_credits = true end
+  end
+  if not op then
+    for i = 2, #chapters do
+      if match_any(chapters[i].title or '', INTRO_OP_PATTERNS) then
+        local r = range(i)
+        local len = r[2] - r[1]
+        if len >= INTRO_OP_MIN and len <= INTRO_OP_MAX then op = r end
+        break
+      end
+    end
   end
   if not ed_i then
     for i, ch in ipairs(chapters) do
