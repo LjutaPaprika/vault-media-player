@@ -30,7 +30,7 @@ import { parseArgs } from 'node:util'
 import { parse as parseHtml } from 'node-html-parser'
 import AdmZip from 'adm-zip'
 import { isNonPageImage } from './filter.js'
-import { chapterLinkTitle } from './links.js'
+import { chapterLinkTitle, fixChapterNumber } from './links.js'
 import { parseTitleId, runMangadex } from './mangadex.js'
 import { fullChapterListUrl, lazyImagesUrl, hashTitle, seriesNameFromUrl } from './lazy.js'
 
@@ -94,7 +94,7 @@ async function getBuffer(url, referer) {
 
 function extractChapters(html, baseUrl, urlMatchRe = null) {
   const root = parseHtml(html)
-  const seen = new Set()
+  const seen = new Map()  // dedup key → chapter
   const chapters = []
   const matcher = urlMatchRe ?? /chapter/
 
@@ -119,16 +119,20 @@ function extractChapters(html, baseUrl, urlMatchRe = null) {
 
     // Strip anchors (and query strings, unless the query picks the chapter) for dedup
     const key = (urlMatchRe ? absUrl : absUrl.split('?')[0]).split('#')[0].replace(/\/$/, '')
-    if (seen.has(key)) continue
-    seen.add(key)
-
     const title = chapterLinkTitle(a)
-    if (!title) continue
-
-    chapters.push({ url: absUrl, title })
+    const kept = seen.get(key)
+    if (kept) {
+      // A button ("First chapter") linked here first: a later link with a number names it better
+      // (dandadanmanga-online.net: chapter 1 was saved as "First chapter")
+      if (!/\d/.test(kept.title) && /\d/.test(title)) kept.title = title
+      continue
+    }
+    const entry = { url: absUrl, title }
+    seen.set(key, entry)
+    chapters.push(entry)
   }
 
-  return chapters
+  return chapters.filter(c => c.title)
 }
 
 // Parse a sitemap XML and return chapters whose URL path contains "chapter"
@@ -194,6 +198,37 @@ function filterImages(imgEls, chapterUrl) {
 
   // Deduplicate preserving order
   return [...new Set(urls)]
+}
+
+// Two chapters with one file name: the second would be skipped as "already exists" and never
+// downloaded (dandadanmanga-online.net titles chapter 249 "Chapter 24"). The chapter number in
+// the link settles it; failing that, the link's last part makes the name unique. Only clashing
+// names change, so other chapters keep their file names (and aren't downloaded again).
+function nameClashes(chapters) {
+  const groups = () => {
+    const byName = new Map()
+    for (const c of chapters) {
+      const name = sanitize(c.title).toLowerCase()  // (Windows file names ignore case)
+      byName.set(name, [...(byName.get(name) || []), c])
+    }
+    return [...byName.values()].filter(g => g.length > 1)
+  }
+  for (const group of groups()) {
+    for (const c of group) {
+      const fixed = fixChapterNumber(c.title, c.url)
+      if (fixed !== c.title) {
+        console.warn(`⚠  "${c.title}" links to another chapter number — naming it "${fixed}"  (${c.url})`)
+        c.title = fixed
+      }
+    }
+  }
+  for (const group of groups()) {
+    console.warn(`⚠  ${group.length} chapters are named "${group[0].title}" — telling them apart by link`)
+    for (const c of group.slice(1)) {
+      const { pathname, search } = new URL(c.url)
+      c.title += ` (${pathname.split('/').filter(Boolean).pop() || ''}${search})`
+    }
+  }
 }
 
 // ── Core ──────────────────────────────────────────────────────────────────────
@@ -323,6 +358,7 @@ async function main() {
   }
 
   // Sort by chapter number (handles unsorted or newest-first lists)
+  nameClashes(chapters)  // (before sorting: a renumbered chapter sorts by its new number)
   chapters.sort((a, b) => chapterNumber(a.title + a.url) - chapterNumber(b.title + b.url))
   if (values.reverse) chapters.reverse()
 

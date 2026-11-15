@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parse } from 'node-html-parser'
-import { chapterLinkTitle } from './links.js'
+import { chapterLinkTitle, fixChapterNumber, urlChapterNumber } from './links.js'
 
 const title = (html) => chapterLinkTitle(parse(html).querySelector('a'))
 
@@ -31,4 +31,20 @@ test('elements are separated by a space; plain titles are unchanged', () => {
   assert.equal(title('<a href="/c/9/">Chainsaw Man, Chapter 9:  Rescue</a>'), 'Chainsaw Man, Chapter 9: Rescue')
   assert.equal(title('<a href="/c/9/">Vol. 2 Chapter 9 - Year One</a>'), 'Vol. 2 Chapter 9 - Year One')
   assert.equal(title('<a href="/c/9/"></a>'), '')
+})
+
+test('a title whose number disagrees with its link takes the link\'s number', () => {
+  // dandadanmanga-online.net titles chapter 249 "Dandadan Manga Chapter 24": it was skipped as "already exists"
+  assert.equal(fixChapterNumber('Dandadan Manga Chapter 24', 'https://dandadanmanga-online.net/manga/dandadan-chapter-249/'), 'Dandadan Manga Chapter 249')
+  assert.equal(fixChapterNumber('Chapter 7: The Lake', 'https://x.com/series-chapter-8/'), 'Chapter 8: The Lake')
+  assert.equal(urlChapterNumber('https://x.com/manga/x-chapter-21-1/'), '21.1')
+})
+
+test('titles that agree with their link, or have no number to compare, are unchanged', () => {
+  assert.equal(fixChapterNumber('Dandadan Manga Chapter 24', 'https://dandadanmanga-online.net/manga/dandadan-chapter-24/'), 'Dandadan Manga Chapter 24')
+  assert.equal(fixChapterNumber('Chapter 21.1', 'https://x.com/x-chapter-21-1/'), 'Chapter 21.1')
+  assert.equal(fixChapterNumber('Chapter 024', 'https://x.com/x-chapter-24/'), 'Chapter 024')
+  assert.equal(fixChapterNumber('Chapter 001', 'https://weebcentral.com/chapters/01J76XYYS4BDMVFT4XCXBWCNP8'), 'Chapter 001')
+  assert.equal(fixChapterNumber('First chapter', 'https://x.com/x-chapter-1/'), 'First chapter')
+  assert.equal(fixChapterNumber('Chapter 3', 'https://x.com/read.php?c=4'), 'Chapter 3')
 })
