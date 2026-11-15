@@ -66,6 +66,10 @@ async function getMangaById(id) {
   return data.data ?? null
 }
 
+// /chapter returns at most 100 per request; the offset has to move by the same
+// amount (it moved by 500, so every series past 100 uploads lost 400 of each 500).
+const CHAPTER_PAGE = 100
+
 async function getAllChapters(mangaId) {
   const chapters = []
   let offset = 0
@@ -74,14 +78,14 @@ async function getAllChapters(mangaId) {
     const url =
       `${MDEX}/chapter?manga=${mangaId}` +
       `&translatedLanguage%5B%5D=en` +
-      `&limit=100&offset=${offset}` +
+      `&limit=${CHAPTER_PAGE}&offset=${offset}` +
       `&order%5Bchapter%5D=asc`
 
     const data = await mdFetch(url)
     if (!data.data?.length) break
     chapters.push(...data.data)
-    if (chapters.length >= (data.total ?? 0)) break
-    offset += 500
+    if (chapters.length >= (data.total ?? 0) || data.data.length < CHAPTER_PAGE) break
+    offset += CHAPTER_PAGE
     await sleep(400)
   }
 
