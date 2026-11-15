@@ -21,6 +21,31 @@ function collect(node, parts) {
   parts.push(' ')
 }
 
+/**
+ * The chapter number in a link's path, or null: /manga/dandadan-chapter-249/ → "249",
+ * /x-chapter-21-1/ → "21.1". (Not /chapters/<id>: "chapters" is a folder, not a number.)
+ */
+export function urlChapterNumber(url) {
+  let pathname
+  try { pathname = new URL(url).pathname } catch { return null }
+  const m = pathname.match(/chapter[_-]?(\d+)(?:[-_.](\d+))?(?=[/_.-]|$)/i)
+  if (!m) return null
+  return m[2] ? `${m[1]}.${m[2]}` : m[1]
+}
+
+/**
+ * A title whose chapter number disagrees with its link's, renumbered from the link:
+ * "Dandadan Manga Chapter 24" for /dandadan-chapter-249/ → "Dandadan Manga Chapter 249".
+ * Unchanged when they agree (whole numbers: "Chapter 21.1" for chapter-21-1 agrees) or either
+ * has no number.
+ */
+export function fixChapterNumber(title, url) {
+  const fromUrl = urlChapterNumber(url)
+  const m = title.match(/(chapter[\s_-]*)(\d+)(\.\d+)?/i)
+  if (!fromUrl || !m || parseInt(m[2], 10) === parseInt(fromUrl, 10)) return title
+  return title.slice(0, m.index) + m[1] + fromUrl + title.slice(m.index + m[0].length)
+}
+
 export function chapterLinkTitle(a) {
   const parts = []
   for (const child of a.childNodes) collect(child, parts)
