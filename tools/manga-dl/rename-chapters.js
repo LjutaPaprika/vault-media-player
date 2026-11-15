@@ -11,6 +11,11 @@
  *
  * Sources can be combined: MangaDex runs first, Wikipedia fills gaps and overrides with official titles.
  * Either source can be used alone (--wikipedia without --manga/--id, or vice versa).
+ * Wikipedia chapter lists are read by wikititles.js (several table layouts; see there).
+ *
+ * Files that already have a title ("Chapter 012 - Something.cbz") keep it; only untitled or
+ * non-standard names change. --retitle replaces existing titles too.
+ * A source that yields fewer than 3 titles is ignored: that is stray quotes, not a chapter list.
  *
  * Output format:  Chapter 001 - Title.cbz
  *                 Chapter 010.5 - Bonus.cbz   ← decimal = "Extra" pill in Vault
@@ -19,7 +24,7 @@
 import { readdirSync, renameSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
-import { parse as parseHtml } from 'node-html-parser'
+import { parseWikipediaChapters, isJunkTitle } from './wikititles.js'
 
 const MDEX = 'https://api.mangadex.org'
 const UA   = 'VaultMangaDl/1.0'
@@ -103,7 +108,8 @@ function buildChapterMap(chapterData) {
     const num = parseFloat(numStr)
     if (isNaN(num)) continue
 
-    const name = ch.attributes?.title?.trim() || null
+    const raw = ch.attributes?.title?.trim() || null
+    const name = raw && !isJunkTitle(raw) ? raw : null
 
     if (!map.has(num)) {
       map.set(num, name)
@@ -119,69 +125,16 @@ function buildChapterMap(chapterData) {
 
 async function fetchWikipediaChapters(url) {
   console.log(`Fetching Wikipedia: ${url}`)
-  const resp = await fetch(url, { headers: { 'User-Agent': UA } })
-  if (!resp.ok) throw new Error(`Wikipedia HTTP ${resp.status}: ${url}`)
-  const html = await resp.text()
-  const root = parseHtml(html)
-  const map = new Map()
-
-  // Wikipedia manga chapter tables use a volume+chapter structure:
-  //   Volume row:   <th>1</th> <td>release date</td> <td>ISBN</td> ...
-  //   Chapter row:  <td colspan=”4-5”>1. “Title” (Japanese) 2. “Title2” ...</td>
-  // The chapter-listing cells span all columns (colspan >= 4).
-  // Some series have explicit numbers (1. “Title”); others list titles sequentially.
-  let runningChapter = 0
-
-  // Use \x22 (ASCII double quote U+0022) in all regexes to avoid file-encoding
-  // converting literal “ characters to curly quotes (U+201C/U+201D) during save.
-  const Q = '\x22'
-  const reNumbered  = new RegExp(`(\\d+(?:\\.\\d+)?)\\.\\.?\\s*${Q}([^${Q}]{2,})${Q}`, 'g')
-  const reUnnumbered = new RegExp(`${Q}([^${Q}]{2,})${Q}`, 'g')
-
-  for (const table of root.querySelectorAll('table.wikitable')) {
-    for (const td of table.querySelectorAll('td')) {
-      const colspan = parseInt(td.getAttribute('colspan') ?? '1')
-      if (colspan < 4) continue
-
-      // Strip parentheticals before parsing — removes Japanese titles, romaji, and
-      // the CSS injected by Wikipedia's ruby/citation templates inside parens.
-      const text = td.textContent
-        .replace(/\[\d+\]/g, '')   // footnote markers [1]
-        .replace(/\([^)]*\)/g, '') // (Japanese, Romaji) and embedded CSS blocks
-        .replace(/\s+/g, ' ')
-        .trim()
-
-      if (!text.includes(Q)) continue
-
-      // Numbered format: 1. “Title” 2. “Title” ...
-      reNumbered.lastIndex = 0
-      const numbered = [...text.matchAll(reNumbered)]
-      if (numbered.length > 0) {
-        for (const m of numbered) {
-          const num = parseFloat(m[1])
-          const title = m[2].trim()
-          if (!isNaN(num) && title && !/^\d+$/.test(title) && !map.has(num)) {
-            map.set(num, title)
-          }
-        }
-        const lastNum = parseFloat(numbered[numbered.length - 1][1])
-        if (lastNum > runningChapter) runningChapter = Math.floor(lastNum)
-      } else {
-        // Unnumbered format: “Title” “Title2” ... — assign sequential numbers
-        reUnnumbered.lastIndex = 0
-        const unnumbered = [...text.matchAll(reUnnumbered)]
-        for (const m of unnumbered) {
-          const title = m[1].trim()
-          if (!title || /^\d+$/.test(title)) continue
-          runningChapter++
-          if (!map.has(runningChapter)) map.set(runningChapter, title)
-        }
-      }
-    }
+  for (let attempt = 0; ; attempt++) {
+    const resp = await fetch(url, { headers: { 'User-Agent': UA } })
+    if (resp.ok) return parseWikipediaChapters(await resp.text())
+    if (resp.status === 429 && attempt < 3) { await sleep(15000 * (attempt + 1)); continue }
+    throw new Error(`Wikipedia HTTP ${resp.status}: ${url}`)
   }
-
-  return map
 }
+
+// Fewer than this many titles from a source is stray text, not a chapter list
+const MIN_SOURCE_TITLES = 3
 
 // ── Fandom wiki ───────────────────────────────────────────────────────────────
 
@@ -240,6 +193,7 @@ async function main() {
       fandom:     { type: 'string',              default: '' },
       folder:     { type: 'string', short: 'f', default: '' },
       'dry-run':  { type: 'boolean',             default: false },
+      retitle:    { type: 'boolean',             default: false },
     },
     allowPositionals: true,
   })
@@ -288,6 +242,11 @@ async function main() {
     const chapterData = await getAllChapters(manga.id)
     chapterMap = buildChapterMap(chapterData)
     mdexCount = [...chapterMap.values()].filter(Boolean).length
+    if (mdexCount > 0 && mdexCount < MIN_SOURCE_TITLES) {
+      console.log(`MangaDex: only ${mdexCount} title(s) — ignored as too few to trust`)
+      chapterMap = new Map()
+      mdexCount = 0
+    }
     console.log(`MangaDex: ${chapterMap.size} chapters found, ${mdexCount} with titles`)
   }
 
@@ -295,7 +254,11 @@ async function main() {
   let wikiCount = 0
 
   if (values.wikipedia) {
-    const wikiMap = await fetchWikipediaChapters(values.wikipedia)
+    let wikiMap = await fetchWikipediaChapters(values.wikipedia)
+    if (wikiMap.size > 0 && wikiMap.size < MIN_SOURCE_TITLES) {
+      console.log(`Wikipedia: only ${wikiMap.size} title(s) — ignored as too few to trust (not a chapter list?)`)
+      wikiMap = new Map()
+    }
     for (const [num, title] of wikiMap) {
       if (title) chapterMap.set(num, title)
     }
@@ -330,6 +293,10 @@ async function main() {
   let renamed = 0, alreadyGood = 0, unmatched = 0
 
   for (const file of files) {
+    if (!values.retitle && /^Chapter \d+(\.\d+)? - .+\.cbz$/i.test(file)) {
+      alreadyGood++
+      continue
+    }
     const chNum = extractChapterNum(file)
 
     if (chNum === null) {
