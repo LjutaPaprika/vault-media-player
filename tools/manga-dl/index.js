@@ -32,6 +32,7 @@ import AdmZip from 'adm-zip'
 import { isNonPageImage } from './filter.js'
 import { chapterLinkTitle } from './links.js'
 import { parseTitleId, runMangadex } from './mangadex.js'
+import { fullChapterListUrl, lazyImagesUrl, hashTitle, seriesNameFromUrl } from './lazy.js'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -199,7 +200,13 @@ function filterImages(imgEls, chapterUrl) {
 
 async function downloadChapter(chapter, seriesDir) {
   const html = await getHtml(chapter.url)
-  const images = extractImages(html, chapter.url)
+  let images = extractImages(html, chapter.url)
+
+  // Pages loaded by the reader's script (weebcentral.com): fetch them the way it does
+  if (images.length === 0) {
+    const lazyUrl = lazyImagesUrl(html, chapter.url)
+    if (lazyUrl) images = extractImages(await getHtml(lazyUrl), chapter.url)
+  }
 
   if (images.length === 0) {
     console.log(`  ⚠  No images found — skipping`)
@@ -291,9 +298,23 @@ async function main() {
 
   const isSitemap = seriesUrl.endsWith('.xml') || seriesUrl.includes('sitemap')
   const urlMatchRe = values['url-match'] ? new RegExp(values['url-match'], 'i') : null
+
+  // A preview list with a "Show All Chapters" button (weebcentral.com): read the full list instead
+  const fullListUrl = isSitemap ? null : fullChapterListUrl(rawText, seriesUrl)
+  if (fullListUrl) {
+    console.log(`Fetching full chapter list: ${fullListUrl}`)
+    try {
+      rawText = await getHtml(fullListUrl)
+    } catch (e) {
+      console.error(`Failed to fetch the full chapter list: ${e.message}`)
+      process.exit(1)
+    }
+  }
+
   let chapters = isSitemap
     ? extractChaptersFromSitemap(rawText, seriesUrl)
     : extractChapters(rawText, seriesUrl, urlMatchRe)
+  if (fullListUrl) chapters = chapters.map(c => ({ ...c, title: hashTitle(c.title) }))
 
   if (chapters.length === 0) {
     console.error('No chapters found. The site structure may not be supported yet.')
@@ -309,7 +330,7 @@ async function main() {
   console.log(`Found ${chapters.length} chapters — downloading ${slice.length}`)
 
   // ── Derive series name ─────────────────────────────────────────────────────
-  let seriesName = values.name
+  let seriesName = values.name || (fullListUrl ? seriesNameFromUrl(seriesUrl) : '')
   if (!seriesName) {
     // Find the first URL that has a chapter number (skip nav/category pages)
     const firstUrl = chapters.find(c => /chapter[\s_-]*\d+/i.test(c.url))?.url || chapters[0]?.url || seriesUrl
