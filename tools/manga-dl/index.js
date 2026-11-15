@@ -26,6 +26,7 @@ import { parseArgs } from 'node:util'
 import { parse as parseHtml } from 'node-html-parser'
 import AdmZip from 'adm-zip'
 import { isNonPageImage } from './filter.js'
+import { chapterLinkTitle } from './links.js'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ function extractChapters(html, baseUrl, urlMatchRe = null) {
     if (seen.has(key)) continue
     seen.add(key)
 
-    const title = a.textContent.replace(/\s+/g, ' ').trim()
+    const title = chapterLinkTitle(a)
     if (!title) continue
 
     chapters.push({ url: absUrl, title })
