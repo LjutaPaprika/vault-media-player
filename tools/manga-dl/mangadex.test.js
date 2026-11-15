@@ -61,3 +61,23 @@ test('series folder names lose characters Windows and exFAT reject', () => {
   assert.equal(seriesFolderName('7 Seeds'), '7 Seeds')
   assert.equal(seriesFolderName('What?/Why'), 'WhatWhy')
 })
+
+test('mapLimit keeps order, never exceeds the limit, and stops on the first error', async () => {
+  const { mapLimit } = await import('./mangadex.js')
+  let running = 0, peak = 0
+  const out = await mapLimit([30, 5, 20, 1, 10, 2], 3, async (ms, i) => {
+    running++; peak = Math.max(peak, running)
+    await new Promise(r => setTimeout(r, ms))
+    running--
+    return i * 10
+  })
+  assert.deepEqual(out, [0, 10, 20, 30, 40, 50])
+  assert.equal(peak, 3)
+  let started = 0
+  await assert.rejects(mapLimit([1, 2, 3, 4, 5, 6, 7, 8], 2, async (n) => {
+    started++
+    await new Promise(r => setTimeout(r, 5))
+    if (n === 2) throw new Error('page 2 failed')
+  }), /page 2 failed/)
+  assert.ok(started < 8, `kept starting work after the failure (${started})`)
+})
