@@ -13,6 +13,10 @@
  *   --name,   -n <title>  Override series folder name
  *   --reverse             Reverse chapter order before slicing (use if site lists newest-first)
  *   --dry-run             Print chapters that would be downloaded without downloading
+ *   --lang    <code>      MangaDex links only: translation language (default: en)
+ *
+ * A mangadex.org/title/<id> link uses the MangaDex API (mangadex.js): the full chapter
+ * list, one translation per chapter, files named "Chapter 001 - Title.cbz", plus a cover.
  *
  * Examples:
  *   node index.js https://readkagura.com/
@@ -27,6 +31,7 @@ import { parse as parseHtml } from 'node-html-parser'
 import AdmZip from 'adm-zip'
 import { isNonPageImage } from './filter.js'
 import { chapterLinkTitle } from './links.js'
+import { parseTitleId, runMangadex } from './mangadex.js'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -244,6 +249,7 @@ async function main() {
       reverse:   { type: 'boolean',             default: false },
       'dry-run': { type: 'boolean',             default: false },
       'url-match': { type: 'string',            default: '' },
+      lang:      { type: 'string',              default: 'en' },
     },
     allowPositionals: true,
   })
@@ -264,6 +270,9 @@ async function main() {
     ].join('\n'))
     process.exit(1)
   }
+
+  const mangadexId = parseTitleId(seriesUrl)
+  if (mangadexId) return runMangadex(mangadexId, values)
 
   const delay   = Math.max(500, parseInt(values.delay) || 1500)
   const fromIdx = Math.max(0, parseInt(values.from) - 1)
