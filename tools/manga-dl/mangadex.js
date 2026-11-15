@@ -110,28 +110,48 @@ async function getImage(url) {
   return buf
 }
 
+/**
+ * Run fn over items with at most `limit` running at once; results keep the
+ * items' order. The first error stops new work and is thrown.
+ */
+export async function mapLimit(items, limit, fn) {
+  const results = new Array(items.length)
+  let next = 0, failed = null
+  async function worker() {
+    while (failed === null && next < items.length) {
+      const i = next++
+      try { results[i] = await fn(items[i], i) } catch (e) { failed ??= e }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  if (failed) throw failed
+  return results
+}
+
+const PAGE_CONCURRENCY = 4
+
 /** All pages of one chapter, or an error: a chapter is never saved with pages missing. */
 async function downloadPages(chapterId, onPage) {
   let server = await api(`/at-home/server/${chapterId}`)
+  let refreshing = null
+  // A failing image node: ask for another one, as the API docs recommend (once for all pages in flight).
+  const refresh = () => (refreshing ??= api(`/at-home/server/${chapterId}`).then(s => { server = s }).finally(() => { refreshing = null }))
   const files = server.chapter.data
-  const pages = []
-  for (let i = 0; i < files.length; i++) {
+  let done = 0
+  return mapLimit(files, PAGE_CONCURRENCY, async (file, i) => {
     let buf
     for (let attempt = 0; attempt < 4 && !buf; attempt++) {
       try {
-        buf = await getImage(`${server.baseUrl}/data/${server.chapter.hash}/${files[i]}`)
+        buf = await getImage(`${server.baseUrl}/data/${server.chapter.hash}/${file}`)
       } catch (e) {
         if (attempt === 3) throw new Error(`page ${i + 1}: ${e.message}`)
         await sleep(2000 * (attempt + 1))
-        // A failing image node: ask for another one, as the API docs recommend.
-        if (attempt >= 1) server = await api(`/at-home/server/${chapterId}`)
+        if (attempt >= 1) await refresh()
       }
     }
-    pages.push({ name: `${String(i + 1).padStart(3, '0')}${extname(files[i]).toLowerCase() || '.jpg'}`, buf })
-    onPage(i + 1, files.length)
-    if (i < files.length - 1) await sleep(150)
-  }
-  return pages
+    onPage(++done, files.length)
+    return { name: `${String(i + 1).padStart(3, '0')}${extname(file).toLowerCase() || '.jpg'}`, buf }
+  })
 }
 
 async function saveCover(mangaId, seriesDir, seriesName) {
