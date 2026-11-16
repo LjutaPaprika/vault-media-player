@@ -15,6 +15,18 @@ interface MediaCard {
   complete?: boolean
 }
 
+/** What MangaUpdates said about a series when last checked (see mangaUpdates.ts). */
+interface SeriesReleaseInfo {
+  muId: string
+  muTitle: string
+  status: string
+  /** Running or on hiatus; null when unknown. */
+  ongoing: boolean | null
+  /** Latest logged chapter; can lag behind for series with official releases. */
+  latest: number | null
+  fetchedAt: number
+}
+
 interface LibraryConfig {
   label: string | null        // volume label stored in DB, e.g. "VAULT"
   resolvedPath: string | null // actual path resolved at runtime, e.g. "E:\" or null if not found
@@ -373,6 +385,17 @@ interface Window {
       /** The book's setting overrides as JSON, or null when it uses the defaults. */
       getSettings:    (filePath: string) => Promise<string | null>
       setSettings:    (filePath: string, json: string | null) => Promise<void>
+    }
+    watchlist: {
+      /** Watched series among `folders`, by folder; unwatched ones are absent. Times are unix seconds. */
+      get:     (folders: string[]) => Promise<Record<string, { addedAt: number; checkedAt: number | null }>>
+      set:     (folder: string, watching: boolean) => Promise<void>
+      /** Records that the series was just checked for new chapters. */
+      checked: (folder: string) => Promise<void>
+      /** MangaUpdates release info as last fetched, by folder; never-checked ones are absent. */
+      getMeta: (folders: string[]) => Promise<Record<string, SeriesReleaseInfo>>
+      /** Looks one series up on MangaUpdates now (and marks it checked if watched). */
+      checkOnline: (folder: string) => Promise<{ ok: true; meta: SeriesReleaseInfo } | { ok: false; error: string }>
     }
     system: {
       getInfo:    () => Promise<SystemInfo>

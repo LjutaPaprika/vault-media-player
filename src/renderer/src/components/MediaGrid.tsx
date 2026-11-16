@@ -19,7 +19,12 @@ export interface MediaCard {
   playSeconds?: number
   /** Share gone through, 0–1, drawn as a bar along the bottom of the poster. */
   progress?: number | null
+  /** Watched for new chapters: a small star on the poster. */
+  starred?: boolean
 }
+
+/** An extra right-click entry the page adds for a card. */
+export interface CardMenuItem { label: string; onClick: () => void }
 
 interface Props {
   items: MediaCard[]
@@ -29,15 +34,18 @@ interface Props {
   category?: string
   /** Ignore keyboard and controller input, e.g. while a modal is open over the grid. */
   suspended?: boolean
+  /** Right-click entries for a card, listed above Archive. */
+  menuFor?: (item: MediaCard) => CardMenuItem[]
 }
 
 interface ContextMenuState {
   x: number
   y: number
-  relPath: string
+  relPath: string | null
+  extra: CardMenuItem[]
 }
 
-export default function MediaGrid({ items, onSelect, emptyMessage = 'No items found.', category, suspended = false }: Props): JSX.Element {
+export default function MediaGrid({ items, onSelect, emptyMessage = 'No items found.', category, suspended = false, menuFor }: Props): JSX.Element {
   const { focusZone, setFocusZone } = useAppStore()
   const [focusedIdx, setFocusedIdx] = useState(0)
   const cardRefs = useRef<(HTMLButtonElement | null)[]>([])
@@ -47,11 +55,11 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
   const [archiveTarget, setArchiveTarget] = useState<string | null>(null)
 
   function handleContextMenu(e: React.MouseEvent, item: MediaCard): void {
-    if (!category || !item.filePath) return
-    const relPath = deriveArchiveRelPath(item.filePath, category)
-    if (!relPath) return
+    const extra = menuFor?.(item) ?? []
+    const relPath = category && item.filePath ? deriveArchiveRelPath(item.filePath, category) : null
+    if (!relPath && extra.length === 0) return
     e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY, relPath })
+    setContextMenu({ x: e.clientX, y: e.clientY, relPath, extra })
   }
 
   useEffect(() => {
@@ -147,6 +155,7 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
               : <div className={styles.placeholder}>{item.title.charAt(0)}</div>
             }
             {item.complete && <span className={styles.completeDot} title="Series complete" />}
+            {item.starred && <span className={styles.starBadge} title="Watching for new chapters">★</span>}
             {item.progress != null && item.progress > 0 && <WatchedBar fraction={item.progress} />}
           </div>
           <div className={styles.info}>
@@ -163,13 +172,22 @@ export default function MediaGrid({ items, onSelect, emptyMessage = 'No items fo
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            className={styles.contextMenuItem}
-            onClick={() => {
-              setArchiveTarget(contextMenu.relPath)
-              setContextMenu(null)
-            }}
-          >📦 Archive to cold store</button>
+          {contextMenu.extra.map((m) => (
+            <button
+              key={m.label}
+              className={styles.contextMenuItem}
+              onClick={() => { setContextMenu(null); m.onClick() }}
+            >{m.label}</button>
+          ))}
+          {contextMenu.relPath && (
+            <button
+              className={styles.contextMenuItem}
+              onClick={() => {
+                setArchiveTarget(contextMenu.relPath)
+                setContextMenu(null)
+              }}
+            >📦 Archive to cold store</button>
+          )}
         </div>
       )}
       {archiveTarget && (

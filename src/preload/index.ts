@@ -154,6 +154,15 @@ contextBridge.exposeInMainWorld('api', {
     setSettings:    (filePath: string, json: string | null) => ipcRenderer.invoke('books:setSettings', filePath, json)
   },
 
+  // Manga/comics series watched for new chapters, by series folder path
+  watchlist: {
+    get:     (folders: string[]) => ipcRenderer.invoke('watchlist:get', folders),
+    set:     (folder: string, watching: boolean) => ipcRenderer.invoke('watchlist:set', folder, watching),
+    checked: (folder: string) => ipcRenderer.invoke('watchlist:checked', folder),
+    getMeta: (folders: string[]) => ipcRenderer.invoke('watchlist:getMeta', folders),
+    checkOnline: (folder: string) => ipcRenderer.invoke('watchlist:checkOnline', folder)
+  },
+
   // System info
   system: {
     getInfo:    () => ipcRenderer.invoke('system:getInfo'),

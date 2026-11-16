@@ -14,6 +14,9 @@ import { startPosition, watchState } from '../utils/resume'
 import { isExtra } from '../utils/readingEntries'
 import { isSeriesComplete } from '../utils/seriesComplete'
 import { cleanDisplayTitle, summarize } from '../utils/mangaSeries'
+import { newestNumber, newestOnDrive, orderWatched, releaseStatus, watchNote, type WatchInfo } from '../utils/watchlist'
+import { CheckButton } from '../components/WatchControls'
+import controls from '../components/WatchControls.module.css'
 
 /** Shelves with fewer series than this skip the Continue row. */
 const CONTINUE_MIN_SERIES = 8
@@ -32,6 +35,11 @@ function detectUnit(vols: MediaItem[]): { singular: string; plural: string } {
   if (titles.some((t) => /(?:^|[\s_])vol(ume|\.)/.test(t))) return { singular: 'volume', plural: 'volumes' }
   if (titles.some((t) => /(?:^|[\s_])issue/.test(t))) return { singular: 'issue', plural: 'issues' }
   return { singular: 'entry', plural: 'entries' }
+}
+
+// The folder a series' entries live in: what the watchlist is keyed by.
+function seriesFolder(filePath: string): string {
+  return filePath.replace(/[\\/][^\\/]+$/, '')
 }
 
 function groupBySeries(items: MediaItem[]): Map<string, MediaItem[]> {
@@ -73,6 +81,49 @@ export default function MangaPage({
   // closing (they save without telling anyone), or a chapter marked read.
   const [progressTick,    setProgressTick]     = useState(0)
   const progress = useVideoProgress(items.map((i) => i.filePath), progressTick)
+  // Series watched for new chapters, by series folder.
+  const [watched, setWatched] = useState<Record<string, WatchInfo>>({})
+  const [watchTick, setWatchTick] = useState(0)
+  useEffect(() => {
+    const folders = [...new Set(items.map((i) => seriesFolder(i.filePath)))]
+    if (folders.length === 0) return
+    let live = true
+    window.api.watchlist.get(folders).then((w) => { if (live) setWatched(w) })
+    return () => { live = false }
+  }, [items, watchTick])
+  const setWatching = (folder: string, on: boolean): void => {
+    window.api.watchlist.set(folder, on).then(() => setWatchTick((n) => n + 1))
+  }
+  const markChecked = (folder: string): void => {
+    window.api.watchlist.checked(folder).then(() => setWatchTick((n) => n + 1))
+  }
+  // What the last online check found, by series folder.
+  const [releases, setReleases] = useState<Record<string, SeriesReleaseInfo>>({})
+  useEffect(() => {
+    const folders = [...new Set(items.map((i) => seriesFolder(i.filePath)))]
+    if (folders.length === 0) return
+    let live = true
+    window.api.watchlist.getMeta(folders).then((m) => { if (live) setReleases(m) })
+    return () => { live = false }
+  }, [items])
+  const [checking, setChecking] = useState<{ done: number; total: number } | null>(null)
+  const [checkErrors, setCheckErrors] = useState<string[]>([])
+  /** Looks each series up online, one after another, showing progress. */
+  async function checkOnline(folders: string[]): Promise<void> {
+    if (checking || folders.length === 0) return
+    const errors: string[] = []
+    setChecking({ done: 0, total: folders.length })
+    for (let i = 0; i < folders.length; i++) {
+      const r = await window.api.watchlist.checkOnline(folders[i])
+      if (r.ok) setReleases((prev) => ({ ...prev, [folders[i]]: r.meta }))
+      else errors.push(`${folders[i].split(/[\\/]/).pop()}: ${r.error}`)
+      setChecking({ done: i + 1, total: folders.length })
+      if (i < folders.length - 1) await new Promise((res) => setTimeout(res, 350))
+    }
+    setChecking(null)
+    setCheckErrors(errors)
+    setWatchTick((n) => n + 1)
+  }
   const closeReader = (): void => {
     const local = (): void => {
       setSelectedCbz(null); setSelectedPdf(null); setSelectedBook(null)
@@ -163,6 +214,7 @@ export default function MangaPage({
 
   const summaries = new Map(filteredSeries.map(([name, vols]) => [name, summarize(vols, progress, category)]))
 
+  const isWatched = (vols: MediaItem[]): boolean => !!watched[seriesFolder(vols[0].filePath)]
   const seriesCards: MediaCard[] = filteredSeries.map(([name, vols]) => {
     const { singular, plural } = detectUnit(vols)
     const sum = summaries.get(name)!
@@ -175,7 +227,8 @@ export default function MangaPage({
       posterPath: vols[0].posterPath,
       complete: isSeriesComplete(vols, { progress, category, isExtra: (v) => isExtra(v.title) }),
       // A finished series has its "complete" dot instead of a full bar.
-      progress: sum.complete ? null : sum.done / Math.max(1, vols.length)
+      progress: sum.complete ? null : sum.done / Math.max(1, vols.length),
+      starred: isWatched(vols)
     }
   })
 
@@ -189,6 +242,17 @@ export default function MangaPage({
         .sort((a, b) => (b.sum.lastRead?.lastOpenedAt ?? 0) - (a.sum.lastRead?.lastOpenedAt ?? 0))
         .slice(0, CONTINUE_MAX)
     : []
+
+  // The watchlist row: the series you starred (from the series view, or by
+  // right-clicking a card). Anything the last online check found new first,
+  // then longest since checked. Hidden while searching, like Continue; shown
+  // on a shelf of any size.
+  const watching = query ? [] : orderWatched(
+    Array.from(grouped.entries())
+      .map(([name, vols]) => ({ name, vols, folder: seriesFolder(vols[0].filePath), unit: summaries.get(name)?.unit.short ?? 'Ch.' }))
+      .filter((s) => watched[s.folder])
+      .map((s) => ({ ...s, info: watched[s.folder], rel: releaseStatus(newestNumber(s.vols), releases[s.folder], s.unit) }))
+  ).sort((a, b) => b.rel.newCount - a.rel.newCount)
 
   return (
     <PageShell title={pageTitle} searchValue={query} onSearch={setQuery}>
@@ -208,6 +272,47 @@ export default function MangaPage({
               onClick: () => openEntry(sum.next!.video, sum.next!.startAt)
             }))}
           />
+        </div>
+      )}
+      {!loading && !error && watching.length > 0 && (
+        <div style={{ marginBottom: 28 }}>
+          <PosterRow
+            title="Watching for new chapters"
+            action={
+              <CheckButton
+                label="Check for new chapters"
+                checking={checking}
+                onClick={() => checkOnline(watching.map((s) => s.folder))}
+              />
+            }
+            cards={watching.map(({ name, vols, folder, rel, unit }) => {
+              const newest = newestOnDrive(vols, unit)
+              const meta = releases[folder]
+              return {
+                key: name,
+                posterPath: vols[0].posterPath,
+                title: name,
+                badge: rel.badge,
+                subtitle: newest ? `${newest} on drive` : undefined,
+                note: rel.line,
+                // What the check matched, so a wrong match is easy to spot, and why "Unknown".
+                tooltip: meta
+                  ? `${name} \u2014 matched on MangaUpdates: ${meta.muTitle} (${meta.status})${rel.why ? `\n${rel.why}` : ''}`
+                  : undefined,
+                // Same right-click choices as the grid, so a series can be dropped from the row itself.
+                menu: [
+                  { label: '\u2605 Stop watching', onClick: () => setWatching(folder, false) },
+                  { label: '\u21bb Check online now', onClick: () => checkOnline([folder]) }
+                ],
+                onClick: () => { if (!closing) setSelectedSeries(name) }
+              }
+            })}
+          />
+          {checkErrors.length > 0 && !checking && (
+            <p className={controls.hint} title={checkErrors.join('\n')}>
+              {checkErrors.length} series could not be matched online (hover for which).
+            </p>
+          )}
         </div>
       )}
       {!loading && !error && (
@@ -233,6 +338,17 @@ export default function MangaPage({
           }}
           emptyMessage={emptyMessage}
           suspended={!!selectedSeries}
+          menuFor={(card) => {
+            // Star or unstar straight from the shelf, without opening the series.
+            const vols = grouped.get(card.title) ?? []
+            if (vols.length === 0) return []
+            const folder = seriesFolder(vols[0].filePath)
+            if (!watched[folder]) return [{ label: '☆ Watch for new chapters', onClick: () => setWatching(folder, true) }]
+            return [
+              { label: '★ Stop watching', onClick: () => setWatching(folder, false) },
+              { label: '↻ Check online now', onClick: () => checkOnline([folder]) }
+            ]
+          }}
         />
       )}
       {selectedSeries && (
@@ -246,6 +362,18 @@ export default function MangaPage({
           onClose={() => (openedReader.current ? closeModal() : backOr(closeModal))}
           onMarkRead={markRead}
           onSelect={openEntry}
+          watch={(() => {
+            const vols = grouped.get(selectedSeries) ?? []
+            if (vols.length === 0) return undefined
+            const folder = seriesFolder(vols[0].filePath)
+            const info = watched[folder]
+            return {
+              watching: !!info,
+              note: info ? watchNote(info) : null,
+              onToggle: () => setWatching(folder, !info),
+              onChecked: () => markChecked(folder)
+            }
+          })()}
         />
       )}
     </PageShell>

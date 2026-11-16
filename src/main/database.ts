@@ -168,6 +168,29 @@ function getDb(): Database.Database {
       album_path TEXT PRIMARY KEY
     );
 
+    -- Series the user is watching for new chapters (Manga/Comics page row).
+    -- Keyed by watchKey (watchlistKey.ts): the folder's path inside the
+    -- library, so it survives drive letters and the Mac. checked_at is when
+    -- they last said "checked for new chapters"; NULL until the first time.
+    CREATE TABLE IF NOT EXISTS watchlist (
+      series_key TEXT PRIMARY KEY,
+      added_at   INTEGER NOT NULL,
+      checked_at INTEGER
+    );
+
+    -- What MangaUpdates said about a series the last time it was checked
+    -- (mangaUpdates.ts), keyed like watchlist. mu_id is kept so later checks
+    -- skip the title search. ongoing: 1 running/hiatus, 0 finished, NULL unknown.
+    CREATE TABLE IF NOT EXISTS series_meta (
+      series_key TEXT PRIMARY KEY,
+      mu_id      TEXT NOT NULL,
+      mu_title   TEXT NOT NULL,
+      status     TEXT NOT NULL,
+      ongoing    INTEGER,
+      latest     REAL,
+      fetched_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS dir_mtimes (
       dir_path TEXT PRIMARY KEY,
       mtime    INTEGER NOT NULL
@@ -919,6 +942,50 @@ export function setFavourite(albumPath: string, isFav: boolean): void {
   } else {
     getDb().prepare('DELETE FROM favourites WHERE album_path = ?').run(albumPath)
   }
+}
+
+export interface WatchRow { seriesKey: string; addedAt: number; checkedAt: number | null }
+
+export function getWatchlist(): WatchRow[] {
+  return getDb()
+    .prepare('SELECT series_key AS seriesKey, added_at AS addedAt, checked_at AS checkedAt FROM watchlist')
+    .all() as WatchRow[]
+}
+
+export function setWatching(seriesKey: string, watching: boolean): void {
+  if (watching) {
+    getDb().prepare('INSERT OR IGNORE INTO watchlist (series_key, added_at) VALUES (?, unixepoch())').run(seriesKey)
+  } else {
+    getDb().prepare('DELETE FROM watchlist WHERE series_key = ?').run(seriesKey)
+  }
+}
+
+export function markWatchChecked(seriesKey: string): void {
+  getDb().prepare('UPDATE watchlist SET checked_at = unixepoch() WHERE series_key = ?').run(seriesKey)
+}
+
+export interface SeriesMetaRow {
+  muId: string; muTitle: string; status: string; ongoing: boolean | null; latest: number | null; fetchedAt: number
+}
+
+export function getSeriesMeta(seriesKey: string): SeriesMetaRow | null {
+  const r = getDb()
+    .prepare('SELECT mu_id, mu_title, status, ongoing, latest, fetched_at FROM series_meta WHERE series_key = ?')
+    .get(seriesKey) as { mu_id: string; mu_title: string; status: string; ongoing: number | null; latest: number | null; fetched_at: number } | undefined
+  if (!r) return null
+  return {
+    muId: r.mu_id, muTitle: r.mu_title, status: r.status,
+    ongoing: r.ongoing == null ? null : r.ongoing === 1, latest: r.latest, fetchedAt: r.fetched_at
+  }
+}
+
+export function setSeriesMeta(seriesKey: string, m: SeriesMetaRow): void {
+  getDb().prepare(
+    `INSERT INTO series_meta (series_key, mu_id, mu_title, status, ongoing, latest, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(series_key) DO UPDATE SET mu_id = excluded.mu_id, mu_title = excluded.mu_title,
+       status = excluded.status, ongoing = excluded.ongoing, latest = excluded.latest, fetched_at = excluded.fetched_at`
+  ).run(seriesKey, m.muId, m.muTitle, m.status, m.ongoing == null ? null : m.ongoing ? 1 : 0, m.latest, m.fetchedAt)
 }
 
 export interface LibraryStats {
