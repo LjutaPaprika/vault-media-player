@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import WatchedBar from './WatchedBar'
 import PosterModal, {
-  Actions, Chip, Chips, PlayIcon, PrimaryButton, SectionLabel, Spacer, Tile, Tiles, Title
+  Actions, Chip, Chips, PlayIcon, PrimaryButton, SecondaryButton, SectionLabel, Spacer, Tile, Tiles, Title
 } from './PosterModal'
 import { useVideoProgress } from '../hooks/useVideoProgress'
 import { startPosition, watchedFraction, type WatchState } from '../utils/resume'
@@ -21,6 +21,8 @@ interface Props {
   onSelect: (item: MediaItem, startAt: number) => void
   /** Marks an entry read or unread by hand, e.g. one read outside the app. */
   onMarkRead: (item: MediaItem, read: boolean) => void
+  /** Watchlist: whether this series is watched for new chapters, and its note ("checked 3 days ago"). */
+  watch?: { watching: boolean; note: string | null; onToggle: () => void; onChecked: () => void }
 }
 
 function CheckIcon(): JSX.Element {
@@ -133,6 +135,17 @@ export function MangaSeriesModal(p: Props & { closing: boolean; onClose: () => v
           label={summary.lastRead ? `Last read: ${cleanDisplayTitle(summary.lastRead.title)}` : 'Not started yet'}
         />
       </Tiles>
+      {p.watch && (
+        <div className={styles.watchRow}>
+          <SecondaryButton onClick={p.watch.onToggle}>
+            {p.watch.watching ? '★ Watching' : '☆ Watch for new chapters'}
+          </SecondaryButton>
+          {p.watch.watching && (
+            <SecondaryButton onClick={p.watch.onChecked}>{'✓'} Checked</SecondaryButton>
+          )}
+          {p.watch.watching && p.watch.note && <span className={styles.watchNote}>{p.watch.note}</span>}
+        </div>
+      )}
       <SectionLabel>{summary.unit.section} <span className={styles.count}>{summary.total}</span></SectionLabel>
       <div className={styles.modalList} ref={listRef}>
         {summary.entries.map((e) => {

@@ -1,4 +1,4 @@
-import { app, ipcMain, BrowserWindow, shell, protocol, session } from 'electron'
+import { app, ipcMain, BrowserWindow, shell, protocol, session, net } from 'electron'
 import { readFileSync, existsSync, statSync, readdirSync, writeFileSync, mkdirSync, appendFileSync, unlinkSync } from 'fs'
 import { promises as fsp } from 'fs'
 import type { Cookie } from 'electron'
@@ -46,7 +46,9 @@ const MAX_OPEN_CBZ = 1
 const CBZ_PAGE_CACHE_BYTES = 96 * 1024 * 1024
 
 const openCbzFiles = new Map<string, OpenCbz>()
-import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, getEpisodePaths, getBookmarks, addBookmark, removeBookmark, getBookSettings, setBookSettings } from './database'
+import { getConfig, setConfig, getItems, getItem, getExtras, clearStoredDirTimes, getTechInfo, getDurationsForCategory, setLastOpened, setWatched, setGenre, getStats, getDbPath, rerootPaths, getFavourites, setFavourite, probeDrive, getAllPosterPaths, getEpisodePaths, getBookmarks, addBookmark, removeBookmark, getBookSettings, setBookSettings, getWatchlist, setWatching, markWatchChecked, getSeriesMeta, setSeriesMeta } from './database'
+import { watchKey } from './watchlistKey'
+import { lookupSeries } from './mangaUpdates'
 import { getEpubInfo, readEpubChapter } from './epubReader'
 import { scanLibrary, findPoster, findNamedPoster } from './scanner'
 import { openVideo, openAudio, launchGame, getToolPath, openWithSystem } from './launcher'
@@ -883,6 +885,62 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     getBookSettings(progressKey(resolveLibraryRoot(), filePath)))
   ipcMain.handle('books:setSettings', (_event, filePath: string, json: string | null) =>
     setBookSettings(progressKey(resolveLibraryRoot(), filePath), json))
+
+  // Manga/comics watchlist. The page speaks in series folder paths; keys stay here.
+  ipcMain.handle('watchlist:get', (_event, folders: string[]) => {
+    const root = resolveLibraryRoot()
+    const rows = new Map(getWatchlist().map((r) => [r.seriesKey, r]))
+    const out: Record<string, { addedAt: number; checkedAt: number | null }> = {}
+    for (const folder of folders) {
+      const key = watchKey(root, folder)
+      const row = key ? rows.get(key) : undefined
+      if (row) out[folder] = { addedAt: row.addedAt, checkedAt: row.checkedAt }
+    }
+    return out
+  })
+  ipcMain.handle('watchlist:set', (_event, folder: string, watching: boolean) => {
+    const key = watchKey(resolveLibraryRoot(), folder)
+    if (key) setWatching(key, watching === true)
+  })
+  ipcMain.handle('watchlist:checked', (_event, folder: string) => {
+    const key = watchKey(resolveLibraryRoot(), folder)
+    if (key) markWatchChecked(key)
+  })
+  // Release info from MangaUpdates, as last fetched, by folder.
+  ipcMain.handle('watchlist:getMeta', (_event, folders: string[]) => {
+    const root = resolveLibraryRoot()
+    const out: Record<string, ReturnType<typeof getSeriesMeta>> = {}
+    for (const folder of folders) {
+      const key = watchKey(root, folder)
+      const m = key ? getSeriesMeta(key) : null
+      if (m) out[folder] = m
+    }
+    return out
+  })
+  // Looks one series up online now. The page calls it once per series, so it
+  // can show progress and stop between them. A watched series counts as checked.
+  ipcMain.handle('watchlist:checkOnline', async (_event, folder: string) => {
+    const key = watchKey(resolveLibraryRoot(), folder)
+    if (!key) return { ok: false, error: 'not in the library' }
+    const name = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
+    const fetchJson = async (url: string, init?: { method?: string; body?: string }): Promise<unknown> => {
+      const resp = await net.fetch(url, {
+        method: init?.method ?? 'GET', body: init?.body,
+        headers: init?.body ? { 'Content-Type': 'application/json' } : undefined
+      })
+      if (!resp.ok) throw new Error(`MangaUpdates HTTP ${resp.status}`)
+      return resp.json()
+    }
+    try {
+      const meta = await lookupSeries(name, getSeriesMeta(key)?.muId ?? null, fetchJson)
+      if (!meta) return { ok: false, error: 'no match on MangaUpdates' }
+      setSeriesMeta(key, meta)
+      markWatchChecked(key)
+      return { ok: true, meta }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+  })
 
   ipcMain.handle('settings:get', (_event, key: string, fallback: string) => getConfig(key) ?? fallback)
   ipcMain.handle('settings:set', (_event, key: string, value: string) => { setConfig(key, value) })
