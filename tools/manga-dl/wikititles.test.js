@@ -26,6 +26,16 @@ test('labelled entries anywhere in a table (Chapter N: / Days N:)', () => {
   assert.deepEqual(entries(parseWikipediaChapters(html)), { 1: 'Quiet Start', 100: 'Hundredth Morning', 101: 'After That' })
 })
 
+test('other chapter names: Mission N: and Mission N. (Mission: Yozakura Family)', () => {
+  const html = table(`<tr><td colspan="5"><ul><li>Mission 110: "Quiet Errand" (用)</li><li>Mission 200. "Long Night"</li></ul></td></tr>`)
+  assert.deepEqual(entries(parseWikipediaChapters(html)), { 110: 'Quiet Errand', 200: 'Long Night' })
+})
+
+test('volume and part labels are never read as chapter numbers', () => {
+  const html = table(`<tr><td colspan="5">Mission 1: "Real Chapter" Volume 3: "Spring Arc" Part 2: "The Return"</td></tr>`)
+  assert.deepEqual(entries(parseWikipediaChapters(html)), { 1: 'Real Chapter' })
+})
+
 test('the older wide-cell layouts still work: numbered, then sequential', () => {
   const numbered = table(`<tr><td colspan="4">1. "Salt Road" (塩) 2. "Iron Bridge"[3]</td></tr>`)
   assert.deepEqual(entries(parseWikipediaChapters(numbered)), { 1: 'Salt Road', 2: 'Iron Bridge' })
@@ -50,6 +60,6 @@ test('tables that are not wikitables are ignored', () => {
 })
 
 test('junk titles: bare part/volume labels and numbers', () => {
-  for (const t of ['Part1', 'Part 2', 'Vol. 3', 'Chapter 12', 'ch 4', '17', ' ', 'x']) assert.equal(isJunkTitle(t), true, t)
+  for (const t of ['Part1', 'Part 2', 'Vol. 3', 'Chapter 12', 'ch 4', '17', ' ', 'x', '1+1.1', '29.1 + 29.2', '8.5+8.6']) assert.equal(isJunkTitle(t), true, t)
   for (const t of ['Part of the Plan', 'Volume Control', 'The 12th Night', 'Ok']) assert.equal(isJunkTitle(t), false, t)
 })
