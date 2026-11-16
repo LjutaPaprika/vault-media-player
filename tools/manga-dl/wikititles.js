@@ -3,7 +3,7 @@
  * with a volume table). Only tables with class "wikitable" are read. Four layouts are
  * understood, tried in this order (the first title found for a number wins):
  *
- *   1. Labelled entries anywhere in a table:   Chapter 12: "Title"   /   Days 100: "Title"
+ *   1. Labelled entries anywhere in a table:   Chapter 12: "Title"   /   Days 100: "Title"   /   Mission 110. "Title"
  *   2. Numbered lists per volume:              <ol start="N"><li>"Title" (Japanese)</li>…
  *   3. Bulleted items numbered in their text:  <li>N. "Title" (Japanese)</li>
  *   4. Wide cells (colspan >= 4):              1. "Title" 2. "Title" …   or, failing that,
@@ -30,6 +30,8 @@ export function isJunkTitle(title) {
   const t = (title || '').trim()
   if (t.length < 2) return true
   if (/^\d+(\.\d+)?$/.test(t)) return true
+  // Numbers joined by "+": merged part labels such as "1+1.1" or "29.1 + 29.2"
+  if (/^[\d.\s+&]+$/.test(t)) return true
   return /^(part|vol(ume)?|chapter|ch|episode|ep)\.?\s*\d+(\.\d+)?$/i.test(t)
 }
 
@@ -43,7 +45,9 @@ export function parseWikipediaChapters(html) {
   }
 
   // 1. Labelled entries
-  const labelled = new RegExp(`(?:Chapter|Ch\\.?|Days?)\\s*${NUM}\\s*:\\s*${QUOTED}`, 'gi')
+  // Series name their chapters differently ("Days 100", "Mission 110"). Volume
+  // and Part are left out on purpose: they would put volume numbers on chapters.
+  const labelled = new RegExp(`(?:Chapter|Ch\\.?|Days?|Mission|Episode|Act|Round|Stage|Lesson)\\s*${NUM}\\s*[:.]\\s*${QUOTED}`, 'gi')
   for (const table of tables) {
     for (const m of clean(table.textContent).matchAll(labelled)) add(parseFloat(m[1]), m[2])
   }
